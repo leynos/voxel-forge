@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+build/
+*.egg-info/
+uv.lock
+test_out.vox
+test_out.obj
+*.spec.bak
+.DS_Store
+Thumbs.db
