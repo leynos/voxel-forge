@@ -49,4 +49,4 @@ jobs:
       - name: Audit editor dependencies
         run: npm audit --prefix editor --audit-level=high
       - name: Check Markdown
-        run: npx --yes markdownlint-cli2 README.md docs/execplans/readiness-gate.md
+        run: make markdownlint MDLINT="npx --yes markdownlint-cli2"
