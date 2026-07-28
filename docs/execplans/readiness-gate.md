@@ -112,7 +112,7 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   sanctioned gate runner against committed `HEAD`; 23 tests and every package,
   launcher, frontend, audit, documentation, and workflow gate pass.
 - [x] (2026-07-28 13:10Z) Completed the requirement audit: 15 non-lock files and
-  754 net non-lock lines changed, within the fixed limits of 18 and 900; the
+  781 net non-lock lines changed, within the fixed limits of 18 and 900; the
   worktree is clean and no generated tracked diff remains.
 
 ## Surprises & discoveries
@@ -352,4 +352,5 @@ independent full-gate report and final completion audit remain.
 2026-07-28 13:10Z: Marked the plan complete after the clean committed tree
 passed all 14 gates with 23 tests, zero launcher stdout bytes, zero frontend
 vulnerabilities, valid workflow syntax, and no generated tracked changes. The
-scope audit also proved both fixed tolerances were respected.
+scope audit also proved both fixed tolerances were respected. Corrected the net
+line count to 781 after including this closing retrospective itself.
