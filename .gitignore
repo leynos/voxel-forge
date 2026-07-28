@@ -5,7 +5,6 @@ node_modules/
 dist/
 build/
 *.egg-info/
-uv.lock
 test_out.vox
 test_out.obj
 *.spec.bak

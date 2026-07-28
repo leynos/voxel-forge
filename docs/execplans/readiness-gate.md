@@ -92,7 +92,9 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   `voxel-forge` and inspected context and impact for bridge synchronization,
   `VoxelScene`, and `export_vox`.
 - [x] (2026-07-28 12:42Z) Fixed this plan's scope and completion measure.
-- [ ] Add red Python contract tests and record the expected failures.
+- [x] (2026-07-28 12:47Z) Added red Python contract tests; 18 tests fail for
+  the assessed launcher, bridge, validation, resource-bound, and VOX defects,
+  while the Unicode round-trip and basic in-memory agent workflow pass.
 - [ ] Correct launcher, bridge scheduling/stdout, origin handling, and editor
   deletion persistence; make the focused synchronization tests green.
 - [ ] Add scene-name/schema/colour/layer validation and fill/batch resource
@@ -292,3 +294,7 @@ state manager, or concurrency abstraction.
 readiness assessment, added fixed tolerances and acceptance evidence, and
 recorded Memtrace indexing and impact results. Implementation remains entirely
 within the assessed findings.
+
+2026-07-28 12:47Z: Added the red-test evidence and recorded the two behaviours
+that already pass. The remaining work is unchanged; production implementation
+must turn the 18 expected failures green without weakening their contracts.
