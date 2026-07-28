@@ -95,15 +95,19 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
 - [x] (2026-07-28 12:47Z) Added red Python contract tests; 18 tests fail for
   the assessed launcher, bridge, validation, resource-bound, and VOX defects,
   while the Unicode round-trip and basic in-memory agent workflow pass.
-- [ ] Correct launcher, bridge scheduling/stdout, origin handling, and editor
-  deletion persistence; make the focused synchronization tests green.
-- [ ] Add scene-name/schema/colour/layer validation and fill/batch resource
-  limits; make focused model and server tests green.
-- [ ] Correct VOX `SIZE`/`XYZI`/`RGBA` encoding, palette indexing, and coordinate
-  range rejection; make raw-format and round-trip tests green.
-- [ ] Correct wheel configuration, Ruff findings, TypeScript declarations,
-  vulnerable frontend resolution, Markdown findings, and dependency locking.
-- [ ] Add a sequential CI workflow containing the same deterministic gates.
+- [x] (2026-07-28 13:03Z) Corrected launcher, bridge scheduling/stdout,
+  origin handling, and editor deletion persistence; focused synchronization
+  tests pass.
+- [x] (2026-07-28 13:03Z) Added scene-name/schema/colour/layer validation and
+  fill/batch resource limits; focused model and server tests pass.
+- [x] (2026-07-28 13:03Z) Corrected VOX `SIZE`/`XYZI`/`RGBA` encoding, palette
+  indexing, and coordinate range rejection; raw-format and round-trip tests
+  pass against the primary MagicaVoxel version 150 specification.
+- [x] (2026-07-28 13:03Z) Corrected wheel configuration, Ruff findings,
+  TypeScript declarations, vulnerable frontend resolution, Markdown findings,
+  and dependency locking; the corresponding local gates pass.
+- [x] (2026-07-28 13:03Z) Added a sequential CI workflow containing the same
+  deterministic Python and frontend gates.
 - [ ] Run all acceptance gates through the sanctioned gate runner, inspect any
   cited logs, and complete the requirement-by-requirement audit.
 
@@ -124,6 +128,17 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   identifiers.
   Impact: the checked-in code, README contract, and this approved plan remain
   authoritative.
+- Observation: the Memtrace graph endpoint exited after initial context and
+  impact collection and rejected incremental recovery.
+  Evidence: subsequent `get_impact` and `index_directory` calls failed because
+  the local MemDB endpoint at port 50051 was unreachable.
+  Impact: initial high/critical graph impact results governed the core edits;
+  later duplicate-function cleanup used bounded source evidence and Leta.
+- Observation: pytest initially imported a stale installed package rather than
+  the live `src/` tree.
+  Evidence: failure tracebacks pointed into `.venv/site-packages` after source
+  edits, and all focused tests passed once pytest's `pythonpath` was explicit.
+  Impact: `pyproject.toml` now pins test discovery to `src/`.
 
 ## Decision log
 
@@ -145,6 +160,16 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   Rationale: this directly addresses cross-origin local writes within the
   existing single-user architecture and dependency tolerance.
   Date/Author: 2026-07-28 12:42Z / Codex.
+- Decision: allocate VOX palette indices from resolved scene RGB values instead
+  of trusting scene palette keys to be numeric.
+  Rationale: named and hexadecimal colours are public scene inputs, while the
+  VOX format requires indices 1 through 255 and maps RGBA entries 0 through 254
+  to those indices.
+  Date/Author: 2026-07-28 13:03Z / Codex.
+- Decision: consolidate readiness tests and remove incidental formatter churn.
+  Rationale: preserve all 22 behavioural contracts and repository-wide lint
+  coverage while keeping the final diff within the fixed 18-file tolerance.
+  Date/Author: 2026-07-28 13:03Z / Codex.
 
 ## Outcomes & retrospective
 
@@ -298,3 +323,7 @@ within the assessed findings.
 2026-07-28 12:47Z: Added the red-test evidence and recorded the two behaviours
 that already pass. The remaining work is unchanged; production implementation
 must turn the 18 expected failures green without weakening their contracts.
+
+2026-07-28 13:03Z: Recorded the green runtime, packaging, frontend,
+documentation, and CI milestones. Twenty-two contract tests now pass; only the
+independent full-gate report and final completion audit remain.

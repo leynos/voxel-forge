@@ -32,9 +32,10 @@ def import_vox(path: str | Path) -> VoxelScene:
     offset = 8  # magic + version
     palette: list[tuple[int, int, int]] = [(0, 0, 0)] * 256
     voxels: list[tuple[int, int, int, int]] = []
+    has_rgba = False
 
     def parse_at(pos: int, depth: int = 0) -> int:
-        nonlocal palette, voxels
+        nonlocal has_rgba, palette, voxels
         while pos < len(data):
             chunk_id = data[pos : pos + 4]
             if len(chunk_id) < 4:
@@ -46,9 +47,12 @@ def import_vox(path: str | Path) -> VoxelScene:
             child_start = content_start + content_size
 
             if chunk_id == b"RGBA":
-                for i in range(256):
-                    r, g, b, _a = struct.unpack_from("<4B", content, i * 4)
-                    palette[i] = (r, g, b)
+                if len(content) < 1024:
+                    raise ValueError("RGBA chunk is truncated")
+                has_rgba = True
+                for entry_index in range(255):
+                    r, g, b, _a = struct.unpack_from("<4B", content, entry_index * 4)
+                    palette[entry_index + 1] = (r, g, b)
             elif chunk_id == b"XYZI":
                 count = struct.unpack_from("<I", content, 0)[0]
                 for i in range(count):
@@ -66,9 +70,9 @@ def import_vox(path: str | Path) -> VoxelScene:
 
     parse_at(offset)
 
-    for i, rgb in enumerate(palette):
-        if rgb != (0, 0, 0) or i == 0:
-            scene.palette[str(i)] = rgb
+    if has_rgba:
+        for colour_index in range(1, 256):
+            scene.palette[str(colour_index)] = palette[colour_index]
 
     layer = scene.layers[0] if scene.layers else scene.add_layer("Layer 1")
     for x, y, z, ci in voxels:
@@ -81,51 +85,48 @@ def export_vox(scene: VoxelScene, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    palette = [(0, 0, 0, 0)] * 256
-    for key, rgb in scene.palette.items():
-        try:
-            idx = int(key)
-            if 0 <= idx < 256:
-                palette[idx] = (*rgb, 255)
-        except ValueError:
-            pass
-
     blocks = scene.all_blocks()
     if blocks:
         min_x = min(b[0] for b in blocks)
         min_y = min(b[1] for b in blocks)
         min_z = min(b[2] for b in blocks)
+        size_x = max(b[0] for b in blocks) - min_x + 1
+        size_y = max(b[1] for b in blocks) - min_y + 1
+        size_z = max(b[2] for b in blocks) - min_z + 1
     else:
         min_x = min_y = min_z = 0
+        size_x = size_y = size_z = 1
 
-    xyzi_content = struct.pack("<I", len(blocks))
-    for x, y, z, color, _layer in blocks:
-        try:
-            ci = int(color)
-        except ValueError:
-            ci = 1
-        sx = (x - min_x) & 255
-        sy = (y - min_y) & 255
-        sz = (z - min_z) & 255
-        xyzi_content += struct.pack("<4B", sx, sy, sz, ci & 255)
+    if any(size > 256 for size in (size_x, size_y, size_z)):
+        raise ValueError("VOX version 150 supports a maximum size of 256 voxels on each axis")
+
+    palette = [(0, 0, 0, 0)] * 256
+    colour_indices: dict[tuple[int, int, int], int] = {}
+    encoded_blocks: list[tuple[int, int, int, int]] = []
+    for x, y, z, colour, _layer in blocks:
+        rgb = scene.resolve_color(colour)
+        colour_index = colour_indices.get(rgb)
+        if colour_index is None:
+            colour_index = len(colour_indices) + 1
+            if colour_index > 255:
+                raise ValueError("VOX version 150 supports at most 255 colours")
+            colour_indices[rgb] = colour_index
+            palette[colour_index - 1] = (*rgb, 255)
+        encoded_blocks.append((x - min_x, y - min_y, z - min_z, colour_index))
+
+    size_content = struct.pack("<III", size_x, size_y, size_z)
+    xyzi_content = struct.pack("<I", len(encoded_blocks))
+    xyzi_content += b"".join(struct.pack("<4B", *block) for block in encoded_blocks)
 
     rgba_content = b"".join(struct.pack("<4B", *p) for p in palette)
 
     def pack_chunk(chunk_id: bytes, content: bytes) -> bytes:
-        return (
-            chunk_id
-            + struct.pack("<I", len(content))
-            + struct.pack("<I", 0)
-            + content
-        )
+        return chunk_id + struct.pack("<I", len(content)) + struct.pack("<I", 0) + content
 
-    main_children = pack_chunk(b"RGBA", rgba_content) + pack_chunk(b"XYZI", xyzi_content)
-    main_chunk = (
-        b"MAIN"
-        + struct.pack("<I", 0)
-        + struct.pack("<I", len(main_children))
-        + main_children
+    main_children = (
+        pack_chunk(b"SIZE", size_content) + pack_chunk(b"XYZI", xyzi_content) + pack_chunk(b"RGBA", rgba_content)
     )
+    main_chunk = b"MAIN" + struct.pack("<I", 0) + struct.pack("<I", len(main_children)) + main_children
 
     out = VOX_MAGIC + struct.pack("<I", VERSION) + main_chunk
     path.write_bytes(out)
@@ -144,15 +145,9 @@ def export_obj(scene: VoxelScene, path: str | Path, merge_boxes: bool = True) ->
     if merge_boxes:
         boxes = merge_scene(scene)
         lines.append(f"# merged: {len(boxes)} boxes from {sum(b.volume for b in boxes)} voxels")
-        items = [
-            (b.x1, b.y1, b.z1, b.x2, b.y2, b.z2, b.color, "merged")
-            for b in boxes
-        ]
+        items = [(b.x1, b.y1, b.z1, b.x2, b.y2, b.z2, b.color, "merged") for b in boxes]
     else:
-        items = [
-            (x, y, z, x, y, z, color, layer)
-            for x, y, z, color, layer in scene.all_blocks()
-        ]
+        items = [(x, y, z, x, y, z, color, layer) for x, y, z, color, layer in scene.all_blocks()]
 
     for x1, y1, z1, x2, y2, z2, color, tag in items:
         rgb = scene.resolve_color(color)

@@ -7,10 +7,11 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from .bridge import BRIDGE_HTTP_PORT, notify_scene_update, start_bridge_background, store as bridge_store
-from .model import DEFAULT_PALETTE, SceneStore, VoxelScene
+from .bridge import BRIDGE_HTTP_PORT, notify_scene_update, start_bridge_background
+from .bridge import store as bridge_store
 from .export_roblox import to_luau_merged, write_luau_file
 from .mesh_merge import merge_stats
+from .model import DEFAULT_PALETTE, SceneStore, VoxelScene
 from .preview import summary
 from .procedural import build_chibi_bear, build_tree
 from .vox_io import export_obj, export_vox, import_vox
@@ -27,6 +28,7 @@ mcp = FastMCP(
 )
 
 store = SceneStore()
+MAX_TOOL_VOXELS = 100_000
 
 
 def _ensure_bridge() -> None:
@@ -46,6 +48,8 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     data = json.loads(blocks_json)
     if not isinstance(data, list):
         raise ValueError("blocks ต้องเป็น JSON array")
+    if len(data) > MAX_TOOL_VOXELS:
+        raise ValueError(f"place_many supports at most {MAX_TOOL_VOXELS:,} voxels per call")
     out: list[tuple[int, int, int, str]] = []
     for row in data:
         if not isinstance(row, (list, tuple)) or len(row) < 4:
@@ -101,7 +105,7 @@ def voxelforge_set_active_layer(index: int, scene_name: str = "") -> str:
     """ตั้ง layer ที่ใช้งาน (index เริ่ม 0)."""
     scene = store.get(scene_name or None)
     if index < 0 or index >= len(scene.layers):
-        raise ValueError(f"layer index ต้องอยู่ระหว่าง 0..{len(scene.layers)-1}")
+        raise ValueError(f"layer index ต้องอยู่ระหว่าง 0..{len(scene.layers) - 1}")
     scene.active_layer = index
     _sync_bridge(scene)
     return f"active layer = {scene.layers[index].name}"
@@ -145,6 +149,8 @@ def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     """
     scene = store.get(scene_name or None)
     blocks = _parse_blocks_json(blocks_json)
+    for _x, _y, _z, color in blocks:
+        scene.resolve_color(color)
     for x, y, z, color in blocks:
         scene.place(x, y, z, color)
     _sync_bridge(scene)
@@ -164,6 +170,9 @@ def voxelforge_fill_box(
 ) -> str:
     """เติ่มกล่อง 3D (เหมาะสร้างฐาน/ตัวบ้าน/กำแพง)."""
     scene = store.get(scene_name or None)
+    volume = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1) * (abs(z2 - z1) + 1)
+    if volume > MAX_TOOL_VOXELS:
+        raise ValueError(f"fill_box supports at most {MAX_TOOL_VOXELS:,} voxels per call")
     n = scene.fill_box(x1, x2, y1, y2, z1, z2, color)
     _sync_bridge(scene)
     return f"เติม {n} voxel สี '{color}' — รวม {scene.block_count()} บล็อก"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import threading
 from typing import Any
 
@@ -12,19 +13,25 @@ from .model import SceneStore, VoxelScene
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8765
 BRIDGE_HTTP_PORT = 8766
+ALLOWED_EDITOR_ORIGINS = frozenset({"http://127.0.0.1:5173", "http://localhost:5173"})
+MAX_HTTP_BODY_BYTES = 10_000_000
 
 store = SceneStore()
 _clients: set[Any] = set()
 _lock = threading.Lock()
+_bridge_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _broadcast(payload: dict[str, Any]) -> None:
-    """Schedule broadcast on the running event loop."""
+    """Submit a broadcast to the bridge event loop from any thread."""
+    loop = _bridge_loop
+    if loop is None:
+        return
+    coroutine = _async_broadcast(payload)
     try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(_async_broadcast(payload))
+        asyncio.run_coroutine_threadsafe(coroutine, loop)
     except RuntimeError:
-        pass
+        coroutine.close()
 
 
 async def _async_broadcast(payload: dict[str, Any]) -> None:
@@ -79,6 +86,15 @@ async def _ws_handler(websocket) -> None:
                     msg.get("layer_index"),
                 )
                 await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
+            elif msg.get("type") == "editor_remove":
+                scene = store.get(msg.get("scene_name"))
+                scene.remove(
+                    int(msg["x"]),
+                    int(msg["y"]),
+                    int(msg["z"]),
+                    msg.get("layer_index"),
+                )
+                await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
     finally:
         _clients.discard(websocket)
 
@@ -91,20 +107,53 @@ async def _http_handler(reader, writer) -> None:
     method = first.split(" ")[0] if first else "GET"
     path = first.split(" ")[1] if " " in first else "/"
     content_length = 0
+    origin: str | None = None
     for line in lines[1:]:
         if line.lower().startswith("content-length:"):
             content_length = int(line.split(":", 1)[1].strip())
-            break
+        elif line.lower().startswith("origin:"):
+            origin = line.split(":", 1)[1].strip()
 
-    payload_bytes = await reader.readexactly(content_length) if content_length > 0 else b""
+    allowed_origin = origin is None or origin in ALLOWED_EDITOR_ORIGINS
+    cors = b"Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+    if origin in ALLOWED_EDITOR_ORIGINS:
+        cors += f"Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\n".encode()
+
+    if not allowed_origin:
+        body = json.dumps({"error": "origin is not allowed"}).encode()
+        writer.write(
+            b"HTTP/1.1 403 Forbidden\r\n"
+            + b"Content-Type: application/json\r\n"
+            + f"Content-Length: {len(body)}\r\n\r\n".encode()
+            + body
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        return
+
+    if content_length < 0 or content_length > MAX_HTTP_BODY_BYTES:
+        body = json.dumps({"error": "request body is too large"}).encode()
+        writer.write(
+            b"HTTP/1.1 413 Content Too Large\r\n"
+            + cors
+            + b"Content-Type: application/json\r\n"
+            + f"Content-Length: {len(body)}\r\n\r\n".encode()
+            + body
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        return
+
+    payload_bytes = await reader.readexactly(content_length) if content_length else b""
     payload = payload_bytes.decode("utf-8")
-
-    cors = b"Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
 
     if method == "OPTIONS":
         writer.write(b"HTTP/1.1 204 No Content\r\n" + cors + b"\r\n")
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
         return
 
     body = b""
@@ -132,25 +181,35 @@ async def _http_handler(reader, writer) -> None:
     else:
         body = json.dumps({"endpoints": ["GET /health", "GET /scene", "POST /scene"]}).encode()
 
-    header = (
-        status
-        + cors
-        + b"Content-Type: application/json\r\n"
-        + f"Content-Length: {len(body)}\r\n\r\n".encode()
-    )
+    header = status + cors + b"Content-Type: application/json\r\n" + f"Content-Length: {len(body)}\r\n\r\n".encode()
     writer.write(header + body)
     await writer.drain()
     writer.close()
+    await writer.wait_closed()
 
 
 async def _run_servers() -> None:
+    global _bridge_loop
+
     import websockets
 
-    ws_server = await websockets.serve(_ws_handler, BRIDGE_HOST, BRIDGE_PORT)
+    ws_server = await websockets.serve(
+        _ws_handler,
+        BRIDGE_HOST,
+        BRIDGE_PORT,
+        origins=[None, *sorted(ALLOWED_EDITOR_ORIGINS)],
+    )
     http_server = await asyncio.start_server(_http_handler, BRIDGE_HOST, BRIDGE_HTTP_PORT)
-    print(f"VoxelForge bridge: ws://{BRIDGE_HOST}:{BRIDGE_PORT}  http://{BRIDGE_HOST}:{BRIDGE_HTTP_PORT}")
-    async with ws_server, http_server:
-        await asyncio.Future()
+    _bridge_loop = asyncio.get_running_loop()
+    print(
+        f"VoxelForge bridge: ws://{BRIDGE_HOST}:{BRIDGE_PORT}  http://{BRIDGE_HOST}:{BRIDGE_HTTP_PORT}",
+        file=sys.stderr,
+    )
+    try:
+        async with ws_server, http_server:
+            await asyncio.Future()
+    finally:
+        _bridge_loop = None
 
 
 _bridge_thread: threading.Thread | None = None
@@ -158,14 +217,15 @@ _bridge_thread: threading.Thread | None = None
 
 def start_bridge_background() -> None:
     global _bridge_thread
-    if _bridge_thread and _bridge_thread.is_alive():
-        return
+    with _lock:
+        if _bridge_thread and _bridge_thread.is_alive():
+            return
 
-    def run() -> None:
-        asyncio.run(_run_servers())
+        def run() -> None:
+            asyncio.run(_run_servers())
 
-    _bridge_thread = threading.Thread(target=run, daemon=True)
-    _bridge_thread.start()
+        _bridge_thread = threading.Thread(target=run, daemon=True)
+        _bridge_thread.start()
 
 
 def main() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.Qt3DCore import Qt3DCore
 from PySide6.Qt3DExtras import Qt3DExtras
 from PySide6.Qt3DRender import Qt3DRender
-from PySide6.QtCore import QSize, QUrl
+from PySide6.QtCore import QSize
 from PySide6.QtGui import QColor, QVector3D, QWindow
 from PySide6.QtWidgets import QWidget
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,33 @@ DEFAULT_PALETTE: dict[str, tuple[int, int, int]] = {
     "7": (0, 255, 255),
     "8": (128, 128, 128),
 }
+
+_INVALID_SCENE_NAME_CHARS = frozenset('<>:"/\\|?*')
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"} | {f"COM{index}" for index in range(1, 10)} | {f"LPT{index}" for index in range(1, 10)}
+)
+
+
+def validate_scene_name(name: str) -> str:
+    """Return a safe cross-platform scene filename component."""
+    if not isinstance(name, str):
+        raise ValueError("scene name must be text")
+    if not name or name != name.strip() or len(name) > 80:
+        raise ValueError("scene name must contain 1 to 80 non-edge-whitespace characters")
+    if name in {".", ".."} or any(character in _INVALID_SCENE_NAME_CHARS for character in name):
+        raise ValueError("scene name cannot contain path or filename separators")
+    if any(ord(character) < 32 for character in name):
+        raise ValueError("scene name cannot contain control characters")
+    if name.rstrip(". ").upper() in _WINDOWS_RESERVED_NAMES or name.endswith((".", " ")):
+        raise ValueError("scene name is reserved by Windows")
+    return name
+
+
+def _validate_rgb(rgb: tuple[int, int, int] | list[int], *, field_name: str = "palette") -> tuple[int, int, int]:
+    channels = tuple(int(channel) for channel in rgb)
+    if len(channels) != 3 or any(channel < 0 or channel > 255 for channel in channels):
+        raise ValueError(f"{field_name} colours require three channels in the range 0..255")
+    return channels
 
 
 def _data_dir() -> Path:
@@ -58,26 +86,34 @@ class VoxelScene:
         return layer
 
     def set_palette_color(self, key: str, r: int, g: int, b: int) -> None:
-        self.palette[key] = (int(r) & 255, int(g) & 255, int(b) & 255)
+        self.palette[str(key)] = _validate_rgb((r, g, b))
 
     def resolve_color(self, color: str) -> tuple[int, int, int]:
         if color in self.palette:
             return self.palette[color]
         if color.startswith("#") and len(color) == 7:
-            return (
-                int(color[1:3], 16),
-                int(color[3:5], 16),
-                int(color[5:7], 16),
-            )
-        raise KeyError(f"ไม่รู้จักสี '{color}' — ใช้ key ในพาเลตหรือ #RRGGBB")
+            try:
+                return (
+                    int(color[1:3], 16),
+                    int(color[3:5], 16),
+                    int(color[5:7], 16),
+                )
+            except ValueError as exc:
+                raise ValueError(f"unknown colour '{color}'; use a palette key or #RRGGBB") from exc
+        raise ValueError(f"unknown colour '{color}'; use a palette key or #RRGGBB")
 
     def place(self, x: int, y: int, z: int, color: str = "1", layer_index: int | None = None) -> None:
-        layer = self.layers[layer_index if layer_index is not None else self.active_layer]
-        layer.blocks[(int(x), int(y), int(z))] = color
+        self.resolve_color(color)
+        index = layer_index if layer_index is not None else self.active_layer
+        if index < 0 or index >= len(self.layers):
+            raise ValueError(f"layer_index must be between 0 and {len(self.layers) - 1}")
+        self.layers[index].blocks[(int(x), int(y), int(z))] = color
 
     def remove(self, x: int, y: int, z: int, layer_index: int | None = None) -> bool:
-        layer = self.layers[layer_index if layer_index is not None else self.active_layer]
-        return layer.blocks.pop((int(x), int(y), int(z)), None) is not None
+        index = layer_index if layer_index is not None else self.active_layer
+        if index < 0 or index >= len(self.layers):
+            raise ValueError(f"layer_index must be between 0 and {len(self.layers) - 1}")
+        return self.layers[index].blocks.pop((int(x), int(y), int(z)), None) is not None
 
     def fill_box(
         self,
@@ -152,38 +188,60 @@ class VoxelScene:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VoxelScene:
+        if not isinstance(data, dict):
+            raise ValueError("scene must be a JSON object")
+        name = validate_scene_name(str(data.get("name", "Unnamed")))
+        active_layer = int(data.get("active_layer", 0))
+        voxel_size = float(data.get("voxel_size", 1.0))
+        if not math.isfinite(voxel_size) or not 0.05 <= voxel_size <= 2.0:
+            raise ValueError("voxel_size must be a finite number between 0.05 and 2.0")
         scene = cls(
-            name=str(data.get("name", "Unnamed")),
-            active_layer=int(data.get("active_layer", 0)),
-            voxel_size=float(data.get("voxel_size", 1.0)),
+            name=name,
+            active_layer=active_layer,
+            voxel_size=voxel_size,
         )
         scene.layers.clear()
         pal = data.get("palette") or {}
+        if not isinstance(pal, dict):
+            raise ValueError("palette must be a JSON object")
         for k, v in pal.items():
-            if isinstance(v, (list, tuple)) and len(v) == 3:
-                scene.palette[str(k)] = (int(v[0]), int(v[1]), int(v[2]))
-        for layer_data in data.get("layers", []):
+            if not isinstance(v, (list, tuple)) or len(v) != 3:
+                raise ValueError(f"palette colour {k!r} must contain three channels")
+            scene.palette[str(k)] = _validate_rgb(v)
+        layers_data = data.get("layers", [])
+        if not isinstance(layers_data, list):
+            raise ValueError("layers must be a JSON array")
+        for layer_data in layers_data:
+            if not isinstance(layer_data, dict):
+                raise ValueError("each layer must be a JSON object")
             layer = VoxelLayer(
                 name=str(layer_data.get("name", "Layer")),
                 visible=bool(layer_data.get("visible", True)),
             )
-            for row in layer_data.get("blocks", []):
-                if len(row) >= 4:
-                    layer.blocks[(int(row[0]), int(row[1]), int(row[2]))] = str(row[3])
+            blocks = layer_data.get("blocks", [])
+            if not isinstance(blocks, list):
+                raise ValueError("layer blocks must be a JSON array")
+            for row in blocks:
+                if not isinstance(row, (list, tuple)) or len(row) != 4:
+                    raise ValueError("each block must be [x, y, z, colour]")
+                colour = str(row[3])
+                scene.resolve_color(colour)
+                layer.blocks[(int(row[0]), int(row[1]), int(row[2]))] = colour
             scene.layers.append(layer)
         if not scene.layers:
             scene.layers.append(VoxelLayer(name="Layer 1"))
-        scene.active_layer = min(scene.active_layer, len(scene.layers) - 1)
+        if active_layer < 0 or active_layer >= len(scene.layers):
+            raise ValueError(f"active_layer must be between 0 and {len(scene.layers) - 1}")
         return scene
 
     def save(self) -> Path:
-        path = _data_dir() / f"{self.name}.json"
+        path = _data_dir() / f"{validate_scene_name(self.name)}.json"
         path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
     @classmethod
     def load(cls, name: str) -> VoxelScene:
-        path = _data_dir() / f"{name}.json"
+        path = _data_dir() / f"{validate_scene_name(name)}.json"
         if not path.exists():
             raise FileNotFoundError(f"ไม่พบ scene '{name}' ที่ {path}")
         return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
@@ -201,9 +259,9 @@ class SceneStore:
         self._current: str | None = None
 
     def create(self, name: str) -> VoxelScene:
-        scene = VoxelScene(name=name)
-        self._scenes[name] = scene
-        self._current = name
+        scene = VoxelScene(name=validate_scene_name(name))
+        self._scenes[scene.name] = scene
+        self._current = scene.name
         return scene
 
     def get(self, name: str | None = None) -> VoxelScene:

@@ -82,13 +82,7 @@ def build_tree(name: str = "tree", resolution: int = 4) -> VoxelScene:
                 dist_side = math.sqrt(dx2 * dx2 + dy * dy + dz * dz)
                 dist = min(dist_main, dist_side * 1.05)
 
-                noise = (
-                    math.sin(x * 0.43 + y * 0.11)
-                    * math.cos(z * 0.39 + y * 0.07)
-                    * math.sin(y * 0.31)
-                    * r
-                    * 0.65
-                )
+                noise = math.sin(x * 0.43 + y * 0.11) * math.cos(z * 0.39 + y * 0.07) * math.sin(y * 0.31) * r * 0.65
 
                 if dist + noise > radius:
                     continue
@@ -110,89 +104,12 @@ def build_chibi_bear(name: str = "chibi_bear", resolution: int = 3) -> VoxelScen
     scene = VoxelScene(name=name)
     scene.voxel_size = vs
 
-    scene.set_palette_color("F", 160, 105, 55)
-    scene.set_palette_color("D", 110, 70, 35)
-    scene.set_palette_color("L", 250, 230, 200)
-    scene.set_palette_color("K", 25, 25, 30)
-    scene.set_palette_color("P", 255, 170, 185)
-    scene.set_palette_color("S", 90, 60, 40)
-
-    def ellipsoid(x: int, y: int, z: int, cx: float, cy: float, cz: float, rx: float, ry: float, rz: float) -> bool:
-        dx = (x - cx) / rx
-        dy = (y - cy) / ry
-        dz = (z - cz) / rz
-        return dx * dx + dy * dy + dz * dz <= 1.0
-
-    span = 6 * r
-    head_y = 9 * r
-    body_y = 4 * r
-
-    scene.fill_box(-3 * r, 3 * r, 0, 0, -3 * r, 3 * r, "S")
-    scene.fill_box(-2 * r, 2 * r, 1, 1, -2 * r, 2 * r, "D")
-
-    for x in range(-span, span + 1):
-        for y in range(2, 14 * r):
-            for z in range(-span, span + 1):
-                in_body = ellipsoid(x, y, z, 0, body_y, 0, 2.8 * r, 2.4 * r, 2.5 * r)
-                in_head = ellipsoid(x, y, z, 0, head_y, 0, 3.6 * r, 3.2 * r, 3.4 * r)
-                in_arm_l = ellipsoid(x, y, z, -3.2 * r, body_y + 0.5 * r, 0, 1.2 * r, 1.6 * r, 1.1 * r)
-                in_arm_r = ellipsoid(x, y, z, 3.2 * r, body_y + 0.5 * r, 0, 1.2 * r, 1.6 * r, 1.1 * r)
-                in_leg_l = ellipsoid(x, y, z, -1.3 * r, 2.2 * r, 0.3 * r, 1.1 * r, 1.5 * r, 1.2 * r)
-                in_leg_r = ellipsoid(x, y, z, 1.3 * r, 2.2 * r, 0.3 * r, 1.1 * r, 1.5 * r, 1.2 * r)
-
-                if not (in_body or in_head or in_arm_l or in_arm_r or in_leg_l or in_leg_r):
-                    continue
-
-                color = "F"
-                if in_body and not in_head and abs(x) <= r and abs(z) <= 1.5 * r and y <= body_y + r:
-                    color = "L"
-                scene.place(x, y, z, color)
-
-    for ex, ez in [(-2.4 * r, -0.5 * r), (2.4 * r, -0.5 * r)]:
-        for x in range(-span, span + 1):
-            for y in range(10 * r, 13 * r):
-                for z in range(-span, span + 1):
-                    if ellipsoid(x, y, z, ex, head_y + 2.2 * r, ez, 1.3 * r, 1.1 * r, 1.2 * r):
-                        inner = ellipsoid(x, y, z, ex, head_y + 2.0 * r, ez, 0.7 * r, 0.6 * r, 0.65 * r)
-                        scene.place(x, y, z, "P" if inner else "D")
-
-    for x in range(-span, span + 1):
-        for y in range(7 * r, 10 * r):
-            for z in range(-span, span + 1):
-                if ellipsoid(x, y, z, 0, head_y - 1.2 * r, 2.8 * r, 1.8 * r, 1.4 * r, 1.5 * r):
-                    scene.place(x, y, z, "L")
-
-    for ex, ey_off, ez in [(-1.3 * r, 0.8 * r, 2.5 * r), (1.3 * r, 0.8 * r, 2.5 * r)]:
-        for dx in range(-1, 2):
-            for dy in range(-1, 2):
-                for dz in range(-1, 2):
-                    if dx * dx + dy * dy + dz * dz <= 2:
-                        scene.place(int(ex + dx), int(head_y + ey_off + dy), int(ez + dz), "K")
-
-    for x in range(-1, 2):
-        for y in range(-1, 2):
-            for z in range(0, 3):
-                scene.place(x, int(head_y - 0.5 * r + y), int(3.5 * r + z), "K")
-
-    for x in range(-1, 2):
-        scene.place(x, int(head_y - 1.8 * r), int(3.2 * r), "D")
-
-    return scene
-
-
-def build_chibi_bear(name: str = "chibi_bear", resolution: int = 3) -> VoxelScene:
-    """รูปปั้นหมี chibi — หัวใหญ่ ตัวกลม ยืนบนฐาน."""
-    r = max(2, min(6, int(resolution)))
-    vs = 1.0 / r
-    scene = VoxelScene(name=name)
-    scene.voxel_size = vs
-
-    scene.set_palette_color("F", 160, 105, 55)   # fur
-    scene.set_palette_color("D", 110, 70, 35)   # dark fur / outline
-    scene.set_palette_color("L", 250, 230, 200) # snout + belly
-    scene.set_palette_color("K", 25, 25, 30)    # eyes + nose
-    scene.set_palette_color("P", 255, 170, 185) # inner ear
-    scene.set_palette_color("S", 90, 60, 40)    # wooden base
+    scene.set_palette_color("F", 160, 105, 55)  # fur
+    scene.set_palette_color("D", 110, 70, 35)  # dark fur / outline
+    scene.set_palette_color("L", 250, 230, 200)  # snout + belly
+    scene.set_palette_color("K", 25, 25, 30)  # eyes + nose
+    scene.set_palette_color("P", 255, 170, 185)  # inner ear
+    scene.set_palette_color("S", 90, 60, 40)  # wooden base
 
     def ellipsoid(x: int, y: int, z: int, cx: float, cy: float, cz: float, rx: float, ry: float, rz: float) -> bool:
         dx = (x - cx) / rx
