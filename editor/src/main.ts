@@ -274,11 +274,16 @@ canvas.addEventListener("mousedown", (e) => {
   } else if (e.button === 2) {
     const hit = pickVoxel();
     if (hit && sceneData) {
-      const layer = sceneData.layers[sceneData.active_layer];
-      layer.blocks = layer.blocks.filter(
-        (b) => !(b[0] === hit.x && b[1] === hit.y && b[2] === hit.z)
+      ws?.send(
+        JSON.stringify({
+          type: "editor_remove",
+          x: hit.x,
+          y: hit.y,
+          z: hit.z,
+          scene_name: sceneData.name,
+          layer_index: sceneData.active_layer,
+        })
       );
-      rebuildVoxels();
     }
   }
 });
