@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
 proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -108,8 +108,12 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   and dependency locking; the corresponding local gates pass.
 - [x] (2026-07-28 13:03Z) Added a sequential CI workflow containing the same
   deterministic Python and frontend gates.
-- [ ] Run all acceptance gates through the sanctioned gate runner, inspect any
-  cited logs, and complete the requirement-by-requirement audit.
+- [x] (2026-07-28 13:10Z) Ran all 14 acceptance gates sequentially through the
+  sanctioned gate runner against committed `HEAD`; 23 tests and every package,
+  launcher, frontend, audit, documentation, and workflow gate pass.
+- [x] (2026-07-28 13:10Z) Completed the requirement audit: 15 non-lock files and
+  754 net non-lock lines changed, within the fixed limits of 18 and 900; the
+  worktree is clean and no generated tracked diff remains.
 
 ## Surprises & discoveries
 
@@ -173,7 +177,24 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
 
 ## Outcomes & retrospective
 
-Implementation is in progress. No production source has been changed yet.
+VoxelForge now supports the complete basic agent workflow described in the
+purpose: the documented launcher starts the packaged MCP server with clean
+stdout; bounded scene mutations validate before changing state; saves cannot
+escape the scene directory; connected local editors receive MCP changes and
+persist removals; and VOX version 150 output contains correctly indexed
+`SIZE`, `XYZI`, and `RGBA` chunks.
+
+The final independent gate run passed 14 sequential gates, including 23 Python
+contracts, wheel construction and entry-point inspection, two zero-stdout MCP
+launch probes, strict TypeScript checking, the Vite production build, an npm
+audit with zero vulnerabilities, Markdown and Mermaid validation, and
+`actionlint`. Five implementation commits plus this closing plan commit preserve
+the red-green evidence and coherent delivery stages.
+
+The only tooling gap was post-edit Memtrace replay: its local MemDB endpoint
+exited after the initial index. Initial graph context and impact analysis still
+governed the high-risk edits, and deterministic tests plus the clean-tree gate
+run supplied completion evidence. No product work remains within this plan.
 
 ## Context and orientation
 
@@ -327,3 +348,8 @@ must turn the 18 expected failures green without weakening their contracts.
 2026-07-28 13:03Z: Recorded the green runtime, packaging, frontend,
 documentation, and CI milestones. Twenty-two contract tests now pass; only the
 independent full-gate report and final completion audit remain.
+
+2026-07-28 13:10Z: Marked the plan complete after the clean committed tree
+passed all 14 gates with 23 tests, zero launcher stdout bytes, zero frontend
+vulnerabilities, valid workflow syntax, and no generated tracked changes. The
+scope audit also proved both fixed tolerances were respected.
