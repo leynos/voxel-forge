@@ -111,9 +111,12 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
 - [x] (2026-07-28 13:10Z) Ran all 14 acceptance gates sequentially through the
   sanctioned gate runner against committed `HEAD`; 23 tests and every package,
   launcher, frontend, audit, documentation, and workflow gate pass.
-- [x] (2026-07-28 13:10Z) Completed the requirement audit: 15 non-lock files and
-  781 net non-lock lines changed, within the fixed limits of 18 and 900; the
-  worktree is clean and no generated tracked diff remains.
+- [x] (2026-07-28 13:10Z) Completed the requirement audit: 16 non-lock files and
+  804 net non-lock lines changed, within the fixed limits of 18 files and 900
+  lines; the worktree is clean and no generated tracked diff remains.
+- [x] (2026-07-28 13:16Z) Added the supported `Makefile` build driver and proved
+  its `check-fmt`, `lint`, `typecheck`, `markdownlint`, and `nixie` targets pass
+  sequentially, bringing the final scope to 16 non-lock files.
 
 ## Surprises & discoveries
 
@@ -143,6 +146,12 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   Evidence: failure tracebacks pointed into `.venv/site-packages` after source
   edits, and all focused tests passed once pytest's `pythonpath` was explicit.
   Impact: `pyproject.toml` now pins test discovery to `src/`.
+- Observation: the post-turn hook requires a supported repository build driver
+  even when the underlying commands pass independently.
+  Evidence: the hook rejected the clean implementation because neither a
+  `Makefile` nor a `Netsukefile` exposed its five requested targets.
+  Impact: the repository now provides a minimal Makefile as the stable gate
+  entry point.
 
 ## Decision log
 
@@ -174,6 +183,11 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   Rationale: preserve all 22 behavioural contracts and repository-wide lint
   coverage while keeping the final diff within the fixed 18-file tolerance.
   Date/Author: 2026-07-28 13:03Z / Codex.
+- Decision: map the hook's target names directly to the already-proven commands
+  instead of introducing another task runner.
+  Rationale: GNU Make is present in the required environment and adds no new
+  dependency or behavioural scope.
+  Date/Author: 2026-07-28 13:16Z / Codex.
 
 ## Outcomes & retrospective
 
@@ -195,6 +209,8 @@ The only tooling gap was post-edit Memtrace replay: its local MemDB endpoint
 exited after the initial index. Initial graph context and impact analysis still
 governed the high-risk edits, and deterministic tests plus the clean-tree gate
 run supplied completion evidence. No product work remains within this plan.
+The post-turn build-driver failure was subsequently closed by the Makefile;
+every target requested by that integration hook passes.
 
 ## Context and orientation
 
@@ -320,6 +336,10 @@ Baseline evidence is stored in `/tmp` with filenames beginning
 `npm-audit-voxel-forge-main`. These logs are diagnostic evidence only and are
 not committed.
 
+`Makefile` is the supported local build driver. Its named targets are the
+canonical entry points for formatting, linting, TypeScript checking, Markdown
+linting, and Mermaid validation.
+
 ## Interfaces and dependencies
 
 Keep every existing `voxelforge_*` MCP tool. Add internal constants in
@@ -352,5 +372,8 @@ independent full-gate report and final completion audit remain.
 2026-07-28 13:10Z: Marked the plan complete after the clean committed tree
 passed all 14 gates with 23 tests, zero launcher stdout bytes, zero frontend
 vulnerabilities, valid workflow syntax, and no generated tracked changes. The
-scope audit also proved both fixed tolerances were respected. Corrected the net
-line count to 781 after including this closing retrospective itself.
+scope audit also proved both fixed tolerances were respected.
+
+2026-07-28 13:16Z: Added the Makefile required by the post-turn build-driver
+hook, ran all five requested targets successfully, and updated the final scope
+measurement without changing the product implementation.
