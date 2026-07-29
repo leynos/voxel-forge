@@ -19,24 +19,47 @@
 | Web Editor | Three.js 3D — คลิกวาง/ลบ voxel |
 | MCP | เชื่อม Cursor, Claude, client อื่น ๆ |
 
-## ติดตั้ง
+## Installation
 
-```powershell
-cd C:\Users\thana\Desktop\voxel-forge
-uv sync
-cd editor
-npm install
+VoxelForge installs as a standard Python tool on Linux, macOS, and Windows.
+The recommended route is [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install git+https://github.com/leynos/voxel-forge
 ```
 
-`uv sync` จะติดตั้งคำสั่ง `voxel-forge-mcp` ใน environment ของโปรเจกต์
+This puts three console scripts on your `PATH`:
 
-## เชื่อม MCP
+| Command | Purpose |
+| --- | --- |
+| `voxel-forge-mcp` | MCP server over stdio (primary interface) |
+| `voxel-forge-bridge` | Standalone WebSocket/HTTP bridge for the web editor |
+| `voxel-forge` | Native desktop app (requires the `desktop` extra) |
+
+For the desktop app, install with the extra:
+
+```bash
+uv tool install 'voxel-forge[desktop] @ git+https://github.com/leynos/voxel-forge'
+```
+
+Working from a checkout instead:
+
+```bash
+git clone https://github.com/leynos/voxel-forge
+cd voxel-forge
+uv sync            # add --extra desktop for the desktop app
+uv run voxel-forge-mcp
+```
+
+## Connecting an MCP client
+
+Point your client at the installed `voxel-forge-mcp` command.
 
 ### Cursor (`~/.cursor/mcp.json`)
 
 ```json
 "VoxelForge": {
-  "command": "C:\\Users\\thana\\Desktop\\voxel-forge\\run-mcp.bat",
+  "command": "voxel-forge-mcp",
   "args": []
 }
 ```
@@ -47,39 +70,38 @@ npm install
 {
   "mcpServers": {
     "VoxelForge": {
-      "command": "C:\\Users\\thana\\Desktop\\voxel-forge\\run-mcp.bat",
+      "command": "voxel-forge-mcp",
       "args": []
     }
   }
 }
 ```
 
-`run-mcp.bat` เป็น wrapper สำหรับ Windows ที่เรียก entry point ที่ติดตั้งแล้ว
-ด้วย `uv run voxel-forge-mcp` ไม่ได้รันไฟล์ Python ใน `src/` โดยตรง หากต้องการ
-ทดสอบจาก PowerShell ให้รันคำสั่งนี้จากโฟลเดอร์โปรเจกต์:
+On Windows, the `run-mcp.bat` wrapper remains available for convenience from
+a checkout; it invokes the same installed entry point via
+`uv run voxel-forge-mcp` rather than running files in `src/` directly.
 
-```powershell
-uv run voxel-forge-mcp
-```
-
-รีสตาร์ท client แล้วตรวจ MCP panel ว่า `VoxelForge` เป็นสีเขียว
+Restart the client and check its MCP panel shows `VoxelForge` as connected.
 
 ## Desktop App (ไม่ใช้เบราว์เซอร์)
 
-### รันโปรแกรม
+### Running
 
-```powershell
-cd C:\Users\thana\Desktop\voxel-forge
-.\run-desktop.bat
+After installing with the `desktop` extra (see [Installation](#installation)):
+
+```bash
+voxel-forge
 ```
 
-หรือหลัง `uv sync --extra desktop`:
+Or from a checkout after `uv sync --extra desktop`:
 
-```powershell
+```bash
 uv run voxel-forge
 ```
 
-### Build เป็น .exe
+On Windows, `run-desktop.bat` wraps the same command.
+
+### Build เป็น .exe (Windows)
 
 ```powershell
 .\build-desktop.bat
@@ -96,15 +118,19 @@ Python/เบราว์เซอร์
 - 3D view native (Qt3D) — หมุนกล้องด้วยเมาส์กลาง
 
 MCP สำหรับ AI ยังใช้แยก (`run-mcp.bat`) — สร้าง scene ผ่าน AI แล้วเปิดใน
-Desktop จาก `%USERPROFILE%\.voxel-forge\scenes\`
+Desktop จาก `~/.voxel-forge/scenes/` (Windows: `%USERPROFILE%\.voxel-forge\scenes\`)
 
 ---
 
 ## Web Editor (ทางเลือก)
 
-```powershell
-.\run-editor.bat
+```bash
+cd editor
+npm install
+npm run dev
 ```
+
+On Windows, `run-editor.bat` wraps the same commands.
 
 เปิด `http://127.0.0.1:5173` บนเครื่องเดียวกัน โดย editor จะ sync สองทางกับ MCP
 ผ่าน WebSocket ที่ `ws://127.0.0.1:8765` การสร้างหรือแก้ scene ผ่าน MCP จะส่งไป
@@ -135,7 +161,7 @@ voxels ต่อการเรียกหนึ่งครั้ง** หา�
 Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 
 ```text
-%USERPROFILE%\.voxel-forge\exports\my_house.vox
+~/.voxel-forge/exports/my_house.vox
 ```
 
 ## เครื่องมือ MCP หลัก
@@ -156,8 +182,8 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 
 ## โฟลเดอร์ข้อมูล
 
-- Scenes: `%USERPROFILE%\.voxel-forge\scenes\`
-- Exports: `%USERPROFILE%\.voxel-forge\exports\`
+- Scenes: `~/.voxel-forge/scenes/`
+- Exports: `~/.voxel-forge/exports/`
 
 ## สถาปัตยกรรม
 
