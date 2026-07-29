@@ -29,6 +29,7 @@ jobs:
         run: >-
           uv run ruff format --check
           src/voxel_forge/bridge.py
+          src/voxel_forge/desktop/launch.py
           src/voxel_forge/desktop/viewport.py
           src/voxel_forge/model.py
           src/voxel_forge/procedural.py
