@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-voxel-forge = "voxel_forge.desktop.app:main"
+voxel-forge = "voxel_forge.desktop.launch:main"
 voxel-forge-mcp = "voxel_forge.server:main"
 voxel-forge-bridge = "voxel_forge.bridge:main"
 

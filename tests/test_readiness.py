@@ -262,6 +262,33 @@ def test_bridge_diagnostic_uses_stderr(monkeypatch: pytest.MonkeyPatch, capsys: 
     assert "VoxelForge bridge:" in captured.err, "the bridge must announce its ports on stderr"
 
 
+def test_desktop_entry_point_degrades_without_pyside6(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without the `desktop` extra, `voxel-forge` must explain, not traceback."""
+    monkeypatch.setitem(sys.modules, "PySide6", None)
+    monkeypatch.setitem(sys.modules, "PySide6.QtCore", None)
+    monkeypatch.delitem(sys.modules, "voxel_forge.desktop.app", raising=False)
+    from voxel_forge.desktop import launch
+
+    exit_code = launch.main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "desktop" in captured.err
+    assert "uv" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_desktop_entry_point_reraises_unrelated_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "voxel_forge.export_roblox", None)
+    monkeypatch.delitem(sys.modules, "voxel_forge.desktop.app", raising=False)
+    from voxel_forge.desktop import launch
+
+    with pytest.raises(ImportError, match="export_roblox"):
+        launch.main()
+
+
 def test_runtime_dependencies_are_bounded_below_next_major() -> None:
     """A fresh resolution (``uv tool install``) must not select a breaking major."""
     import tomllib

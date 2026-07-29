@@ -89,7 +89,7 @@ the dependency envelope and in the platform assumptions of the launchers.
   - Success: `uv tool install git+https://github.com/leynos/voxel-forge`
     followed by `voxel-forge-mcp --help` succeeds on a machine with no
     checkout and no lockfile.
-- [ ] 1.1.2. Make the desktop entry point degrade gracefully without its
+- [x] 1.1.2. Make the desktop entry point degrade gracefully without its
   extra.
   - `voxel-forge` resolves to `voxel_forge.desktop.app:main`, but PySide6 is
     an optional `desktop` extra, so an installed tool exposes a command that

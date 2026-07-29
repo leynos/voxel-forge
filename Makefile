@@ -2,6 +2,7 @@
 
 PYTHON_FORMAT_PATHS := \
 	src/voxel_forge/bridge.py \
+	src/voxel_forge/desktop/launch.py \
 	src/voxel_forge/desktop/viewport.py \
 	src/voxel_forge/model.py \
 	src/voxel_forge/procedural.py \
