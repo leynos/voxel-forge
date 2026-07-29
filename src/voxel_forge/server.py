@@ -904,6 +904,13 @@ def voxelforge_launch_editor() -> str:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="voxel-forge-mcp",
+        description="VoxelForge MCP server (stdio transport) with an editor bridge.",
+    )
+    parser.parse_args()
     _ensure_bridge()
     mcp.run(transport="stdio")
 

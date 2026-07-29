@@ -170,6 +170,8 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 ~/.voxel-forge/exports/my_house.vox
 ```
 
+บน Windows เส้นทางนี้คือ `%USERPROFILE%\.voxel-forge\exports\my_house.vox`
+
 ## เครื่องมือ MCP หลัก
 
 | Tool | หน้าที่ |

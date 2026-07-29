@@ -298,6 +298,17 @@ def test_runtime_dependencies_are_bounded_below_next_major() -> None:
         assert "<" in requirement, f"dependency {requirement!r} has no upper bound"
 
 
+def test_mcp_entry_point_supports_help(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """`voxel-forge-mcp --help` must succeed without starting the server."""
+    monkeypatch.setattr(sys, "argv", ["voxel-forge-mcp", "--help"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        server.main()
+
+    assert excinfo.value.code == 0
+    assert "VoxelForge" in capsys.readouterr().out
+
+
 def test_readme_documents_cross_platform_installation() -> None:
     """The README must be followable on Linux without translation."""
     readme = Path("README.md").read_text(encoding="utf-8")
