@@ -79,7 +79,7 @@ rather than as a checked-out project. The packaging is already close: the
 wheel builds cleanly and declares three console scripts. The failures are in
 the dependency envelope and in the platform assumptions of the launchers.
 
-- [ ] 1.1.1. Bound the `mcp` dependency below the next major version.
+- [x] 1.1.1. Bound the `mcp` dependency below the next major version.
   - `pyproject.toml` requires `mcp>=1.9.0` with no upper bound, while
     `uv.lock` pins 1.28.1. A fresh resolution — which is exactly what
     `uv tool install` performs, because it ignores the lockfile — selects the

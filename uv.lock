@@ -970,11 +970,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "mcp", specifier = ">=1.9.0" },
+    { name = "httpx", specifier = ">=0.28.0,<1" },
+    { name = "mcp", specifier = ">=1.9.0,<2" },
     { name = "pyinstaller", marker = "extra == 'desktop'", specifier = ">=6.0" },
     { name = "pyside6", marker = "extra == 'desktop'", specifier = ">=6.6.0" },
-    { name = "websockets", specifier = ">=14.0" },
+    { name = "websockets", specifier = ">=14.0,<17" },
 ]
 provides-extras = ["desktop"]
 
