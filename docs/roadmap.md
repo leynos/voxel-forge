@@ -97,7 +97,7 @@ the dependency envelope and in the platform assumptions of the launchers.
   - Success: running `voxel-forge` without the extra prints an actionable
     message naming the extra to install, and exits non-zero without a
     traceback.
-- [ ] 1.1.3. Replace the Windows-only launchers with a documented
+- [x] 1.1.3. Replace the Windows-only launchers with a documented
   cross-platform invocation.
   - The README now documents cross-platform `uv run` invocations for the MCP
     server and the desktop app, and an npm invocation for the web editor, so

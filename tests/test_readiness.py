@@ -298,6 +298,15 @@ def test_runtime_dependencies_are_bounded_below_next_major() -> None:
         assert "<" in requirement, f"dependency {requirement!r} has no upper bound"
 
 
+def test_readme_documents_cross_platform_installation() -> None:
+    """The README must be followable on Linux without translation."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "uv tool install" in readme
+    assert "voxel-forge-mcp" in readme
+    assert "C:\\Users" not in readme, "README must not rely on user-specific absolute paths"
+
+
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:
     launcher = (REPOSITORY_ROOT / "run-mcp.bat").read_text(encoding="utf-8")
 

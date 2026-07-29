@@ -19,28 +19,48 @@
 | Web Editor | Three.js 3D — คลิกวาง/ลบ voxel |
 | MCP | เชื่อม Cursor, Claude, client อื่น ๆ |
 
-## ติดตั้ง
+## Installation
 
-รันจากโฟลเดอร์โปรเจกต์ ใช้ได้เหมือนกันบน Windows, macOS และ Linux:
+VoxelForge installs as a standard Python tool on Linux, macOS, and Windows.
+The recommended route is [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv sync
-cd editor && npm install && cd ..
+uv tool install git+https://github.com/leynos/voxel-forge
 ```
 
-`uv sync` จะติดตั้งคำสั่ง `voxel-forge-mcp` ใน environment ของโปรเจกต์
+This puts three console scripts on your `PATH`:
 
-## เชื่อม MCP
+| Command | Purpose |
+| --- | --- |
+| `voxel-forge-mcp` | MCP server over stdio (primary interface) |
+| `voxel-forge-bridge` | Standalone WebSocket/HTTP bridge for the web editor |
+| `voxel-forge` | Native desktop app (requires the `desktop` extra) |
 
-วิธีที่แนะนำคือให้ client เรียก console script ผ่าน `uv run --directory`
-ซึ่งใช้ได้ทุกแพลตฟอร์ม — แทน `/path/to/voxel-forge` ด้วยเส้นทางจริงของ repo
+For the desktop app, install with the extra:
+
+```bash
+uv tool install 'voxel-forge[desktop] @ git+https://github.com/leynos/voxel-forge'
+```
+
+Working from a checkout instead:
+
+```bash
+git clone https://github.com/leynos/voxel-forge
+cd voxel-forge
+uv sync            # add --extra desktop for the desktop app
+uv run voxel-forge-mcp
+```
+
+## Connecting an MCP client
+
+Point your client at the installed `voxel-forge-mcp` command.
 
 ### Cursor (`~/.cursor/mcp.json`)
 
 ```json
 "VoxelForge": {
-  "command": "uv",
-  "args": ["run", "--directory", "/path/to/voxel-forge", "voxel-forge-mcp"]
+  "command": "voxel-forge-mcp",
+  "args": []
 }
 ```
 
@@ -50,35 +70,42 @@ cd editor && npm install && cd ..
 {
   "mcpServers": {
     "VoxelForge": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/voxel-forge", "voxel-forge-mcp"]
+      "command": "voxel-forge-mcp",
+      "args": []
     }
   }
 }
 ```
 
-บน Windows จะใช้ `run-mcp.bat` เป็นทางลัดก็ได้ โดยตั้ง `command` เป็น
-`C:\\path\\to\\voxel-forge\\run-mcp.bat` แทน wrapper นี้เรียก entry point ที่
-ติดตั้งแล้วด้วย `uv run voxel-forge-mcp` ไม่ได้รันไฟล์ Python ใน `src/` โดยตรง
+On Windows, the `run-mcp.bat` wrapper remains available for convenience from
+a checkout; it invokes the same installed entry point via
+`uv run voxel-forge-mcp` rather than running files in `src/` directly.
 
-ทดสอบจาก terminal ได้ด้วยคำสั่งเดียวกับที่ client ใช้:
+You can run the same command the client runs, to test it from a terminal:
 
 ```bash
 uv run voxel-forge-mcp
 ```
 
-รีสตาร์ท client แล้วตรวจ MCP panel ว่า `VoxelForge` เป็นสีเขียว
+Restart the client and check its MCP panel shows `VoxelForge` as connected.
 
 ## Desktop App (ไม่ใช้เบราว์เซอร์)
 
-### รันโปรแกรม
+### Running
+
+After installing with the `desktop` extra (see [Installation](#installation)):
 
 ```bash
-uv sync --extra desktop
+voxel-forge
+```
+
+Or from a checkout after `uv sync --extra desktop`:
+
+```bash
 uv run voxel-forge
 ```
 
-บน Windows จะรัน `.\run-desktop.bat` จากโฟลเดอร์โปรเจกต์ก็ได้
+On Windows, `run-desktop.bat` wraps the same command.
 
 ### Build เป็น .exe (Windows)
 
@@ -96,18 +123,20 @@ Python/เบราว์เซอร์
 - Create → Build Tree (resolution 1–8)
 - 3D view native (Qt3D) — หมุนกล้องด้วยเมาส์กลาง
 
-MCP สำหรับ AI ยังใช้แยก (`voxel-forge-mcp`) — สร้าง scene ผ่าน AI แล้วเปิดใน
-Desktop จาก `~/.voxel-forge/scenes/`
+MCP สำหรับ AI ยังใช้แยก (`run-mcp.bat`) — สร้าง scene ผ่าน AI แล้วเปิดใน
+Desktop จาก `~/.voxel-forge/scenes/` (Windows: `%USERPROFILE%\.voxel-forge\scenes\`)
 
 ---
 
 ## Web Editor (ทางเลือก)
 
 ```bash
-cd editor && npm install && npm run dev
+cd editor
+npm install
+npm run dev
 ```
 
-หรือบน Windows ใช้ `.\run-editor.bat`
+On Windows, `run-editor.bat` wraps the same commands.
 
 เปิด `http://127.0.0.1:5173` บนเครื่องเดียวกัน โดย editor จะ sync สองทางกับ MCP
 ผ่าน WebSocket ที่ `ws://127.0.0.1:8765` การสร้างหรือแก้ scene ผ่าน MCP จะส่งไป
@@ -141,8 +170,6 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 ~/.voxel-forge/exports/my_house.vox
 ```
 
-บน Windows เส้นทางนี้คือ `%USERPROFILE%\.voxel-forge\exports\my_house.vox`
-
 ## เครื่องมือ MCP หลัก
 
 | Tool | หน้าที่ |
@@ -160,8 +187,6 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 | `voxelforge_save` / `voxelforge_load` | บันทึก/โหลด scene |
 
 ## โฟลเดอร์ข้อมูล
-
-อยู่ใต้ home ของผู้ใช้ (`Path.home()`) จึงใช้ได้ทุกแพลตฟอร์ม:
 
 - Scenes: `~/.voxel-forge/scenes/`
 - Exports: `~/.voxel-forge/exports/`
