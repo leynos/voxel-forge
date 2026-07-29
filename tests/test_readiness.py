@@ -262,6 +262,15 @@ def test_bridge_diagnostic_uses_stderr(monkeypatch: pytest.MonkeyPatch, capsys: 
     assert "VoxelForge bridge:" in captured.err, "the bridge must announce its ports on stderr"
 
 
+def test_runtime_dependencies_are_bounded_below_next_major() -> None:
+    """A fresh resolution (``uv tool install``) must not select a breaking major."""
+    import tomllib
+
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    for requirement in pyproject["project"]["dependencies"]:
+        assert "<" in requirement, f"dependency {requirement!r} has no upper bound"
+
+
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:
     launcher = (REPOSITORY_ROOT / "run-mcp.bat").read_text(encoding="utf-8")
 

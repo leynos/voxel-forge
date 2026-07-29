@@ -5,9 +5,9 @@ description = "Voxel editor inspired by Goxel with MCP bridge for AI assistants"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.9.0",
-    "websockets>=14.0",
-    "httpx>=0.28.0",
+    "mcp>=1.9.0,<2",
+    "websockets>=14.0,<17",
+    "httpx>=0.28.0,<1",
 ]
 
 [project.optional-dependencies]
