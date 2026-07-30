@@ -35,6 +35,20 @@
   helpers related to a domain concept rather than splitting by type.
 - **Use clear file boundaries.** Each module, component, and package should
   have an obvious responsibility and avoid accidental coupling.
+- **Keep private helper docstrings concise.** Prefer single-line docstrings
+  for private helpers. When a private helper needs an explanatory paragraph,
+  inspect whether that need exposes conflated responsibilities, an unclear
+  command/query boundary, or another CQRS or cohesion failure:
+  - Split the helper when it performs distinct query and command
+    responsibilities or combines unrelated concerns.
+  - Extract a focused helper when doing so makes the invariant or boundary
+    local and simpler.
+  - Keep the helper intact when its responsibility is cohesive and the
+    explanation documents an unavoidable local constraint; retain the
+    paragraph in that case.
+- **Structure private helper docstrings selectively.** Use structured
+  NumPy-style sections for private helpers only when they describe
+  non-obvious behaviour.
 
 ## Documentation maintenance
 
