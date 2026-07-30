@@ -13,8 +13,34 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-const WS_URL = "ws://127.0.0.1:8765";
-const BRIDGE_HTTP = "http://127.0.0.1:8766";
+type BridgeConfig = { wsUrl: string; httpUrl: string };
+
+/** Fallback endpoints for a bridge on its standalone default ports. */
+const DEFAULT_BRIDGE: BridgeConfig = {
+  wsUrl: "ws://127.0.0.1:8765",
+  httpUrl: "http://127.0.0.1:8766",
+};
+let bridgeConfig: BridgeConfig = DEFAULT_BRIDGE;
+
+/** Report whether a decoded payload carries both bridge endpoint URLs. */
+function isBridgeConfig(payload: unknown): payload is BridgeConfig {
+  if (typeof payload !== "object" || payload === null) return false;
+  const record = payload as Record<string, unknown>;
+  if (typeof record["wsUrl"] !== "string") return false;
+  return typeof record["httpUrl"] === "string";
+}
+
+/** Discover the bridge endpoints from the serving process, keeping defaults on failure. */
+async function loadBridgeConfig(): Promise<void> {
+  try {
+    const res = await fetch("/bridge.json");
+    if (!res.ok) return;
+    const payload: unknown = await res.json();
+    if (isBridgeConfig(payload)) bridgeConfig = payload;
+  } catch {
+    /* served statically or bridge.json unavailable; keep defaults */
+  }
+}
 const RECONNECT_DELAY_MS = 2000;
 /** Fraction of a voxel cell filled by its cube, leaving a visible seam. */
 const VOXEL_GAP = 0.96;
@@ -320,7 +346,7 @@ function asSceneData(payload: unknown): SceneData | null {
 
 /** Open the bridge WebSocket, retrying whenever the connection drops. */
 function connectWs(): void {
-  const socket = new WebSocket(WS_URL);
+  const socket = new WebSocket(bridgeConfig.wsUrl);
   ws = socket;
   socket.onopen = () => {
     statusEl.textContent = "Bridge connected";
@@ -345,7 +371,7 @@ function connectWs(): void {
 /** Seed the view from the bridge's HTTP snapshot, ignoring a bridge that is down. */
 async function fetchInitialScene(): Promise<void> {
   try {
-    const res = await fetch(`${BRIDGE_HTTP}/scene`);
+    const res = await fetch(`${bridgeConfig.httpUrl}/scene`);
     const payload: unknown = await res.json();
     const data = asSceneData(payload);
     if (!data) return;
@@ -458,6 +484,12 @@ function animate(): void {
   renderer.render(scene, camera);
 }
 
-fetchInitialScene();
-connectWs();
+/** Discover the bridge, seed the scene, and start the editor loops. */
+async function start(): Promise<void> {
+  await loadBridgeConfig();
+  await fetchInitialScene();
+  connectWs();
+}
+
+void start();
 animate();

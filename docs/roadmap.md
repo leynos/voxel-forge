@@ -143,7 +143,7 @@ one.
     timeout that escalates from terminate to kill.
   - Success: the editor process is reaped when the server exits, including on
     an abnormal exit, verified by asserting no orphan remains.
-- [ ] 1.2.3. Discover ports from the child process instead of fixing them.
+- [x] 1.2.3. Discover ports from the child process instead of fixing them.
   - Requires 1.2.2.
   - Have the Bun process bind an ephemeral port and report it as a structured
     event on stdout; have Python parse that event and wait for it with a

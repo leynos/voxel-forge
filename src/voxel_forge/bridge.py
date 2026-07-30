@@ -13,21 +13,44 @@ from .model import SceneStore, VoxelScene
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8765
 BRIDGE_HTTP_PORT = 8766
-ALLOWED_EDITOR_ORIGINS = frozenset({"http://127.0.0.1:5173", "http://localhost:5173"})
-MAX_HTTP_BODY_BYTES = 10_000_000
+# 5173 stays registered for the standalone `bun run dev` flow; supervised
+# editors register their discovered ports at launch time.
+_DEFAULT_EDITOR_ORIGIN_PORT = 5173
+_editor_origin_ports: set[int] = {_DEFAULT_EDITOR_ORIGIN_PORT}
 
-_STATUS_OK = b"HTTP/1.1 200 OK\r\n"
-_STATUS_NO_CONTENT = b"HTTP/1.1 204 No Content\r\n"
-_STATUS_BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\n"
-_STATUS_FORBIDDEN = b"HTTP/1.1 403 Forbidden\r\n"
-_STATUS_TOO_LARGE = b"HTTP/1.1 413 Content Too Large\r\n"
-_JSON_CONTENT_TYPE = b"Content-Type: application/json\r\n"
-_CORS_METHODS = b"Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+
+def register_editor_origin(port: int) -> None:
+    """Allow the editor served on loopback ``port`` to reach the bridge."""
+    _editor_origin_ports.add(int(port))
+
+
+def allowed_origins() -> frozenset[str]:
+    """Return the loopback origins currently allowed to use the bridge.
+
+    Returns
+    -------
+    frozenset of str
+        One ``127.0.0.1`` and one ``localhost`` origin per registered
+        editor port.
+    """
+    return frozenset(
+        origin
+        for port in _editor_origin_ports
+        for origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+    )
+
 
 store = SceneStore()
 _clients: set[typ.Any] = set()
 _lock = threading.Lock()
 _bridge_loop: asyncio.AbstractEventLoop | None = None
+_current_ports: tuple[int, int] | None = None
+_ready = threading.Event()
+
+
+def current_ports() -> tuple[int, int] | None:
+    """Return the bridge's bound (WebSocket, HTTP) ports, or None when down."""
+    return _current_ports
 
 
 def _broadcast(payload: dict[str, typ.Any]) -> None:
@@ -100,10 +123,30 @@ async def _apply_editor_remove(msg: dict[str, typ.Any]) -> None:
     await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
 
 
+_WS_POLICY_VIOLATION = 1008
+
+
+def _ws_origin_allowed(
+    websocket: typ.Any,  # ruff: ignore[any-type]  # no stable public websockets type
+) -> bool:
+    """Check a connection's Origin header against the allowed origins.
+
+    Origins are checked per connection rather than at serve time because
+    the allowed set grows when a supervised editor reports its port.
+    """
+    request = getattr(websocket, "request", None)
+    headers = getattr(request, "headers", None)
+    origin = headers.get("Origin") if headers is not None else None
+    return origin is None or origin in allowed_origins()
+
+
 async def _ws_handler(
     websocket: typ.Any,  # ruff: ignore[any-type]  # no stable public websockets type
 ) -> None:
     """Serve one editor websocket connection until the peer goes away."""
+    if not _ws_origin_allowed(websocket):
+        await websocket.close(_WS_POLICY_VIOLATION, "origin is not allowed")
+        return
     _clients.add(websocket)
     try:
         await _send_scene(websocket, store._current)
@@ -123,153 +166,36 @@ async def _ws_handler(
         _clients.discard(websocket)
 
 
-class _HttpRequest(typ.NamedTuple):
-    """The parts of an HTTP request head that the bridge acts upon."""
-
-    method: str
-    path: str
-    content_length: int
-    origin: str | None
-
-
-def _parse_request_head(header_text: str) -> _HttpRequest:
-    """Pull the method, path, body length and origin out of a request head."""
-    lines = header_text.split("\r\n")
-    first = lines[0] if lines else ""
-    method = first.split(" ")[0] if first else "GET"
-    path = first.split(" ")[1] if " " in first else "/"
-    content_length = 0
-    origin: str | None = None
-    for line in lines[1:]:
-        if line.lower().startswith("content-length:"):
-            content_length = int(line.split(":", 1)[1].strip())
-        elif line.lower().startswith("origin:"):
-            origin = line.split(":", 1)[1].strip()
-    return _HttpRequest(method, path, content_length, origin)
+def _bound_port(server: typ.Any, requested: int) -> int:  # ruff: ignore[any-type]  # accepts asyncio and websockets servers
+    """Read the port a server actually bound, falling back to the request."""
+    sockets = getattr(server, "sockets", None)
+    if sockets:
+        return int(sockets[0].getsockname()[1])
+    return requested
 
 
-def _cors_headers(origin: str | None) -> bytes:
-    """Return the CORS headers granted to ``origin``."""
-    headers = _CORS_METHODS
-    if origin in ALLOWED_EDITOR_ORIGINS:
-        headers += f"Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\n".encode()
-    return headers
+async def _run_servers(ws_port: int = 0, http_port: int = 0) -> None:
+    """Run the websocket and HTTP servers until the task is cancelled.
 
-
-async def _close_connection(writer: asyncio.StreamWriter) -> None:
-    """Flush and close one client connection."""
-    await writer.drain()
-    writer.close()
-    await writer.wait_closed()
-
-
-async def _write_response(
-    writer: asyncio.StreamWriter, status: bytes, headers: bytes, body: bytes
-) -> None:
-    """Write one JSON response and close the connection."""
-    writer.write(
-        status
-        + headers
-        + _JSON_CONTENT_TYPE
-        + f"Content-Length: {len(body)}\r\n\r\n".encode()
-        + body
-    )
-    await _close_connection(writer)
-
-
-async def _handle_scene_post(payload: str) -> tuple[bytes, bytes]:
-    """Replace the active scene from a JSON body and broadcast the result."""
-    try:
-        scene = VoxelScene.from_dict(json.loads(payload))
-        store._scenes[scene.name] = scene
-        store._current = scene.name
-        await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
-        body = json.dumps({
-            "ok": True,
-            "name": scene.name,
-            "blocks": scene.block_count(),
-        }).encode()
-    except Exception as exc:  # ruff: ignore[blind-except]  # any bad payload answers 400
-        return _STATUS_BAD_REQUEST, json.dumps({"error": str(exc)}).encode()
-    return _STATUS_OK, body
-
-
-def _current_scene_body() -> bytes:
-    """Return the active scene as JSON, or an error document when there is none."""
-    name = store._current
-    if not name or name not in store._scenes:
-        return json.dumps({"error": "no active scene"}).encode()
-    return json.dumps(store._scenes[name].to_dict(), ensure_ascii=False).encode()
-
-
-async def _route_request(request: _HttpRequest, payload: str) -> tuple[bytes, bytes]:
-    """Dispatch one request, returning its status line and response body."""
-    match (request.method, request.path):
-        case ("POST", "/scene"):
-            return await _handle_scene_post(payload)
-        case ("GET", "/health"):
-            health = {"ok": True, "editor_clients": len(_clients)}
-            return _STATUS_OK, json.dumps(health).encode()
-        case ("GET", "/scene"):
-            return _STATUS_OK, _current_scene_body()
-        case _:
-            endpoints = {"endpoints": ["GET /health", "GET /scene", "POST /scene"]}
-            return _STATUS_OK, json.dumps(endpoints).encode()
-
-
-async def _http_handler(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-) -> None:
-    """Serve the bridge's small HTTP API on one connection."""
-    header_bytes = await reader.readuntil(b"\r\n\r\n")
-    request = _parse_request_head(header_bytes.decode("utf-8", errors="ignore"))
-    cors = _cors_headers(request.origin)
-
-    if request.origin is not None and request.origin not in ALLOWED_EDITOR_ORIGINS:
-        body = json.dumps({"error": "origin is not allowed"}).encode()
-        await _write_response(writer, _STATUS_FORBIDDEN, b"", body)
-        return
-
-    if request.content_length < 0 or request.content_length > MAX_HTTP_BODY_BYTES:
-        body = json.dumps({"error": "request body is too large"}).encode()
-        await _write_response(writer, _STATUS_TOO_LARGE, cors, body)
-        return
-
-    payload_bytes = (
-        await reader.readexactly(request.content_length)
-        if request.content_length
-        else b""
-    )
-    payload = payload_bytes.decode("utf-8")
-
-    if request.method == "OPTIONS":
-        writer.write(_STATUS_NO_CONTENT + cors + b"\r\n")
-        await _close_connection(writer)
-        return
-
-    status, body = await _route_request(request, payload)
-    await _write_response(writer, status, cors, body)
-
-
-async def _run_servers() -> None:
-    """Run the websocket and HTTP servers until the task is cancelled."""
-    global _bridge_loop
+    Both ports default to ``0`` so the operating system assigns free
+    ephemeral ones; the bound ports are published through
+    :func:`current_ports`. Origins are enforced per connection in the
+    handlers, so an editor port registered after startup is honoured.
+    """
+    global _bridge_loop, _current_ports
 
     import websockets
 
-    ws_server = await websockets.serve(
-        _ws_handler,
-        BRIDGE_HOST,
-        BRIDGE_PORT,
-        origins=[None, *sorted(ALLOWED_EDITOR_ORIGINS)],
-    )
-    http_server = await asyncio.start_server(
-        _http_handler, BRIDGE_HOST, BRIDGE_HTTP_PORT
-    )
+    ws_server = await websockets.serve(_ws_handler, BRIDGE_HOST, ws_port)
+    http_server = await asyncio.start_server(_http_handler, BRIDGE_HOST, http_port)
+    bound_ws = _bound_port(ws_server, ws_port)
+    bound_http = _bound_port(http_server, http_port)
     _bridge_loop = asyncio.get_running_loop()
+    _current_ports = (bound_ws, bound_http)
+    _ready.set()
     print(
-        f"VoxelForge bridge: ws://{BRIDGE_HOST}:{BRIDGE_PORT}"
-        f"  http://{BRIDGE_HOST}:{BRIDGE_HTTP_PORT}",
+        f"VoxelForge bridge: ws://{BRIDGE_HOST}:{bound_ws}"
+        f"  http://{BRIDGE_HOST}:{bound_http}",
         file=sys.stderr,
     )
     try:
@@ -277,29 +203,77 @@ async def _run_servers() -> None:
             await asyncio.Future()
     finally:
         _bridge_loop = None
+        _current_ports = None
+        _ready.clear()
 
 
 _bridge_thread: threading.Thread | None = None
 
 
-def start_bridge_background() -> None:
-    """Start the bridge on a daemon thread unless it is already running."""
+_STARTUP_TIMEOUT_SECONDS = 10.0
+
+
+def start_bridge_background() -> tuple[int, int]:
+    """Start the bridge on a daemon thread unless it is already running.
+
+    Returns
+    -------
+    tuple[int, int]
+        The (WebSocket, HTTP) ports the bridge bound. Ephemeral ports are
+        requested, so two concurrent VoxelForge instances never collide.
+
+    Raises
+    ------
+    RuntimeError
+        If the bridge does not report readiness within its startup
+        timeout.
+    """
     global _bridge_thread
     with _lock:
-        if _bridge_thread and _bridge_thread.is_alive():
-            return
+        if not (_bridge_thread and _bridge_thread.is_alive()):
 
-        def run() -> None:
-            asyncio.run(_run_servers())
+            def run() -> None:
+                asyncio.run(_run_servers())
 
-        _bridge_thread = threading.Thread(target=run, daemon=True)
-        _bridge_thread.start()
+            _bridge_thread = threading.Thread(target=run, daemon=True)
+            _bridge_thread.start()
+    if not _ready.wait(_STARTUP_TIMEOUT_SECONDS):
+        msg = "the bridge did not report readiness in time"
+        raise RuntimeError(msg)
+    ports = _current_ports
+    if ports is None:
+        msg = "the bridge started but published no ports"
+        raise RuntimeError(msg)
+    return ports
 
 
 def main() -> None:
-    """Run the bridge in the foreground."""
-    asyncio.run(_run_servers())
+    """Run the bridge in the foreground on fixed, configurable ports."""
+    import argparse
 
+    parser = argparse.ArgumentParser(
+        prog="voxel-forge-bridge",
+        description="Run the VoxelForge editor bridge in the foreground.",
+    )
+    parser.add_argument(
+        "--ws-port",
+        type=int,
+        default=BRIDGE_PORT,
+        help="WebSocket port to bind (0 for an ephemeral one)",
+    )
+    parser.add_argument(
+        "--http-port",
+        type=int,
+        default=BRIDGE_HTTP_PORT,
+        help="HTTP port to bind (0 for an ephemeral one)",
+    )
+    args = parser.parse_args()
+    asyncio.run(_run_servers(args.ws_port, args.http_port))
+
+
+from voxel_forge.bridge_http import (  # ruff: ignore[module-import-not-at-top-of-file]  # the HTTP module needs the bridge state above
+    _http_handler,
+)
 
 if __name__ == "__main__":
     main()
