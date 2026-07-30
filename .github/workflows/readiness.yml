@@ -16,13 +16,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: editor/package-lock.json
+          bun-version: latest
       - name: Install Python dependencies
         run: uv sync --locked --all-extras
+      - name: Install editor dependencies
+        run: bun install --frozen-lockfile --cwd editor
       - name: Check Python formatting
         run: make check-fmt
       - name: Check Python lint
@@ -31,15 +31,12 @@ jobs:
         run: make test
       - name: Build Python wheel
         run: uv build --wheel
-      - name: Install editor dependencies
-        run: npm ci --prefix editor
       - name: Check editor formatting and lint
         run: make lint-editor
       - name: Check editor types
         run: make typecheck
-      - name: Build editor
-        run: npm run build --prefix editor
       - name: Audit editor dependencies
-        run: npm audit --prefix editor --audit-level=high
+        working-directory: editor
+        run: bun audit
       - name: Check Markdown
         run: make markdownlint MDLINT="npx --yes markdownlint-cli2"

@@ -15,7 +15,7 @@ MARKDOWN_PATHS := \
 fmt:
 	uv run ruff format src tests
 	uv run ruff check --select I --fix src tests
-	cd editor && npm run fmt
+	cd editor && bun run fmt
 
 check-fmt:
 	uv run ruff format --check src tests
@@ -25,11 +25,11 @@ lint:
 	uv run pylint src/voxel_forge tests
 
 lint-editor:
-	cd editor && npm run check:fmt
-	cd editor && npm run lint
+	cd editor && bun run check:fmt
+	cd editor && bun run lint
 
 typecheck:
-	cd editor && npm run check:types
+	cd editor && bun run check:types
 
 test:
 	uv run pytest -q

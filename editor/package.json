@@ -4,12 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "bun run serve.ts",
     "fmt": "biome format --write .",
     "check:fmt": "biome check --formatter-enabled=true --linter-enabled=false .",
-    "lint": "npm run lint:biome && npm run lint:oxlint",
+    "lint": "bun run lint:biome && bun run lint:oxlint",
     "lint:biome": "biome lint .",
     "lint:oxlint": "oxlint .",
     "check:types": "tsc --noEmit"
@@ -20,9 +18,9 @@
   "devDependencies": {
     "@biomejs/biome": "^2.3.1",
     "@types/three": "^0.175.0",
+    "bun-types": "^1.2.0",
     "df12-lints": "github:leynos/df12-lints",
     "oxlint": "^1.66.0",
-    "typescript": "^5.8.2",
-    "vite": "^6.2.0"
+    "typescript": "^5.8.2"
   }
 }

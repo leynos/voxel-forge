@@ -128,7 +128,7 @@ fails outright. And `ALLOWED_EDITOR_ORIGINS` hard-codes `:5173`, which couples
 the origin check to the fixed port and would reject any dynamically allocated
 one.
 
-- [ ] 1.2.1. Move the editor to Bun and bundle it into the wheel.
+- [x] 1.2.1. Move the editor to Bun and bundle it into the wheel.
   - Replace the `editor/` npm and Vite project with a Bun-served application,
     and include its entry point, `package.json`, and lockfile in the built
     distribution through `[tool.hatch.build]` include and force-include rules.
