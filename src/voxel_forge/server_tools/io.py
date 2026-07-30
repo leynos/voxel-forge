@@ -3,9 +3,22 @@
 from __future__ import annotations
 
 import json
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # typing only; processes are spawned in orchestration
 from pathlib import Path
 
 from voxel_forge import server
+from voxel_forge.bridge import BRIDGE_HTTP_PORT, BRIDGE_PORT
+from voxel_forge.editor_runtime import EditorRuntimeError, editor_package_root
+from voxel_forge.orchestration import (
+    EditorPorts,
+    install_editor_dependencies,
+    start_editor_process,
+    supervise,
+)
+
+# The supervised editor for this server process, keyed for mutability
+# without a global statement.
+_editor_state: dict[str, tuple[subprocess.Popen[str], int]] = {}
 
 
 @server.mcp.tool()
@@ -258,3 +271,55 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
             f"(ลด {stats['reduction_percent']}%)\n"
             f"  รันใน Studio ด้วย execute_luau"
         )
+
+
+def _running_editor() -> tuple[subprocess.Popen[str], int] | None:
+    """Return the supervised editor process and port when still alive."""
+    editor = _editor_state.get("editor")
+    if editor is not None and editor[0].poll() is None:
+        return editor
+    return None
+
+
+def _start_supervised_editor() -> tuple[subprocess.Popen[str], int]:
+    """Start the bundled editor under supervision and remember it."""
+    root = editor_package_root()
+    if not (root / "node_modules").is_dir():
+        install_editor_dependencies()
+    ports = EditorPorts(bridge_ws=BRIDGE_PORT, bridge_http=BRIDGE_HTTP_PORT)
+    process, port = start_editor_process(ports)
+    supervise(process)
+    editor = (process, port)
+    _editor_state["editor"] = editor
+    return editor
+
+
+@server.mcp.tool()
+def voxelforge_launch_editor() -> str:
+    """
+    เปิด VoxelForge Web Editor ในเบราว์เซอร์ (Three.js 3D view).
+
+    Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่.
+    """
+    server._ensure_bridge()
+    editor = _running_editor()
+    if editor is None:
+        try:
+            editor = _start_supervised_editor()
+        except EditorRuntimeError as exc:
+            return (
+                f"ไม่สามารถเปิด editor ได้: {exc}\n"
+                "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor "
+                "อีกครั้ง"
+            )
+    _, port = editor
+    url = f"http://127.0.0.1:{port}"
+
+    import webbrowser
+
+    webbrowser.open(url)
+    return (
+        f"เปิด {url} แล้ว (Bun editor ภายใต้การดูแลของ server)\n"
+        f"Bridge: ws://127.0.0.1:{BRIDGE_PORT} | "
+        f"HTTP scene: http://127.0.0.1:{BRIDGE_HTTP_PORT}/scene"
+    )

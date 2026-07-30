@@ -18,7 +18,18 @@ from pathlib import Path
 
 import pytest
 
-from voxel_forge.editor_runtime import editor_entrypoint, editor_package_root
+from voxel_forge.editor_runtime import (
+    EditorRuntimeError,
+    editor_entrypoint,
+    editor_package_root,
+)
+from voxel_forge.orchestration import (
+    EditorPorts,
+    reap_supervised,
+    start_editor_process,
+    stop_editor_process,
+    supervise,
+)
 
 BUN = shutil.which("bun")
 STARTUP_TIMEOUT_SECONDS = 30.0
@@ -115,3 +126,69 @@ def test_bun_serves_the_editor_on_an_ephemeral_port() -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+
+
+FAKE_EDITOR_PORT = 43210
+
+
+@pytest.fixture
+def fake_bun(tmp_path: Path) -> Path:
+    """Provide a stub executable that mimics the editor's startup protocol."""
+    script = tmp_path / "fake-bun"
+    script.write_text(
+        "#!/bin/sh\n"
+        f'echo \'{{"event": "listening", "port": {FAKE_EDITOR_PORT}}}\'\n'
+        "sleep 60\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+def test_start_and_stop_editor_reaps_the_process(fake_bun: Path) -> None:
+    """Stopping a started editor must leave no orphan process behind."""
+    process, port = start_editor_process(
+        EditorPorts(bridge_ws=1, bridge_http=2), bun_executable=str(fake_bun)
+    )
+
+    assert port == FAKE_EDITOR_PORT, "the reported port must come from the event"
+    assert process.poll() is None, "the editor must still be running before stop"
+
+    stop_editor_process(process)
+
+    assert process.poll() is not None, "no orphan may remain after stop"
+
+
+def test_start_editor_raises_and_reaps_on_abnormal_exit(tmp_path: Path) -> None:
+    """A child that dies without reporting a port must raise and be reaped."""
+    script = tmp_path / "broken-bun"
+    script.write_text("#!/bin/sh\necho boom\nexit 3\n", encoding="utf-8")
+    script.chmod(0o755)
+
+    with pytest.raises(EditorRuntimeError, match="did not report a listening port"):
+        start_editor_process(
+            EditorPorts(bridge_ws=1, bridge_http=2),
+            bun_executable=str(script),
+            startup_timeout=5.0,
+        )
+
+
+def test_reap_supervised_stops_registered_processes(fake_bun: Path) -> None:
+    """Processes registered for supervision must be stopped by the reaper."""
+    process, _port = start_editor_process(
+        EditorPorts(bridge_ws=1, bridge_http=2), bun_executable=str(fake_bun)
+    )
+    supervise(process)
+
+    reap_supervised()
+
+    assert process.poll() is not None, "the reaper must stop supervised processes"
+
+
+def test_missing_bun_executable_is_reported() -> None:
+    """A missing Bun executable must produce an actionable error."""
+    with pytest.raises(EditorRuntimeError, match="Bun executable not found"):
+        start_editor_process(
+            EditorPorts(bridge_ws=1, bridge_http=2),
+            bun_executable="/nonexistent/bun",
+        )
