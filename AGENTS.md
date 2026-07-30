@@ -88,8 +88,8 @@
 - **For TypeScript files (the `editor/`):**
   - **Linting:** Passes `make lint-editor` (Biome plus oxlint with the
     `df12-lints` plugin).
-  - **Formatting:** Passes `npm run check:fmt` in `editor/` (use
-    `npm run fmt` to apply fixes).
+  - **Formatting:** Passes `bun run check:fmt` in `editor/` (use
+    `bun run fmt` to apply fixes).
   - **Typechecking:** Passes `make typecheck` (`tsc --noEmit` with the strict
     compiler options in `editor/tsconfig.json`).
 - **For Markdown files (`.md` only):**
@@ -212,11 +212,11 @@ Keep `editor/tsconfig.json` sharp and strictness enabled:
 
 ### Linting and formatting
 
-- **Biome**: Use Biome for formatting and linting (`npm run fmt`,
-  `npm run lint:biome` in `editor/`).
+- **Biome**: Use Biome for formatting and linting (`bun run fmt`,
+  `bun run lint:biome` in `editor/`).
 - **oxlint**: The df12 oxlint plugin enforces module/function JSDoc,
-  conditional complexity, and nesting limits (`npm run lint:oxlint`).
-- **Type-checking**: Use `npm run check:types` to surface TypeScript issues
+  conditional complexity, and nesting limits (`bun run lint:oxlint`).
+- **Type-checking**: Use `bun run check:types` to surface TypeScript issues
   early.
 - **Import hygiene**: Keep imports sorted and remove unused or extraneous
   dependencies.

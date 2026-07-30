@@ -136,10 +136,12 @@ Desktop จาก `~/.voxel-forge/scenes/` (Windows: `%USERPROFILE%\.voxel-forge
 
 ```bash
 cd editor
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
+The editor is served by [Bun](https://bun.sh) and is bundled inside the
+installed wheel, so `voxelforge_launch_editor` works without a checkout.
 On Windows, `run-editor.bat` wraps the same commands.
 
 เปิด `http://127.0.0.1:5173` บนเครื่องเดียวกัน โดย editor จะ sync สองทางกับ MCP

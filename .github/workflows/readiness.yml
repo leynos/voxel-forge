@@ -19,11 +19,9 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           enable-cache: true
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: editor/package-lock.json
+          bun-version: latest
       - name: Install Python interpreters
         run: uv python install 3.11 3.14 pypy@3.12
       - name: Install Python dependencies
@@ -42,18 +40,17 @@ jobs:
       - name: Build Python wheel
         run: uv build --wheel
       - name: Install editor dependencies
-        run: npm ci --prefix editor
+        run: bun install --frozen-lockfile --cwd editor
       - name: Check editor formatting and lint
         run: make lint-editor
       - name: Check editor types
         run: make typecheck
       - name: Install editor test browser
-        run: npx --prefix editor playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
       - name: Test editor delivery
         run: make test-editor
-      - name: Build editor
-        run: npm run build --prefix editor
       - name: Audit editor dependencies
-        run: npm audit --prefix editor --audit-level=high
+        working-directory: editor
+        run: bun audit
       - name: Check Markdown
         run: make markdownlint MDLINT="npx --yes markdownlint-cli2"
