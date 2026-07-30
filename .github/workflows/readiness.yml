@@ -40,3 +40,35 @@ jobs:
         run: bun audit
       - name: Check Markdown
         run: make markdownlint MDLINT="npx --yes markdownlint-cli2"
+
+  # Roadmap step 1.3: prove the tool installs from a clean checkout with a
+  # fresh dependency resolution (no lockfile), and that a headless run
+  # binds no socket while still exporting a scene. This job fails if the
+  # dependency bounds from task 1.1.1 regress.
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install as a uv tool from a clean checkout
+        run: uv tool install .
+      - name: Verify the MCP entry point
+        run: voxel-forge-mcp --help
+      - name: Export a scene headless
+        run: |
+          uv run --no-project --with . python - << 'EOF'
+          import pathlib
+          import tempfile
+
+          from voxel_forge import bridge, server
+
+          server.voxelforge_create_scene("ci_smoke")
+          server.voxelforge_fill_box(0, 3, 0, 1, 0, 2, "2")
+          out = pathlib.Path(tempfile.mkdtemp()) / "ci_smoke.vox"
+          server.voxelforge_export_vox(output_path=str(out))
+          assert out.stat().st_size > 0, "the export must produce bytes"
+          assert bridge.current_ports() is None, (
+              "a headless run must not bind a port"
+          )
+          print("headless scene export OK")
+          EOF

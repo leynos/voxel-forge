@@ -167,14 +167,14 @@ WebSocket peer. Thysalion's continuous integration has none of those, and any
 scene-generation step it runs must not require them. It also decides whether
 the bridge is a component or an assumption.
 
-- [ ] 1.3.1. Make the WebSocket bridge opt-in rather than automatic.
+- [x] 1.3.1. Make the WebSocket bridge opt-in rather than automatic.
   - `voxel_forge.server.main` calls `_ensure_bridge()` before
     `mcp.run(transport="stdio")`, so every invocation starts a background
     listener on a loopback port whether or not an editor will connect. A
     headless or sandboxed run should not bind a port.
   - Success: a documented flag or environment variable runs the server with no
     listening socket, verified by asserting the port is unbound.
-- [ ] 1.3.2. Extend the readiness workflow to Linux.
+- [x] 1.3.2. Extend the readiness workflow to Linux.
   - `.github/workflows/readiness.yml` and the `Makefile` gates run the
     existing suite; add a Linux matrix entry covering `uv tool install` from a
     clean checkout, the headless server start, and a scene export.
