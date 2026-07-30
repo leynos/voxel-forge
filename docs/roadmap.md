@@ -136,7 +136,7 @@ one.
     path works from a checkout and from an installed wheel.
   - Success: `uv tool install` followed by the editor command opens a working
     editor on a machine with no checkout.
-- [ ] 1.2.2. Spawn and supervise the editor process from Python.
+- [x] 1.2.2. Spawn and supervise the editor process from Python.
   - Requires 1.2.1.
   - Launch Bun with explicit arguments and `shell=False`, read its stdout on a
     reader thread so the pipe cannot deadlock, and stop it with a bounded
