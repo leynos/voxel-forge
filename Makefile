@@ -10,6 +10,8 @@ MARKDOWN_PATHS := \
 	README.md \
 	AGENTS.md \
 	docs/roadmap.md \
+	docs/fork-and-interface-boundary.md \
+	docs/provenance.md \
 	docs/execplans/readiness-gate.md
 
 fmt:
