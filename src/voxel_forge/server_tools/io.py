@@ -6,8 +6,7 @@ import json
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # typing only; processes are spawned in orchestration
 from pathlib import Path
 
-from voxel_forge import server
-from voxel_forge.bridge import BRIDGE_HTTP_PORT, BRIDGE_PORT
+from voxel_forge import bridge, server
 from voxel_forge.editor_runtime import EditorRuntimeError, editor_package_root
 from voxel_forge.orchestration import (
     EditorPorts,
@@ -281,14 +280,23 @@ def _running_editor() -> tuple[subprocess.Popen[str], int] | None:
     return None
 
 
-def _start_supervised_editor() -> tuple[subprocess.Popen[str], int]:
-    """Start the bundled editor under supervision and remember it."""
+def _start_supervised_editor(
+    bridge_ports: tuple[int, int],
+) -> tuple[subprocess.Popen[str], int]:
+    """Start the bundled editor under supervision and remember it.
+
+    The editor's discovered port is registered as an allowed bridge
+    origin, so the origin check follows the dynamically allocated port
+    rather than a constant.
+    """
     root = editor_package_root()
     if not (root / "node_modules").is_dir():
         install_editor_dependencies()
-    ports = EditorPorts(bridge_ws=BRIDGE_PORT, bridge_http=BRIDGE_HTTP_PORT)
+    ws_port, http_port = bridge_ports
+    ports = EditorPorts(bridge_ws=ws_port, bridge_http=http_port)
     process, port = start_editor_process(ports)
     supervise(process)
+    bridge.register_editor_origin(port)
     editor = (process, port)
     _editor_state["editor"] = editor
     return editor
@@ -302,10 +310,13 @@ def voxelforge_launch_editor() -> str:
     Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่.
     """
     server._ensure_bridge()
+    bridge_ports = bridge.current_ports()
+    if bridge_ports is None:
+        return "Bridge ยังไม่พร้อม — ลองเรียก voxelforge_launch_editor อีกครั้ง"
     editor = _running_editor()
     if editor is None:
         try:
-            editor = _start_supervised_editor()
+            editor = _start_supervised_editor(bridge_ports)
         except EditorRuntimeError as exc:
             return (
                 f"ไม่สามารถเปิด editor ได้: {exc}\n"
@@ -313,6 +324,7 @@ def voxelforge_launch_editor() -> str:
                 "อีกครั้ง"
             )
     _, port = editor
+    ws_port, http_port = bridge_ports
     url = f"http://127.0.0.1:{port}"
 
     import webbrowser
@@ -320,6 +332,6 @@ def voxelforge_launch_editor() -> str:
     webbrowser.open(url)
     return (
         f"เปิด {url} แล้ว (Bun editor ภายใต้การดูแลของ server)\n"
-        f"Bridge: ws://127.0.0.1:{BRIDGE_PORT} | "
-        f"HTTP scene: http://127.0.0.1:{BRIDGE_HTTP_PORT}/scene"
+        f"Bridge: ws://127.0.0.1:{ws_port} | "
+        f"HTTP scene: http://127.0.0.1:{http_port}/scene"
     )
