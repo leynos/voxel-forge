@@ -162,7 +162,7 @@ one.
     rather than from a constant.
   - Success: two VoxelForge instances run concurrently without collision, and
     an instance starts successfully when 8765, 8766, and 5173 are all occupied.
-- [ ] 1.2.4. Provide dependency-installation and root-resolution commands.
+- [x] 1.2.4. Provide dependency-installation and root-resolution commands.
   - Requires 1.2.1.
   - Mirror `python -m simulacat.js_root` and
     `python -m simulacat.install_simulator_deps`: one command prints the

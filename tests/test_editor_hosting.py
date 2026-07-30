@@ -192,3 +192,62 @@ def test_missing_bun_executable_is_reported() -> None:
             EditorPorts(bridge_ws=1, bridge_http=2),
             bun_executable="/nonexistent/bun",
         )
+
+
+def test_js_root_command_prints_package_root(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`python -m voxel_forge.js_root` must print the editor package root."""
+    from voxel_forge import js_root
+
+    exit_code = js_root.main()
+    output = capsys.readouterr().out.strip()
+
+    assert exit_code == 0, "resolution must succeed in a checkout"
+    assert (Path(output) / "package.json").is_file(), (
+        "the printed path must contain package.json"
+    )
+
+
+def test_install_editor_deps_command_reports_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A failed installation must exit non-zero with a diagnostic."""
+    from voxel_forge import install_editor_deps
+
+    def raise_runtime_error() -> Path:
+        msg = "Bun executable not found: bun"
+        raise EditorRuntimeError(msg)
+
+    monkeypatch.setattr(
+        install_editor_deps, "install_editor_dependencies", raise_runtime_error
+    )
+
+    exit_code = install_editor_deps.main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 1, "a failed installation must exit non-zero"
+    assert "Bun executable not found" in captured.err, (
+        "the diagnostic must name the cause"
+    )
+
+
+def test_install_editor_dependencies_targets_the_package_root(
+    tmp_path: Path,
+) -> None:
+    """The install helper must run Bun against the resolved package root."""
+    from voxel_forge.orchestration import install_editor_dependencies
+
+    recorder = tmp_path / "args.txt"
+    stub = tmp_path / "stub-bun"
+    stub.write_text(f'#!/bin/sh\necho "$@" > {recorder}\n', encoding="utf-8")
+    stub.chmod(0o755)
+
+    root = install_editor_dependencies(bun_executable=str(stub))
+
+    recorded = recorder.read_text(encoding="utf-8")
+    assert (root / "package.json").is_file(), (
+        "installation must target the editor package root"
+    )
+    assert str(root) in recorded, "bun install must receive the package root"
+    assert "install" in recorded, "the stub must have been asked to install"
