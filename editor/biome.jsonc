@@ -1,0 +1,75 @@
+{
+  // df12 TypeScript linting standards, amalgamated from simulacat-core's
+  // biome.json and df12-lints' biome.jsonc.
+  "$schema": "https://biomejs.dev/schemas/2.3.1/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    // The editor is a subdirectory of the repository, so Biome cannot find
+    // an ignore file next to this config; files.includes scopes it instead.
+    "useIgnoreFile": false
+  },
+  "files": {
+    "includes": ["src/**/*", "*.ts", "*.jsonc", "package.json", "tsconfig.json"],
+    "ignoreUnknown": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "assist": {
+    "enabled": false,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "quoteProperties": "asNeeded",
+      "trailingCommas": "all",
+      "semicolons": "always",
+      "arrowParentheses": "always",
+      "bracketSpacing": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 8
+          }
+        },
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 70,
+            "skipBlankLines": false,
+            "skipIifes": false
+          }
+        },
+        "useMaxParams": {
+          "level": "error",
+          "options": {
+            "max": 4
+          }
+        }
+      },
+      "style": {
+        "useForOf": "error"
+      },
+      "suspicious": {
+        "noConsole": "off"
+      }
+    }
+  }
+}

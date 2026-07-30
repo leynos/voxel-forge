@@ -1,15 +1,4 @@
-.PHONY: check-fmt lint typecheck test markdownlint nixie
-
-PYTHON_FORMAT_PATHS := \
-	src/voxel_forge/bridge.py \
-	src/voxel_forge/desktop/launch.py \
-	src/voxel_forge/desktop/viewport.py \
-	src/voxel_forge/model.py \
-	src/voxel_forge/procedural.py \
-	src/voxel_forge/scene_store.py \
-	src/voxel_forge/server.py \
-	src/voxel_forge/vox_io.py \
-	tests
+.PHONY: fmt check-fmt lint lint-editor typecheck test markdownlint nixie
 
 # Overridable so continuous integration can supply `npx --yes markdownlint-cli2`
 # without duplicating the file list. There is no repository-level markdownlint
@@ -20,19 +9,30 @@ MDLINT ?= markdownlint-cli2
 MARKDOWN_PATHS := \
 	README.md \
 	docs/developers-guide.md \
-	docs/execplans/readiness-gate.md \
 	docs/migration-0.2.md \
+	docs/users-guide.md \
+	AGENTS.md \
 	docs/roadmap.md \
-	docs/users-guide.md
+	docs/execplans/readiness-gate.md
+
+fmt:
+	uv run ruff format src tests
+	uv run ruff check --select I --fix src tests
+	cd editor && npm run fmt
 
 check-fmt:
-	uv run ruff format --check $(PYTHON_FORMAT_PATHS)
+	uv run ruff format --check src tests
 
 lint:
 	uv run ruff check src tests
+	uv run pylint src/voxel_forge tests
+
+lint-editor:
+	cd editor && npm run check:fmt
+	cd editor && npm run lint
 
 typecheck:
-	cd editor && npm exec tsc -- --noEmit
+	cd editor && npm run check:types
 
 test:
 	uv run pytest -q

@@ -2,18 +2,34 @@
 
 from __future__ import annotations
 
+import typing as typ
 from pathlib import Path
 
 from .mesh_merge import merge_scene
-from .model import VoxelScene
+
+if typ.TYPE_CHECKING:
+    from .model import VoxelScene
 
 
 def to_luau_merged(
     scene: VoxelScene,
+    *,
     parent: str = "workspace",
     anchor: bool = True,
 ) -> str:
-    """สร้าง Luau ที่ใช้ Part ใหญ่แทน 1 voxel = 1 Part (ลดแลag)."""
+    """Return a Luau script that rebuilds the scene from merged parts.
+
+    สร้าง Luau ที่ใช้ Part ใหญ่แทน 1 voxel = 1 Part (ลดแลag).
+
+    Parameters
+    ----------
+    scene
+        Scene to export.
+    parent
+        Luau expression the generated ``Model`` is parented to.
+    anchor
+        Whether every generated part is anchored.
+    """
     vs = scene.voxel_size
     boxes = merge_scene(scene)
     stats_voxels = sum(b.volume for b in boxes)
@@ -69,6 +85,10 @@ return model
 
 
 def write_luau_file(scene: VoxelScene, directory: Path | None = None) -> Path:
+    """Write the merged Luau export beside the scene and return its path.
+
+    The default destination is ``~/.voxel-forge/exports``, created on demand.
+    """
     directory = directory or (Path.home() / ".voxel-forge" / "exports")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{scene.name}_merged.server.luau"
