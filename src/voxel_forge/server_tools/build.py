@@ -11,13 +11,16 @@ from voxel_forge.procedural import build_chibi_bear, build_tree
 
 @server.mcp.tool()
 def voxelforge_build_chibi_bear(name: str = "chibi_bear", resolution: int = 3) -> str:
-    """สร้างรูปปั้นหมี chibi (resolution 2-4 แนะนำ)."""
+    """Build a chibi bear figurine.
+
+    A resolution of 2 to 4 is recommended.
+    """
     scene = build_chibi_bear(name=name, resolution=resolution)
     server.store._scenes[scene.name] = scene
     server.store._current = scene.name
     server._sync_bridge(scene)
     return (
-        f"สร้างหมี chibi '{scene.name}' — {scene.block_count()} voxels "
+        f"Built chibi bear '{scene.name}' — {scene.block_count()} voxels "
         f"(resolution {resolution})"
     )
 
@@ -25,9 +28,9 @@ def voxelforge_build_chibi_bear(name: str = "chibi_bear", resolution: int = 3) -
 @server.mcp.tool()
 def voxelforge_build_tree(name: str = "tree", resolution: int = 4) -> str:
     """
-    สร้างต้นไม้ procedural ความละเอียดปรับได้.
+    Build a procedural tree at an adjustable resolution.
 
-    resolution: 1=หยาบ, 2=ปานกลาง, 4=ละเอียด (แนะนำ), 8=สูงมาก.
+    resolution: 1=coarse, 2=medium, 4=fine (recommended), 8=very fine.
     """
     scene = build_tree(name=name, resolution=resolution)
     server.store._scenes[scene.name] = scene
@@ -35,7 +38,8 @@ def voxelforge_build_tree(name: str = "tree", resolution: int = 4) -> str:
     server._sync_bridge(scene)
     vs = scene.voxel_size
     return (
-        f"สร้างต้นไม้ '{scene.name}' — {scene.block_count()} voxels, "
+        f"Built tree '{scene.name}' — {scene.block_count()} voxels, "
         f"voxel_size={vs} (resolution {resolution}x)\n"
-        f"เปิด editor เพื่อดู 3D หรือ voxelforge_preview ตรวจ ASCII"
+        f"Open the editor for a 3D view, or use voxelforge_preview "
+        f"for an ASCII check"
     )

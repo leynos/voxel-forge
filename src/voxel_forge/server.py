@@ -18,13 +18,13 @@ if typ.TYPE_CHECKING:
 mcp = FastMCP(
     "VoxelForge",
     instructions=(
-        "VoxelForge — โปรแกรมสร้าง voxel 3D แบบ Goxel "
-        "(24-bit RGB, layers, export .vox/.obj).\n"
-        "ขั้นตอน: voxelforge_create_scene → "
+        "VoxelForge — a Goxel-style 3D voxel builder "
+        "(24-bit RGB, layers, .vox/.obj export).\n"
+        "Workflow: voxelforge_create_scene → "
         "voxelforge_place_many / voxelforge_fill_box → "
-        "voxelforge_preview → voxelforge_export_vox หรือ voxelforge_export_obj\n"
-        "เปิด editor 3D: voxelforge_launch_editor\n"
-        "รองรับ import ไฟล์ MagicaVoxel (.vox) ที่ Goxel ใช้ได้"
+        "voxelforge_preview → voxelforge_export_vox or voxelforge_export_obj\n"
+        "Open the 3D editor: voxelforge_launch_editor\n"
+        "MagicaVoxel (.vox) files, as used by Goxel, can be imported"
     ),
 )
 
@@ -83,7 +83,7 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     """
     data = json.loads(blocks_json)
     if not isinstance(data, list):
-        msg = "blocks ต้องเป็น JSON array"
+        msg = "blocks must be a JSON array"
         raise ValueError(msg)  # ruff: ignore[type-check-without-type-error]  # ValueError is the tool contract
     if len(data) > MAX_TOOL_VOXELS:
         msg = f"place_many supports at most {MAX_TOOL_VOXELS:,} voxels per call"
@@ -91,7 +91,7 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     out: list[tuple[int, int, int, str]] = []
     for row in data:
         if not isinstance(row, (list, tuple)) or len(row) < _BLOCK_ROW_FIELDS:
-            msg = f"รูปแบบบล็อกไม่ถูก: {row}"
+            msg = f"malformed block row: {row}"
             raise ValueError(msg)
         out.append((int(row[0]), int(row[1]), int(row[2]), str(row[3])))
     return out

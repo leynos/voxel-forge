@@ -14,50 +14,53 @@ from voxel_forge.preview import summary
 
 @server.mcp.tool()
 def voxelforge_about() -> str:
-    """อธิบาย VoxelForge และความสัมพันธ์กับ Goxel."""
+    """Describe VoxelForge and its relationship to Goxel."""
     return (
-        "VoxelForge — voxel editor ของเรา สร้างจากแนวคิด Goxel (https://github.com/guillaumechereau/goxel)\n"
-        "ฟีเจอร์: 24-bit RGB, layers, unlimited scene, "
-        "export .vox (MagicaVoxel) และ .obj\n"
-        "MCP ใช้ได้กับ Cursor, Claude Desktop, "
-        "และ client อื่นที่รองรับ Model Context Protocol\n"
-        "Goxel ต้นฉบับเป็น GPL-3.0 — VoxelForge เป็น implementation ใหม่ที่ออกแบบ MCP-first"
+        "VoxelForge — a voxel editor built on the ideas of Goxel "
+        "(https://github.com/guillaumechereau/goxel)\n"
+        "Features: 24-bit RGB, layers, unbounded scenes, "
+        ".vox (MagicaVoxel) and .obj export\n"
+        "The MCP server works with Cursor, Claude Desktop, "
+        "and any other client that supports the Model Context Protocol\n"
+        "The original Goxel is GPL-3.0 — VoxelForge is a new, "
+        "MCP-first implementation"
     )
 
 
 @server.mcp.tool()
 def voxelforge_create_scene(name: str) -> str:
-    """สร้าง scene voxel ใหม่."""
+    """Create a new voxel scene."""
     scene = server.store.create(name)
     server._sync_bridge(scene)
-    return f"สร้าง scene '{scene.name}' แล้ว (layer เริ่มต้น: {scene.layers[0].name})"
+    return f"Created scene '{scene.name}' (default layer: {scene.layers[0].name})"
 
 
 @server.mcp.tool()
 def voxelforge_select_scene(name: str) -> str:
-    """เลือก scene ที่กำลังแก้ไข."""
+    """Select the scene being edited."""
     scene = server.store.set_current(name)
     server._sync_bridge(scene)
-    return f"เลือก scene '{scene.name}' ({scene.block_count()} บล็อก)"
+    return f"Selected scene '{scene.name}' ({scene.block_count()} blocks)"
 
 
 @server.mcp.tool()
 def voxelforge_add_layer(name: str, scene_name: str = "") -> str:
-    """เพิ่ม layer ใหม่ (เหมือน Goxel)."""
+    """Add a new layer, as Goxel does."""
     scene = server.store.get(scene_name or None)
     layer = scene.add_layer(name)
     server._sync_bridge(scene)
     return (
-        f"เพิ่ม layer '{layer.name}' ใน '{scene.name}' — รวม {len(scene.layers)} layers"
+        f"Added layer '{layer.name}' to '{scene.name}' — "
+        f"{len(scene.layers)} layers in total"
     )
 
 
 @server.mcp.tool()
 def voxelforge_set_active_layer(index: int, scene_name: str = "") -> str:
-    """ตั้ง layer ที่ใช้งาน (index เริ่ม 0)."""
+    """Set the active layer, indexed from zero."""
     scene = server.store.get(scene_name or None)
     if index < 0 or index >= len(scene.layers):
-        msg = f"layer index ต้องอยู่ระหว่าง 0..{len(scene.layers) - 1}"
+        msg = f"layer index must lie between 0 and {len(scene.layers) - 1}"
         raise ValueError(msg)
     scene.active_layer = index
     server._sync_bridge(scene)
@@ -73,11 +76,11 @@ def voxelforge_set_palette(  # ruff: ignore[too-many-arguments, too-many-positio
     b: int,
     scene_name: str = "",
 ) -> str:
-    """กำหนดสีในพาเลต (24-bit RGB)."""
+    """Define a colour in the palette as 24-bit RGB."""
     scene = server.store.get(scene_name or None)
     scene.set_palette_color(color_key, r, g, b)
     server._sync_bridge(scene)
-    return f"พาเลต {color_key} = RGB({r},{g},{b})"
+    return f"Palette {color_key} = RGB({r},{g},{b})"
 
 
 @server.mcp.tool()
@@ -89,19 +92,23 @@ def voxelforge_place_block(  # ruff: ignore[too-many-arguments, too-many-positio
     color: str = "1",
     scene_name: str = "",
 ) -> str:
-    """วาง voxel 1 ลูกที่พิกัด (x,y,z)."""
+    """Place a single voxel at the coordinate (x, y, z)."""
     scene = server.store.get(scene_name or None)
     scene.place(x, y, z, color)
     server._sync_bridge(scene)
-    return f"วาง ({x},{y},{z}) สี '{color}' — รวม {scene.block_count()} บล็อก"
+    return (
+        f"Placed ({x},{y},{z}) in colour '{color}' — "
+        f"{scene.block_count()} blocks in total"
+    )
 
 
 @server.mcp.tool()
 def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     """
-    วางหลาย voxel จาก JSON array.
+    Place many voxels from a JSON array.
 
-    รูปแบบ: [[x,y,z,"1"], [1,0,0,"2"], ...] หรือใช้ #RRGGBB เป็นสี.
+    Format: [[x,y,z,"1"], [1,0,0,"2"], ...], where the colour may also be
+    given as #RRGGBB.
     """
     scene = server.store.get(scene_name or None)
     blocks = server._parse_blocks_json(blocks_json)
@@ -110,7 +117,10 @@ def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     for x, y, z, color in blocks:
         scene.place(x, y, z, color)
     server._sync_bridge(scene)
-    return f"วาง {len(blocks)} voxel ใน '{scene.name}' — รวม {scene.block_count()} บล็อก"
+    return (
+        f"Placed {len(blocks)} voxels in '{scene.name}' — "
+        f"{scene.block_count()} blocks in total"
+    )
 
 
 @server.mcp.tool()
@@ -125,7 +135,7 @@ def voxelforge_fill_box(  # ruff: ignore[too-many-arguments, too-many-positional
     color: str = "1",
     scene_name: str = "",
 ) -> str:
-    """เติ่มกล่อง 3D (เหมาะสร้างฐาน/ตัวบ้าน/กำแพง)."""
+    """Fill a 3D box, suited to bases, building shells and walls."""
     scene = server.store.get(scene_name or None)
     volume = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1) * (abs(z2 - z1) + 1)
     if volume > server.MAX_TOOL_VOXELS:
@@ -133,63 +143,65 @@ def voxelforge_fill_box(  # ruff: ignore[too-many-arguments, too-many-positional
         raise ValueError(msg)
     n = scene.fill_box(x1, x2, y1, y2, z1, z2, color)
     server._sync_bridge(scene)
-    return f"เติม {n} voxel สี '{color}' — รวม {scene.block_count()} บล็อก"
+    return (
+        f"Filled {n} voxels in colour '{color}' — {scene.block_count()} blocks in total"
+    )
 
 
 @server.mcp.tool()
 def voxelforge_remove_block(x: int, y: int, z: int, scene_name: str = "") -> str:
-    """ลบ voxel ที่พิกัด."""
+    """Remove the voxel at a coordinate."""
     scene = server.store.get(scene_name or None)
     ok = scene.remove(x, y, z)
     if ok:
         server._sync_bridge(scene)
-    return "ลบแล้ว" if ok else "ไม่มี voxel ตรงนั้น"
+    return "Removed" if ok else "There is no voxel at that coordinate"
 
 
 @server.mcp.tool()
 def voxelforge_clear(scene_name: str = "") -> str:
-    """ล้าง voxel ทั้งหมด."""
+    """Clear every voxel from the scene."""
     scene = server.store.get(scene_name or None)
     scene.clear()
     server._sync_bridge(scene)
-    return f"ล้าง scene '{scene.name}' แล้ว"
+    return f"Cleared scene '{scene.name}'"
 
 
 @server.mcp.tool()
 def voxelforge_preview(scene_name: str = "") -> str:
-    """แสดงสรุป + มุมมอง ASCII แต่ละชั้น Y (ให้ AI ตรวจรูปทรง)."""
+    """Show a summary and an ASCII view of each Y slice, for checking shape."""
     scene = server.store.get(scene_name or None)
     return summary(scene)
 
 
 @server.mcp.tool()
 def voxelforge_get_info(scene_name: str = "") -> str:
-    """ข้อมูล scene เป็น JSON."""
+    """Return the scene's details as JSON."""
     scene = server.store.get(scene_name or None)
     return json.dumps(scene.to_dict(), ensure_ascii=False, indent=2)
 
 
 @server.mcp.tool()
 def voxelforge_save(scene_name: str = "") -> str:
-    """บันทึก scene ลง ~/.voxel-forge/scenes/."""
+    """Save the scene to ~/.voxel-forge/scenes/."""
     scene = server.store.get(scene_name or None)
     path = scene.save()
-    return f"บันทึก '{scene.name}' ที่ {path}"
+    return f"Saved '{scene.name}' to {path}"
 
 
 @server.mcp.tool()
 def voxelforge_load(name: str) -> str:
-    """โหลด scene จากไฟล์."""
+    """Load a scene from a file."""
     scene = VoxelScene.load(name)
     server.store._scenes[name] = scene
     server.store._current = name
     server._sync_bridge(scene)
-    return f"โหลด '{name}' ({scene.block_count()} บล็อก)"
+    return f"Loaded '{name}' ({scene.block_count()} blocks)"
 
 
 @server.mcp.tool()
 def voxelforge_list_scenes() -> str:
-    """รายชื่อ scene ใน session และไฟล์ที่เซฟ."""
+    """List the scenes in this session and those saved to disk."""
     return json.dumps(
         {
             "active_session": server.store.list_active(),
@@ -202,14 +214,17 @@ def voxelforge_list_scenes() -> str:
 
 @server.mcp.tool()
 def voxelforge_set_voxel_size(size: float, scene_name: str = "") -> str:
-    """ตั้งขนาด voxel ใน world (1.0=ปกติ, 0.25=ละเอียด 4 เท่า)."""
+    """Set the voxel size in world units.
+
+    1.0 is the normal size; 0.25 is four times finer.
+    """
     scene = server.store.get(scene_name or None)
     scene.voxel_size = max(0.05, min(2.0, float(size)))
     server._sync_bridge(scene)
-    return f"ตั้ง voxel_size={scene.voxel_size} ใน '{scene.name}'"
+    return f"Set voxel_size={scene.voxel_size} in '{scene.name}'"
 
 
 @server.mcp.tool()
 def voxelforge_default_palette() -> str:
-    """พาเลตสีเริ่มต้น."""
+    """Return the default colour palette."""
     return json.dumps({k: list(v) for k, v in DEFAULT_PALETTE.items()}, indent=2)

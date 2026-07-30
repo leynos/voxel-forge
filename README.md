@@ -1,23 +1,31 @@
 # VoxelForge
 
-**VoxelForge** คือ voxel editor ของเรา สร้างจากแนวคิด
-[Goxel](https://github.com/guillaumechereau/goxel) พร้อม **MCP bridge** ให้ AI
-ต่าง ๆ (Cursor, Claude Desktop ฯลฯ) สร้างและแก้โมเดล 3D ได้โดยตรง
+**VoxelForge** is a voxel editor with an **MCP bridge**, so AI assistants
+(Cursor, Claude Desktop and others) can create and edit 3D models
+directly.
 
-> Goxel ต้นฉบับเป็น GPL-3.0 — VoxelForge เป็น implementation ใหม่ที่ออกแบบ
-> MCP-first ไม่ได้ fork โค้ด C ของ Goxel โดยตรง แต่รองรับไฟล์ `.vox` / `.obj`
-> ที่ใช้ร่วมกันได้
+ภาษาไทย: [README.th.md](README.th.md)
 
-## ฟีเจอร์
+> **Provenance.** This repository, `leynos/voxel-forge`, is a soft fork of
+> [thanakon228/voxel-forge](https://github.com/thanakon228/voxel-forge) —
+> the original VoxelForge by thanakon228. VoxelForge is inspired by
+> [Goxel](https://github.com/guillaumechereau/goxel) (GPL-3.0) but is an
+> independent, MCP-first implementation: it does not fork Goxel's C code,
+> and the two projects share only the interchangeable `.vox` and `.obj`
+> formats. See [docs/provenance.md](docs/provenance.md) and
+> [docs/fork-and-interface-boundary.md](docs/fork-and-interface-boundary.md)
+> for detail.
 
-| ฟีเจอร์ | รายละเอียด |
+## Features
+
+| Feature | Detail |
 | --- | --- |
-| 24-bit RGB | พาเลตสีเต็ม |
-| Layers | หลาย layer เหมือน Goxel |
+| 24-bit RGB | Full colour palette |
+| Layers | Multiple layers, as in Goxel |
 | Export | `.vox` (MagicaVoxel), `.obj` (Wavefront) |
-| Import | `.vox` จาก Goxel / MagicaVoxel |
-| Web Editor | Three.js 3D — คลิกวาง/ลบ voxel |
-| MCP | เชื่อม Cursor, Claude, client อื่น ๆ |
+| Import | `.vox` from Goxel or MagicaVoxel |
+| Web editor | Three.js 3D view — click to place or remove voxels |
+| MCP | Connects Cursor, Claude and other clients |
 
 ## Installation
 
@@ -91,7 +99,7 @@ run `voxel-forge-mcp --bridge` or set `VOXELFORGE_BRIDGE=1`. This makes the
 server safe for headless and sandboxed environments such as continuous
 integration.
 
-## Desktop App (ไม่ใช้เบราว์เซอร์)
+## Desktop app (no browser required)
 
 ### Running
 
@@ -109,28 +117,37 @@ uv run voxel-forge
 
 On Windows, `run-desktop.bat` wraps the same command.
 
-### Build เป็น .exe (Windows)
+### Building an .exe (Windows)
 
 ```powershell
 .\build-desktop.bat
 ```
 
-ได้ที่ `dist\VoxelForge\VoxelForge.exe` — ดับเบิลคลิกเปิดได้เลย ไม่ต้องมี
-Python/เบราว์เซอร์
+The result is `dist\VoxelForge\VoxelForge.exe` — double-click it to run,
+with no Python installation and no browser needed.
 
-### ฟีเจอร์ Desktop
+### Desktop features
 
-- เปิด/บันทึก scene (JSON)
-- Import `.vox` / Export `.obj` (merged), `.vox`, Roblox Luau
+- Open and save scenes (JSON)
+- Import `.vox`; export `.obj` (merged), `.vox`, and Roblox Luau
 - Create → Build Tree (resolution 1–8)
-- 3D view native (Qt3D) — หมุนกล้องด้วยเมาส์กลาง
+- Native 3D view (Qt3D) — orbit the camera with the middle mouse button
 
-MCP สำหรับ AI ยังใช้แยก (`run-mcp.bat`) — สร้าง scene ผ่าน AI แล้วเปิดใน
-Desktop จาก `~/.voxel-forge/scenes/` (Windows: `%USERPROFILE%\.voxel-forge\scenes\`)
+The MCP server for AI use stays separate (`run-mcp.bat` on Windows): build a
+scene through an AI assistant, then open it in the desktop app from
+`~/.voxel-forge/scenes/` (on Windows,
+`%USERPROFILE%\.voxel-forge\scenes\`).
 
----
+## Web editor (optional)
 
-## Web Editor (ทางเลือก)
+The editor is served by [Bun](https://bun.sh) and ships inside the installed
+wheel, so `voxelforge_launch_editor` starts it without a checkout. The MCP
+server supervises that Bun process. The editor binds an **ephemeral** port
+and reports it as a structured `listening` event on stdout, so
+`voxelforge_launch_editor` can return the resulting URL and open it in a
+browser.
+
+To run the editor by hand from a checkout:
 
 ```bash
 cd editor
@@ -138,64 +155,70 @@ bun install
 bun run dev
 ```
 
-The editor is served by [Bun](https://bun.sh) and is bundled inside the
-installed wheel, so `voxelforge_launch_editor` works without a checkout.
-On Windows, `run-editor.bat` wraps the same commands.
+On Windows, `run-editor.bat` wraps the same commands. The standalone dev
+server also binds an ephemeral port by default; set
+`VOXELFORGE_EDITOR_PORT=5173` to use the port that the bridge keeps
+pre-registered as an allowed origin for this flow.
 
-เปิด `http://127.0.0.1:5173` บนเครื่องเดียวกัน โดย editor จะ sync สองทางกับ MCP
-ผ่าน WebSocket ที่ `ws://127.0.0.1:8765` การสร้างหรือแก้ scene ผ่าน MCP จะส่งไป
-ยัง browser และการวางหรือลบ voxel ใน editor จะอัปเดต scene ฝั่ง MCP ด้วย
+The editor synchronizes in both directions with MCP over WebSocket:
+creating or editing a scene through MCP pushes it to the browser, and
+placing or removing a voxel in the editor updates the scene on the MCP
+side. The bridge binds ephemeral WebSocket and HTTP ports too, and
+`voxelforge_launch_editor` reports both. Only the standalone
+`voxel-forge-bridge` command defaults to the fixed ports 8765 (WebSocket)
+and 8766 (HTTP); both accept `--ws-port` and `--http-port`.
 
-ทั้ง web editor และ bridge bind อยู่ที่ loopback (`127.0.0.1`) จึงเปิดจาก
-เครื่องนี้เท่านั้น ไม่เปิดให้เครื่องอื่นในเครือข่ายเข้าถึง
+Both the editor and the bridge bind loopback (`127.0.0.1`), so they are
+reachable from this machine only and are never exposed to other machines on
+the network.
 
-### 2. สร้างผ่าน AI
+### Building through an AI assistant
 
-ตัวอย่าง prompt:
+An example prompt:
 
-> สร้างบ้าน voxel แบบ Goxel ชื่อ my_house — ฐาน 8x8 สีเทา ตัวบ้าน 6x6x4 สีขาว
-> หลังคาสามเหลี่ยมสีแดง
+> Build a Goxel-style voxel house called my_house — an 8x8 grey base, a
+> 6x6x4 white body, and a red triangular roof.
 
-AI จะเรียก:
+The assistant then calls:
 
 1. `voxelforge_create_scene`
 2. `voxelforge_fill_box` / `voxelforge_place_many`
-3. `voxelforge_preview` ตรวจรูปทรง
-4. `voxelforge_export_vox` หรือ `voxelforge_export_obj`
+3. `voxelforge_preview` to check the shape
+4. `voxelforge_export_vox` or `voxelforge_export_obj`
 
-`voxelforge_fill_box` และ `voxelforge_place_many` จำกัดไม่เกิน **100,000
-voxels ต่อการเรียกหนึ่งครั้ง** หากฉากใหญ่กว่านี้ให้แบ่งเป็นหลายครั้ง
+`voxelforge_fill_box` and `voxelforge_place_many` are limited to
+**100,000 voxels per call**. Split anything larger across several calls.
 
-### 3. เปิดใน Goxel จริง
+### Opening the result in Goxel
 
-Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
+Export `.vox`, then open it in Goxel or MagicaVoxel:
 
 ```text
 ~/.voxel-forge/exports/my_house.vox
 ```
 
-## เครื่องมือ MCP หลัก
+## Core MCP tools
 
-| Tool | หน้าที่ |
+| Tool | Purpose |
 | --- | --- |
-| `voxelforge_about` | ข้อมูลโปรเจกต์ |
-| `voxelforge_create_scene` | สร้าง scene ใหม่ |
-| `voxelforge_place_many` | วาง voxel จาก JSON |
-| `voxelforge_fill_box` | เติมกล่อง 3D |
-| `voxelforge_add_layer` | เพิ่ม layer |
-| `voxelforge_preview` | ดู ASCII preview |
-| `voxelforge_export_vox` | ส่งออก .vox |
-| `voxelforge_export_obj` | ส่งออก .obj |
-| `voxelforge_import_vox` | นำเข้า .vox |
-| `voxelforge_launch_editor` | เปิด web editor |
-| `voxelforge_save` / `voxelforge_load` | บันทึก/โหลด scene |
+| `voxelforge_about` | Project information |
+| `voxelforge_create_scene` | Create a new scene |
+| `voxelforge_place_many` | Place voxels from JSON |
+| `voxelforge_fill_box` | Fill a 3D box |
+| `voxelforge_add_layer` | Add a layer |
+| `voxelforge_preview` | Show an ASCII preview |
+| `voxelforge_export_vox` | Export `.vox` |
+| `voxelforge_export_obj` | Export `.obj` |
+| `voxelforge_import_vox` | Import `.vox` |
+| `voxelforge_launch_editor` | Open the web editor |
+| `voxelforge_save` / `voxelforge_load` | Save and load a scene |
 
-## โฟลเดอร์ข้อมูล
+## Data folders
 
 - Scenes: `~/.voxel-forge/scenes/`
 - Exports: `~/.voxel-forge/exports/`
 
-## สถาปัตยกรรม
+## Architecture
 
 ```text
 ┌─────────────┐   stdio/MCP   ┌──────────────┐  WebSocket   ┌─────────────┐
@@ -204,19 +227,19 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 └─────────────┘               └──────────────┘              └─────────────┘
 ```
 
-## เปรียบเทียบกับ cube-world-voxel-mcp
+## Compared with cube-world-voxel-mcp
 
 | | VoxelForge | cube-world-voxel-mcp |
 | --- | --- | --- |
-| จุดประสงค์ | Editor ทั่วไปแบบ Goxel | Roblox Cube World |
-| ขนาด voxel | 1×1×1 | 2×2×2 studs |
-| GUI | Three.js editor | ไม่มี (headless) |
-| Export | .vox, .obj | Luau → Roblox |
+| Purpose | General Goxel-style editor | Roblox Cube World |
+| Voxel size | 1×1×1 | 2×2×2 studs |
+| GUI | Three.js editor | None (headless) |
+| Export | `.vox`, `.obj` | Luau → Roblox |
 
-ทั้งสองใช้ MCP คู่กันได้ใน Cursor พร้อมกัน
+The two are complementary, and Cursor can use both MCP servers at once.
 
-## License
+## Licence
 
-MIT — โค้ด VoxelForge เป็นของเรา  
-Goxel ต้นฉบับ: GPL-3.0
-([โครงการ Goxel](https://github.com/guillaumechereau/goxel))
+MIT — see [LICENSE](LICENSE), copyright thanakon228. Goxel itself is
+GPL-3.0 ([the Goxel project](https://github.com/guillaumechereau/goxel));
+none of its code is used here.

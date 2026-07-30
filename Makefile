@@ -8,6 +8,7 @@ MDLINT ?= markdownlint-cli2
 
 MARKDOWN_PATHS := \
 	README.md \
+	README.th.md \
 	AGENTS.md \
 	docs/roadmap.md \
 	docs/fork-and-interface-boundary.md \

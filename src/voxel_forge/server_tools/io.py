@@ -27,17 +27,19 @@ _editor_state: dict[str, tuple[subprocess.Popen[str], int]] = {}
 
 @server.mcp.tool()
 def voxelforge_import_vox(file_path: str) -> str:
-    """Import ไฟล์ .vox (MagicaVoxel / Goxel export format)."""
+    """Import a .vox file in the MagicaVoxel or Goxel export format."""
     scene = import_vox(file_path)
     server.store._scenes[scene.name] = scene
     server.store._current = scene.name
     server._sync_bridge(scene)
-    return f"import '{file_path}' → scene '{scene.name}' ({scene.block_count()} voxel)"
+    return (
+        f"Imported '{file_path}' → scene '{scene.name}' ({scene.block_count()} voxels)"
+    )
 
 
 @server.mcp.tool()
 def voxelforge_export_vox(scene_name: str = "", output_path: str = "") -> str:
-    """Export เป็น .vox (เปิดใน Goxel / MagicaVoxel ได้)."""
+    """Export to .vox, which Goxel and MagicaVoxel can both open."""
     scene = server.store.get(scene_name or None)
     path = (
         Path(output_path)
@@ -45,19 +47,22 @@ def voxelforge_export_vox(scene_name: str = "", output_path: str = "") -> str:
         else server._exports_dir() / f"{scene.name}.vox"
     )
     export_vox(scene, path)
-    return f"export .vox → {path} ({scene.block_count()} voxel)"
+    return f"Exported .vox → {path} ({scene.block_count()} voxels)"
 
 
 @server.mcp.tool()
 def voxelforge_merge_stats(scene_name: str = "") -> str:
-    """ดูว่ารวม voxel เป็นกล่องแล้วลด part/mesh ได้เท่าไร (ก่อน export)."""
+    """Report how far merging voxels into boxes reduces the part or mesh count.
+
+    Intended as a pre-export check.
+    """
     scene = server.store.get(scene_name or None)
     stats = merge_stats(scene)
     return (
         f"Scene '{scene.name}':\n"
-        f"  voxels (หลัง dedupe ทับกัน): {stats['voxels']}\n"
+        f"  voxels (after de-duplicating overlaps): {stats['voxels']}\n"
         f"  merged boxes (parts): {stats['merged_boxes']}\n"
-        f"  ลดได้: {stats['parts_saved']} ({stats['reduction_percent']}%)"
+        f"  reduction: {stats['parts_saved']} ({stats['reduction_percent']}%)"
     )
 
 
@@ -67,7 +72,11 @@ def voxelforge_export_obj(
     output_path: str = "",
     merge_boxes: bool = True,  # ruff: ignore[boolean-type-hint-positional-argument, boolean-default-value-positional-argument]  # published MCP tool schema
 ) -> str:
-    """Export เป็น Wavefront .obj — merge_boxes=true รวม voxel ติดกัน (แนะนำ)."""
+    """Export to Wavefront .obj.
+
+    With ``merge_boxes=true``, which is recommended, adjacent voxels are
+    merged into single boxes.
+    """
     scene = server.store.get(scene_name or None)
     if output_path:
         path = Path(output_path)
@@ -78,7 +87,7 @@ def voxelforge_export_obj(
     stats = merge_stats(scene) if merge_boxes else {"merged_boxes": scene.block_count()}
     parts = stats["merged_boxes"] if merge_boxes else scene.block_count()
     return (
-        f"export .obj -> {path} ({parts} parts จาก "
+        f"Exported .obj -> {path} ({parts} parts from "
         f"{scene.block_count()} voxels, merge={merge_boxes})"
     )
 
@@ -86,9 +95,10 @@ def voxelforge_export_obj(
 @server.mcp.tool()
 def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "") -> str:
     """
-    Export Luau สำหรับ Roblox — รวม voxel เป็น Part ใหญ่ใน Model เดียว (ลดแลag).
+    Export Luau for Roblox, merging voxels into large Parts in one Model.
 
-    ใช้ Roblox_Studio MCP execute_luau (Edit mode) รันโค้ดที่ได้.
+    Merging keeps the part count, and so the lag, down. Run the generated
+    code with the Roblox Studio MCP ``execute_luau`` tool in Edit mode.
     """
     scene = server.store.get(scene_name or None)
     stats = merge_stats(scene)
@@ -99,16 +109,16 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
     else:
         path = write_luau_file(scene)
     return (
-        f"export Roblox merged -> {path}\n"
+        f"Exported Roblox merged -> {path}\n"
         f"  {stats['voxels']} voxels -> {stats['merged_boxes']} Parts "
-        f"(ลด {stats['reduction_percent']}%)\n"
-        f"  รันใน Studio ด้วย execute_luau"
+        f"({stats['reduction_percent']}% fewer)\n"
+        f"  run it in Studio with execute_luau"
     )
 
 
 @server.mcp.tool()
 def voxelforge_export_obj_legacy(scene_name: str = "", output_path: str = "") -> str:
-    """Export เป็น Wavefront .obj (Goxel รองรับ)."""
+    """Export to Wavefront .obj without merging, as Goxel supports."""
     scene = server.store.get(scene_name or None)
     path = (
         Path(output_path)
@@ -116,7 +126,7 @@ def voxelforge_export_obj_legacy(scene_name: str = "", output_path: str = "") ->
         else server._exports_dir() / f"{scene.name}.obj"
     )
     export_obj(scene, path, merge_boxes=False)
-    return f"export .obj (no merge) -> {path} ({scene.block_count()} voxels)"
+    return f"Exported .obj (no merge) -> {path} ({scene.block_count()} voxels)"
 
 
 def _running_editor() -> tuple[subprocess.Popen[str], int] | None:
@@ -152,23 +162,24 @@ def _start_supervised_editor(
 @server.mcp.tool()
 def voxelforge_launch_editor() -> str:
     """
-    เปิด VoxelForge Web Editor ในเบราว์เซอร์ (Three.js 3D view).
+    Open the VoxelForge web editor in a browser, with a Three.js 3D view.
 
-    Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่.
+    The bridge synchronises automatically over WebSocket, so edits can be
+    made either in the editor or through MCP.
     """
     server._ensure_bridge()
     bridge_ports = bridge.current_ports()
     if bridge_ports is None:
-        return "Bridge ยังไม่พร้อม — ลองเรียก voxelforge_launch_editor อีกครั้ง"
+        return "The bridge is not ready yet — call voxelforge_launch_editor again"
     editor = _running_editor()
     if editor is None:
         try:
             editor = _start_supervised_editor(bridge_ports)
         except EditorRuntimeError as exc:
             return (
-                f"ไม่สามารถเปิด editor ได้: {exc}\n"
-                "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor "
-                "อีกครั้ง"
+                f"The editor could not be opened: {exc}\n"
+                "Install Bun (https://bun.sh), then call "
+                "voxelforge_launch_editor again"
             )
     _, port = editor
     ws_port, http_port = bridge_ports
@@ -178,7 +189,7 @@ def voxelforge_launch_editor() -> str:
 
     webbrowser.open(url)
     return (
-        f"เปิด {url} แล้ว (Bun editor ภายใต้การดูแลของ server)\n"
+        f"Opened {url} (Bun editor supervised by the server)\n"
         f"Bridge: ws://127.0.0.1:{ws_port} | "
         f"HTTP scene: http://127.0.0.1:{http_port}/scene"
     )

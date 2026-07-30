@@ -337,15 +337,15 @@ def test_basic_agent_scene_workflow(
 ) -> None:
     """The core agent tools must create, edit, save, and reload a scene."""
     assert "basic" in server.voxelforge_create_scene("basic"), "the scene must exist"
-    assert "วาง" in server.voxelforge_place_block(0, 0, 0, "2"), "placing must work"
-    assert "เติม" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3"), (
+    assert "Placed" in server.voxelforge_place_block(0, 0, 0, "2"), "placing must work"
+    assert "Filled" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3"), (
         "filling must be confirmed"
     )
     assert server.store.get().block_count() == 3, "three voxels must be present"
-    assert "บันทึก" in server.voxelforge_save(), "the save must be confirmed"
+    assert "Saved" in server.voxelforge_save(), "the save must be confirmed"
 
     server.store = server.SceneStore()
-    assert "โหลด" in server.voxelforge_load("basic"), "the load must be confirmed"
+    assert "Loaded" in server.voxelforge_load("basic"), "the load must be confirmed"
     assert server.store.get().block_count() == 3, "the saved voxels must return"
 
 
