@@ -115,6 +115,18 @@ uv run voxel-forge
 
 บน Windows `run-desktop.bat` ห่อคำสั่งเดียวกันไว้
 
+### ภาษา
+
+หน้าจอ desktop จะแสดงตาม locale ที่ตั้งไว้: locale ภาษาไทยจะเห็นข้อความ
+ภาษาไทย ส่วน locale อื่นทั้งหมดจะเห็นภาษาอังกฤษ โปรแกรมเลือกภาษาจาก
+ตัวแปร `VOXELFORGE_LANG` (`th` หรือ `en`) ก่อน แล้วจึงดูตัวแปรมาตรฐาน
+`LANGUAGE`, `LC_ALL`, `LC_MESSAGES` และ `LANG` และสุดท้ายคือ locale
+ของระบบ หากต้องการบังคับภาษาโดยตรง:
+
+```bash
+VOXELFORGE_LANG=th voxel-forge
+```
+
 ### Build เป็น .exe (Windows)
 
 ```powershell
