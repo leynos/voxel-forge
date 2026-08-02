@@ -7,10 +7,17 @@ catalogue without Qt, so they run in environments where the optional
 
 from __future__ import annotations
 
+import ast
+import importlib.util
+import os
 import string
+import subprocess  # ruff: ignore[suspicious-subprocess-import]  # tests spawn python instances with fixed args; shell=False
+import sys
+from pathlib import Path
 
 import pytest
 
+from voxel_forge import desktop
 from voxel_forge.desktop import i18n
 from voxel_forge.desktop.translations import MESSAGES
 
@@ -137,3 +144,109 @@ def test_placeholders_match_across_languages() -> None:
         if _placeholders(entry["en"]) != _placeholders(entry["th"])
     ]
     assert not mismatched, f"placeholder mismatch between languages: {mismatched}"
+
+
+# ── Desktop wiring ────────────────────────────────────────────
+
+
+def _desktop_sources() -> dict[str, str]:
+    """Map desktop module names (except the catalogue) to their source."""
+    package_dir = Path(desktop.__file__).parent
+    return {
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted(package_dir.glob("*.py"))
+        if path.name != "translations.py"
+    }
+
+
+def _tr_key_literals(source: str) -> set[str]:
+    """Collect string literals passed as the first argument to ``tr``."""
+    keys: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        match node:
+            case ast.Call(
+                func=ast.Name(id="tr"),
+                args=[ast.Constant(value=str() as key), *_],
+            ):
+                keys.add(key)
+    return keys
+
+
+def _string_literals(source: str) -> set[str]:
+    """Collect every string literal in a module's source."""
+    return {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+
+def test_every_tr_call_uses_a_registered_key() -> None:
+    """Keys referenced from the desktop modules must exist in the catalogue."""
+    for name, source in _desktop_sources().items():
+        unknown = _tr_key_literals(source) - MESSAGES.keys()
+        assert not unknown, f"{name} references unregistered keys: {unknown}"
+
+
+def test_every_catalogue_key_is_referenced() -> None:
+    """The catalogue must not accumulate dead keys."""
+    referenced: set[str] = set()
+    for source in _desktop_sources().values():
+        referenced |= _string_literals(source)
+    unused = set(MESSAGES) - referenced
+    assert not unused, f"catalogue keys never referenced by the desktop: {unused}"
+
+
+def test_no_thai_text_outside_the_catalogue() -> None:
+    """Desktop modules must draw every localized string from the catalogue."""
+    offenders = [
+        name for name, source in _desktop_sources().items() if _contains_thai(source)
+    ]
+    assert not offenders, f"Thai text outside translations.py: {offenders}"
+
+
+# ── Live window construction ──────────────────────────────────
+
+_MENU_PROBE = """
+from PySide6.QtWidgets import QApplication
+
+from voxel_forge.desktop.app import MainWindow
+
+app = QApplication([])
+win = MainWindow()
+print("\\x1f".join(action.text() for action in win.menuBar().actions()))
+"""
+
+
+def _menu_titles(language: str) -> list[str]:
+    """Build the main window offscreen and report its menu titles."""
+    env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "VOXELFORGE_LANG": language}
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # fixed interpreter and script; shell=False
+        [sys.executable, "-c", _MENU_PROBE],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
+        env=env,
+    )
+    return result.stdout.strip().splitlines()[-1].split("\x1f")
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="the optional desktop extra is not installed",
+)
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("en", ["&File", "&Create", "&View", "&Tools", "&Help"]),
+        ("th", ["ไฟล์ (&F)", "สร้าง (&C)", "มุมมอง (&V)", "เครื่องมือ (&T)", "ช่วยเหลือ (&H)"]),
+    ],
+)
+def test_main_window_menus_follow_the_locale(
+    language: str, expected: list[str]
+) -> None:
+    """The constructed window must present menus in the resolved language."""
+    assert _menu_titles(language) == expected, (
+        f"menu titles must be localized for {language}"
+    )

@@ -1,4 +1,4 @@
-"""VoxelForge Desktop — โปรแกรม voxel editor แบบ native (ไม่ใช้เบราว์เซอร์)."""
+"""VoxelForge Desktop, the native voxel editor (no browser required)."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from voxel_forge.desktop.create_actions import CreateActionsMixin
 from voxel_forge.desktop.export_actions import ExportActionsMixin
 from voxel_forge.desktop.file_actions import FileActionsMixin
 from voxel_forge.desktop.help_actions import HelpActionsMixin
+from voxel_forge.desktop.i18n import tr
 from voxel_forge.desktop.menus import MenuBuilderMixin
 from voxel_forge.desktop.sidebar import SidePanel
 from voxel_forge.desktop.viewport import VoxelViewport
@@ -58,7 +59,7 @@ class MainWindow(
         self.setCentralWidget(self._viewport.embed_widget())
 
         self._sidebar = SidePanel()
-        dock = QDockWidget("แผงควบคุม", self)
+        dock = QDockWidget(tr("sidebar.dock_title"), self)
         dock.setWidget(self._sidebar)
         dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
@@ -98,7 +99,7 @@ class MainWindow(
         self._recent_menu.clear()
         recent = self._recent_paths()
         if not recent:
-            empty = QAction("(ไม่มี)", self)
+            empty = QAction(tr("recent.empty"), self)
             empty.setEnabled(False)
             self._recent_menu.addAction(empty)
             return
@@ -112,7 +113,7 @@ class MainWindow(
 
     def _require_scene(self) -> VoxelScene | None:
         if self._scene is None:
-            QMessageBox.warning(self, "VoxelForge", "ยังไม่มี scene — สร้างใหม่หรือเปิดไฟล์ก่อน")
+            QMessageBox.warning(self, "VoxelForge", tr("scene.none_warning"))
             return None
         return self._scene
 
@@ -127,14 +128,20 @@ class MainWindow(
     def _update_ui(self) -> None:
         self._sidebar.set_scene_info(self._scene, self._path)
         if not self._scene:
-            self._status.showMessage("พร้อมใช้งาน — เปิดไฟล์หรือสร้างโมเดลใหม่")
+            self._status.showMessage(tr("status.ready"))
             self.setWindowTitle("VoxelForge")
             return
         st = merge_stats(self._scene)
-        path = str(self._path) if self._path else "(ยังไม่ได้บันทึก)"
+        path = str(self._path) if self._path else tr("scene.unsaved")
         self._status.showMessage(
-            f"{self._scene.name} | {st['voxels']} voxels | "
-            f"{st['merged_boxes']} parts | ลด mesh {st['reduction_percent']}% | {path}"
+            tr(
+                "status.scene",
+                name=self._scene.name,
+                voxels=st["voxels"],
+                parts=st["merged_boxes"],
+                reduction=st["reduction_percent"],
+                path=path,
+            )
         )
         self.setWindowTitle(f"VoxelForge — {self._scene.name}")
 

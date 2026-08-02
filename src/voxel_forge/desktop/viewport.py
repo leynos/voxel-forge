@@ -1,4 +1,4 @@
-"""Qt3D viewport — แสดง voxel แบบ merged boxes (ลื่น + ตรงกับ export)."""
+"""Qt3D viewport rendering voxels as merged boxes (fast, and true to export)."""
 
 from __future__ import annotations
 
