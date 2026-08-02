@@ -31,6 +31,7 @@ import json
 import os
 import queue
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # spawn Bun with validated arguments; shell=False
+import sys
 import threading
 import time
 import typing as typ
@@ -279,6 +280,13 @@ def install_editor_dependencies(*, bun_executable: str | None = None) -> Path:
         If the package root cannot be resolved, Bun cannot be executed,
         or dependency installation fails or times out.
 
+    Notes
+    -----
+    Bun's output is captured and relayed to stderr. The install may run
+    inside the MCP server process, whose stdout carries the stdio
+    protocol: an inherited stdout would let Bun's progress lines corrupt
+    the channel for the connected client.
+
     Examples
     --------
     >>> install_editor_dependencies()  # doctest: +SKIP
@@ -289,7 +297,11 @@ def install_editor_dependencies(*, bun_executable: str | None = None) -> Path:
     command = [executable, "install", "--cwd", str(package_root)]
     try:
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # explicit command list; shell=False
-            command, check=False, timeout=_INSTALL_TIMEOUT_SECONDS
+            command,
+            check=False,
+            timeout=_INSTALL_TIMEOUT_SECONDS,
+            capture_output=True,
+            text=True,
         )
     except FileNotFoundError as exc:
         msg = f"Bun executable not found: {executable}"
@@ -300,7 +312,13 @@ def install_editor_dependencies(*, bun_executable: str | None = None) -> Path:
             f"{_INSTALL_TIMEOUT_SECONDS}s with command: {' '.join(command)}"
         )
         raise EditorRuntimeError(msg) from exc
+    for stream in (result.stdout, result.stderr):
+        if stream:
+            sys.stderr.write(stream)
     if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
         msg = f"Failed to install editor dependencies with command: {' '.join(command)}"
+        if detail:
+            msg = f"{msg}\n{detail}"
         raise EditorRuntimeError(msg)
     return package_root

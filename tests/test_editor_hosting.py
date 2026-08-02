@@ -251,3 +251,50 @@ def test_install_editor_dependencies_targets_the_package_root(
     )
     assert str(root) in recorded, "bun install must receive the package root"
     assert "install" in recorded, "the stub must have been asked to install"
+
+
+def test_install_editor_dependencies_keeps_stdout_clean(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """Bun's install chatter must be relayed to stderr, never stdout.
+
+    The install can run inside the MCP server process, whose stdout is
+    the stdio protocol channel; any inherited output would corrupt the
+    client's frame parser.
+    """
+    from voxel_forge.orchestration import install_editor_dependencies
+
+    stub = tmp_path / "stub-bun"
+    stub.write_text(
+        '#!/bin/sh\necho "install chatter"\necho "install warning" >&2\n',
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+
+    install_editor_dependencies(bun_executable=str(stub))
+
+    captured = capfd.readouterr()
+    assert "install chatter" not in captured.out, (
+        "bun stdout must not reach the parent's protocol channel"
+    )
+    assert not captured.out, "the parent's stdout must stay untouched"
+    assert "install chatter" in captured.err, "bun stdout must be relayed to stderr"
+    assert "install warning" in captured.err, "bun stderr must be relayed to stderr"
+
+
+def test_install_editor_dependencies_reports_failure_detail(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """A failed install must surface Bun's diagnostic in the error."""
+    from voxel_forge.orchestration import install_editor_dependencies
+
+    stub = tmp_path / "stub-bun"
+    stub.write_text(
+        '#!/bin/sh\necho "registry unreachable" >&2\nexit 1\n', encoding="utf-8"
+    )
+    stub.chmod(0o755)
+
+    with pytest.raises(EditorRuntimeError, match="registry unreachable"):
+        install_editor_dependencies(bun_executable=str(stub))
+
+    assert not capfd.readouterr().out, "a failing install must not write to stdout"
