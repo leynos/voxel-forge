@@ -2,10 +2,15 @@
 #
 # Work here arrives as stacked pull requests: each branch targets the one
 # below it and only the bottom of the stack targets `main`. CodeRabbit
-# reviews the default branch alone unless told otherwise, so without this
-# every pull request but the last reports "reviews are disabled for this
-# base branch" and goes unreviewed. Matching all bases keeps each step of
-# a stack reviewable on its own merits, which is the point of stacking.
+# reviews the default branch alone unless told otherwise, so every pull
+# request but the last reports "reviews are disabled for this base
+# branch". Matching all bases keeps each step of a stack reviewable on
+# its own merits, which is the point of stacking.
+#
+# This gate is evaluated before the head branch is read, so the setting
+# takes effect only once this file reaches the default branch — that is,
+# after the first stack lands. Until then an explicit `@coderabbitai
+# review` comment is what triggers a review, and that path works today.
 language: en-GB
 reviews:
   base_branches:
