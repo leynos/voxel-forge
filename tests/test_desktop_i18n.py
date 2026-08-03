@@ -219,16 +219,27 @@ print("\\x1f".join(action.text() for action in win.menuBar().actions()))
 
 
 def _menu_titles(language: str) -> list[str]:
-    """Build the main window offscreen and report its menu titles."""
+    """Build the main window offscreen and report its menu titles.
+
+    The probe fails whenever Qt cannot start, which most often means the
+    host has PySide6 installed but not the shared objects Qt links
+    against. Reporting the child's stderr distinguishes that from a real
+    localization regression, which the exit status alone does not.
+    """
     env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "VOXELFORGE_LANG": language}
     result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # fixed interpreter and script; shell=False
         [sys.executable, "-c", _MENU_PROBE],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         timeout=120,
         env=env,
     )
+    if result.returncode != 0:
+        pytest.fail(
+            f"the offscreen window probe failed for {language!r} "
+            f"(exit {result.returncode}):\n{result.stderr.strip()}"
+        )
     return result.stdout.strip().splitlines()[-1].split("\x1f")
 
 

@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Work here arrives as stacked pull requests: each branch targets the one
+# below it and only the bottom of the stack targets `main`. CodeRabbit
+# reviews the default branch alone unless told otherwise, so without this
+# every pull request but the last reports "reviews are disabled for this
+# base branch" and goes unreviewed. Matching all bases keeps each step of
+# a stack reviewable on its own merits, which is the point of stacking.
+language: en-GB
+reviews:
+  base_branches:
+    - ".*"
