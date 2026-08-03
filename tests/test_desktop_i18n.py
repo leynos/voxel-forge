@@ -59,6 +59,28 @@ def test_resolve_language_from_environment(env: dict[str, str], expected: str) -
 
 
 @pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"VOXELFORGE_LANG": "thing", "LANG": "en_GB.UTF-8"}, "en"),
+        ({"VOXELFORGE_LANG": "engineering", "LANG": "th_TH.UTF-8"}, "th"),
+        ({"LANGUAGE": "thistle:en"}, "en"),
+        ({"LANG": "then_DE.UTF-8"}, "en"),
+        ({"LANG": "thai_TH.UTF-8"}, "th"),
+    ],
+)
+def test_resolve_language_rejects_partial_subtags(
+    env: dict[str, str], expected: str
+) -> None:
+    """A tag that merely begins with a subtag must not select its language.
+
+    Prefix matching would make ``VOXELFORGE_LANG=thing`` a silent switch
+    to Thai, so an unrecognized override has to fall through to the
+    locale variables instead.
+    """
+    assert i18n.resolve_language(env) == expected, f"{env} must resolve to {expected}"
+
+
+@pytest.mark.parametrize(
     ("locale_tag", "expected"),
     [
         (("th_TH", "UTF-8"), "th"),

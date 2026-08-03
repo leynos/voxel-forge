@@ -30,15 +30,25 @@ DEFAULT_LANGUAGE: typ.Final = "en"
 _OVERRIDE_VARIABLE: typ.Final = "VOXELFORGE_LANG"
 _POSIX_VARIABLES: typ.Final = ("LC_ALL", "LC_MESSAGES", "LANG")
 
+# Windows reports locales by English name rather than by subtag, so
+# `locale.getlocale()` there yields tags such as "Thai_Thailand".
+_LOCALE_NAMES: typ.Final = {"english": "en", "thai": "th"}
+
 
 def _match_language(tag: str) -> str | None:
-    """Map a locale tag to a supported language, or ``None`` if neither."""
+    """Map a locale tag to a supported language, or ``None`` if neither.
+
+    The whole language subtag must match: ``th`` and ``th_TH.UTF-8``
+    resolve to Thai, but ``thing`` resolves to nothing. Matching on a
+    prefix would let a typo in ``VOXELFORGE_LANG`` silently switch the
+    entire interface, and would defeat the promise that an unrecognized
+    override falls through to the locale variables.
+    """
     normalised = tag.strip().lower().replace("-", "_")
-    normalised = normalised.split(".")[0].split("@")[0]
-    for language in SUPPORTED_LANGUAGES:
-        if normalised.startswith(language):
-            return language
-    return None
+    subtag = normalised.split(".")[0].split("@")[0].split("_")[0]
+    if subtag in SUPPORTED_LANGUAGES:
+        return subtag
+    return _LOCALE_NAMES.get(subtag)
 
 
 def _language_from_preference_list(value: str) -> str | None:
