@@ -19,6 +19,27 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      # `uv sync --all-extras` installs the `desktop` extra, so PySide6 is
+      # importable, but the runner image carries none of the shared objects
+      # Qt links against. Without these the desktop tests fail with
+      # `libEGL.so.1: cannot open shared object file`, and any test that
+      # asserts on an ImportError sees Qt's failure instead of its own.
+      - name: Install the Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes \
+            libdbus-1-3 \
+            libegl1 \
+            libfontconfig1 \
+            libgl1 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxkbcommon-x11-0
       - name: Install Python dependencies
         run: uv sync --locked --all-extras
       - name: Install editor dependencies
