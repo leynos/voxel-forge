@@ -298,3 +298,48 @@ def test_install_editor_dependencies_reports_failure_detail(
         install_editor_dependencies(bun_executable=str(stub))
 
     assert not capfd.readouterr().out, "a failing install must not write to stdout"
+
+
+@pytest.mark.parametrize(
+    ("partial_stdout", "partial_stderr"),
+    [
+        (b"resolving packages", b"network stalled"),
+        ("resolving packages", "network stalled"),
+    ],
+    ids=["bytes", "text"],
+)
+def test_install_editor_dependencies_keeps_timeout_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    partial_stdout: str | bytes,
+    partial_stderr: str | bytes,
+) -> None:
+    """A timed-out install must keep whatever Bun had already produced.
+
+    ``TimeoutExpired`` carries the output read before the deadline, and
+    it may hold bytes even when the run asked for text, so both spellings
+    have to survive the trip to stderr and into the error message.
+    """
+    from voxel_forge import orchestration
+
+    def raise_timeout(*_args: object, **_kwargs: object) -> typ.NoReturn:
+        raise subprocess.TimeoutExpired(
+            cmd=["bun", "install"],
+            timeout=1.0,
+            output=partial_stdout,
+            stderr=partial_stderr,
+        )
+
+    monkeypatch.setattr(orchestration.subprocess, "run", raise_timeout)
+
+    with pytest.raises(EditorRuntimeError, match="network stalled") as excinfo:
+        orchestration.install_editor_dependencies(bun_executable="bun")
+
+    captured = capfd.readouterr()
+    assert "Timed out" in str(excinfo.value), "the error must name the timeout"
+    assert "resolving packages" in str(excinfo.value), (
+        "partial stdout must reach the error message"
+    )
+    assert not captured.out, "a timed-out install must not write to stdout"
+    assert "resolving packages" in captured.err, "partial output must reach stderr"
+    assert "network stalled" in captured.err, "partial stderr must reach stderr"

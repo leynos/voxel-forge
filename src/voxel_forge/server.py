@@ -72,11 +72,14 @@ def _coerce_block_row(row: object) -> tuple[int, int, int, str]:
     ------
     ValueError
         If the row matches neither shape or its values do not coerce.
+        An array of any length other than four is a refusal rather than
+        a silent truncation: a fifth value means the caller believes it
+        is sending something this tool does not read.
     """
     msg = f"malformed block row: {row!r}"
     match row:
         case (
-            [x, y, z, color, *_]
+            [x, y, z, color]
             | {"x": x, "y": y, "z": z, "color": color}
             | {"x": x, "y": y, "z": z, "colour": color}
         ):

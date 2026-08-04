@@ -64,6 +64,7 @@ def test_place_many_accepts_object_rows(empty_server_store: None) -> None:
         {"x": 1, "y": 0, "z": 0},
         {"x": 1, "y": 0, "color": "#3CB043"},
         [1, 0, "#3CB043"],
+        [1, 0, 0, "#3CB043", "surplus"],
         {"x": 1, "y": 0, "z": None, "color": "#3CB043"},
         "1,0,0,#3CB043",
     ],
