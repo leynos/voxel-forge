@@ -31,6 +31,7 @@ import json
 import os
 import queue
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # spawn Bun with validated arguments; shell=False
+import sys
 import threading
 import time
 import typing as typ
@@ -99,6 +100,7 @@ def _start_stdout_reader(
     line_queue: queue.Queue[str | None] = queue.Queue()
 
     def _reader() -> None:
+        """Pump lines into the queue, ending with a sentinel at EOF."""
         for line in iter(stdout.readline, ""):
             line_queue.put(line)
         line_queue.put(None)
@@ -259,6 +261,32 @@ atexit.register(reap_supervised)
 _INSTALL_TIMEOUT_SECONDS = 300
 
 
+def _decode_stream(stream: str | bytes | None) -> str:
+    """Return a captured stream as text, whatever the caller received.
+
+    ``TimeoutExpired`` carries whatever had been read when the deadline
+    passed, and it can hold bytes even when the run requested text, so
+    the type has to be checked rather than assumed.
+    """
+    if stream is None:
+        return ""
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", errors="replace")
+    return stream
+
+
+def _relay_to_stderr(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
+    """Write both captured streams to stderr and return them joined.
+
+    Bun's output must never reach this process's stdout: the install can
+    run inside the MCP server, whose stdout carries the stdio protocol.
+    """
+    parts = [text for text in map(_decode_stream, (stdout, stderr)) if text]
+    for text in parts:
+        sys.stderr.write(text)
+    return "".join(parts).strip()
+
+
 def install_editor_dependencies(*, bun_executable: str | None = None) -> Path:
     """Install the bundled editor's JavaScript dependencies via Bun.
 
@@ -279,6 +307,17 @@ def install_editor_dependencies(*, bun_executable: str | None = None) -> Path:
         If the package root cannot be resolved, Bun cannot be executed,
         or dependency installation fails or times out.
 
+    Notes
+    -----
+    Bun's output is captured and relayed to stderr. The install may run
+    inside the MCP server process, whose stdout carries the stdio
+    protocol: an inherited stdout would let Bun's progress lines corrupt
+    the channel for the connected client.
+
+    Whatever Bun had produced before a timeout is relayed and appended to
+    the error as well, since a hung install is precisely the case where
+    its last few lines say why.
+
     Examples
     --------
     >>> install_editor_dependencies()  # doctest: +SKIP
@@ -289,18 +328,28 @@ def install_editor_dependencies(*, bun_executable: str | None = None) -> Path:
     command = [executable, "install", "--cwd", str(package_root)]
     try:
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # explicit command list; shell=False
-            command, check=False, timeout=_INSTALL_TIMEOUT_SECONDS
+            command,
+            check=False,
+            timeout=_INSTALL_TIMEOUT_SECONDS,
+            capture_output=True,
+            text=True,
         )
     except FileNotFoundError as exc:
         msg = f"Bun executable not found: {executable}"
         raise EditorRuntimeError(msg) from exc
     except subprocess.TimeoutExpired as exc:
+        partial = _relay_to_stderr(exc.stdout, exc.stderr)
         msg = (
             "Timed out installing editor dependencies after "
             f"{_INSTALL_TIMEOUT_SECONDS}s with command: {' '.join(command)}"
         )
+        if partial:
+            msg = f"{msg}\n{partial}"
         raise EditorRuntimeError(msg) from exc
+    detail = _relay_to_stderr(result.stdout, result.stderr)
     if result.returncode != 0:
         msg = f"Failed to install editor dependencies with command: {' '.join(command)}"
+        if detail:
+            msg = f"{msg}\n{detail}"
         raise EditorRuntimeError(msg)
     return package_root

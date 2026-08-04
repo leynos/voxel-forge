@@ -105,10 +105,13 @@ def voxelforge_place_block(  # ruff: ignore[too-many-arguments, too-many-positio
 @server.mcp.tool()
 def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     """
-    Place many voxels from a JSON array.
+    Place many voxels from a JSON array of [x,y,z,colour] rows.
 
-    Format: [[x,y,z,"1"], [1,0,0,"2"], ...], where the colour may also be
-    given as #RRGGBB.
+    Example: [[1,0,0,"#3CB043"], [2,0,0,"2"]], where the colour is either
+    a palette index ("2") or #RRGGBB. Arrays must hold exactly these four
+    values. Object rows are accepted too, spelt either way:
+    {"x":1,"y":0,"z":0,"color":"#3CB043"} or {"x":1,"y":0,"z":0,"colour":"#3CB043"}.
+    Both shapes may be mixed within one call.
     """
     scene = server.store.get(scene_name or None)
     blocks = server._parse_blocks_json(blocks_json)

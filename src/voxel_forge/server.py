@@ -31,9 +31,6 @@ mcp = FastMCP(
 store = SceneStore()
 MAX_TOOL_VOXELS = 100_000
 
-# Each block row carries an x, y and z coordinate plus a colour key.
-_BLOCK_ROW_FIELDS = 4
-
 
 def _ensure_bridge() -> None:
     """Start the editor bridge and point it at the server's scene store."""
@@ -62,13 +59,47 @@ def _sync_bridge(scene: VoxelScene) -> None:
     notify_scene_update(scene)
 
 
+def _coerce_block_row(row: object) -> tuple[int, int, int, str]:
+    """Coerce one block row, array or object shaped, into a tuple.
+
+    Parameters
+    ----------
+    row
+        Either an ``[x, y, z, colour]`` array or an object with ``x``,
+        ``y``, ``z`` and ``color`` (or ``colour``) members.
+
+    Raises
+    ------
+    ValueError
+        If the row matches neither shape or its values do not coerce.
+        An array of any length other than four is a refusal rather than
+        a silent truncation: a fifth value means the caller believes it
+        is sending something this tool does not read.
+    """
+    msg = f"malformed block row: {row!r}"
+    match row:
+        case (
+            [x, y, z, color]
+            | {"x": x, "y": y, "z": z, "color": color}
+            | {"x": x, "y": y, "z": z, "colour": color}
+        ):
+            try:
+                return (int(x), int(y), int(z), str(color))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(msg) from exc
+        case _:
+            raise ValueError(msg)
+
+
 def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     """Decode a JSON array of block rows into coordinate and colour tuples.
 
     Parameters
     ----------
     blocks_json
-        A JSON array of ``[x, y, z, colour]`` rows.
+        A JSON array whose rows are either ``[x, y, z, colour]`` arrays
+        or objects such as ``{"x": 1, "y": 2, "z": 3, "color": "#RRGGBB"}``
+        (``colour`` is accepted too). Shapes may be mixed freely.
 
     Returns
     -------
@@ -88,13 +119,7 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     if len(data) > MAX_TOOL_VOXELS:
         msg = f"place_many supports at most {MAX_TOOL_VOXELS:,} voxels per call"
         raise ValueError(msg)
-    out: list[tuple[int, int, int, str]] = []
-    for row in data:
-        if not isinstance(row, (list, tuple)) or len(row) < _BLOCK_ROW_FIELDS:
-            msg = f"malformed block row: {row}"
-            raise ValueError(msg)
-        out.append((int(row[0]), int(row[1]), int(row[2]), str(row[3])))
-    return out
+    return [_coerce_block_row(row) for row in data]
 
 
 def _exports_dir() -> Path:
