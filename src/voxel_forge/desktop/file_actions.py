@@ -12,6 +12,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
+from voxel_forge.desktop.i18n import tr
 from voxel_forge.desktop.paths import exports_dir, scenes_dir
 from voxel_forge.model import VoxelScene
 from voxel_forge.vox_io import import_vox
@@ -40,7 +41,7 @@ def _load_scene(path: Path) -> VoxelScene:
         case ".vox":
             scene = import_vox(path)
         case _:
-            msg = "รองรับเฉพาะ .json และ .vox"
+            msg = tr("file.unsupported")
             raise ValueError(msg)
     return scene
 
@@ -60,25 +61,33 @@ class FileActionsMixin:
         try:
             self._set_scene(_load_scene(path), path)
         except Exception as exc:  # ruff: ignore[blind-except]  # Report any failure to the user.
-            QMessageBox.critical(self, "เปิดไม่สำเร็จ", str(exc))
+            QMessageBox.critical(self, tr("file.open_failed"), str(exc))
 
     def _new_scene(self) -> None:
-        name, ok = QInputDialog.getText(self, "Scene ใหม่", "ชื่อ scene:", text="my_model")
+        """Prompt for a name and replace the current scene with an empty one."""
+        name, ok = QInputDialog.getText(
+            self,
+            tr("action.new_scene"),
+            tr("file.scene_name_label"),
+            text="my_model",
+        )
         if not ok or not name.strip():
             return
         self._set_scene(VoxelScene(name=name.strip()))
 
     def _open_scene(self) -> None:
+        """Ask for a scene file and load whichever supported format it is."""
         path_str, _ = QFileDialog.getOpenFileName(
             self,
-            "เปิด Scene",
+            tr("file.open_dialog"),
             str(scenes_dir()),
-            "VoxelForge (*.json);;MagicaVoxel (*.vox);;All (*.*)",
+            tr("file.open_filter"),
         )
         if path_str:
             self.open_path(path_str)
 
     def _save_scene(self) -> None:
+        """Save to the current path, falling back to Save As when there is none."""
         scene = self._require_scene()
         if not scene:
             return
@@ -91,17 +100,18 @@ class FileActionsMixin:
         )
         scenes_dir()  # ensure exists
         self._update_ui()
-        self._status.showMessage(f"บันทึกแล้ว: {self._path}", STATUS_TIMEOUT_MS)
+        self._status.showMessage(tr("file.saved", path=self._path), STATUS_TIMEOUT_MS)
 
     def _save_scene_as(self) -> None:
+        """Ask for a destination, save there and adopt it as the current path."""
         scene = self._require_scene()
         if not scene:
             return
         path_str, _ = QFileDialog.getSaveFileName(
             self,
-            "บันทึก Scene",
+            tr("file.save_dialog"),
             str(scenes_dir() / f"{scene.name}.json"),
-            "VoxelForge Scene (*.json)",
+            tr("file.save_filter"),
         )
         if not path_str:
             return
@@ -113,15 +123,19 @@ class FileActionsMixin:
         self._path = path
         self._push_recent(path)
         self._update_ui()
-        self._status.showMessage(f"บันทึกแล้ว: {path}", STATUS_TIMEOUT_MS)
+        self._status.showMessage(tr("file.saved", path=path), STATUS_TIMEOUT_MS)
 
     def _import_vox(self) -> None:
+        """Load a MagicaVoxel .vox file as the current scene."""
         path_str, _ = QFileDialog.getOpenFileName(
-            self, "นำเข้า .vox", str(exports_dir()), "VOX (*.vox);;All (*.*)"
+            self,
+            tr("file.import_dialog"),
+            str(exports_dir()),
+            tr("file.import_filter"),
         )
         if not path_str:
             return
         try:
             self._set_scene(import_vox(path_str))
         except Exception as exc:  # ruff: ignore[blind-except]  # Report any failure to the user.
-            QMessageBox.critical(self, "นำเข้าไม่สำเร็จ", str(exc))
+            QMessageBox.critical(self, tr("file.import_failed"), str(exc))

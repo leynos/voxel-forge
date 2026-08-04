@@ -1,4 +1,4 @@
-"""Qt3D viewport — แสดง voxel แบบ merged boxes (ลื่น + ตรงกับ export)."""
+"""Qt3D viewport rendering voxels as merged boxes (fast, and true to export)."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ MIN_EXTENT = 0.01
 def _box_mesh(
     entity: Qt3DCore.QEntity, box: MergedBox, vs: float
 ) -> Qt3DExtras.QCuboidMesh:
+    """Return a cuboid mesh sized to the given extent."""
     mesh = Qt3DExtras.QCuboidMesh(entity)
     mesh.setXExtent(max((box.x2 - box.x1 + 1) * vs, MIN_EXTENT))
     mesh.setYExtent(max((box.y2 - box.y1 + 1) * vs, MIN_EXTENT))
@@ -34,6 +35,7 @@ def _box_mesh(
 def _box_transform(
     entity: Qt3DCore.QEntity, box: MergedBox, vs: float
 ) -> Qt3DCore.QTransform:
+    """Return a transform placing a box at its centre."""
     transform = Qt3DCore.QTransform(entity)
     cx = (box.x1 + box.x2 + 1) * 0.5 * vs
     cy = (box.y1 + box.y2 + 1) * 0.5 * vs
@@ -45,6 +47,7 @@ def _box_transform(
 def _box_material(
     entity: Qt3DCore.QEntity, rgb: tuple[int, int, int]
 ) -> Qt3DExtras.QPhongMaterial:
+    """Return a material tinted with the given colour."""
     r, g, b = rgb
     material = Qt3DExtras.QPhongMaterial(entity)
     material.setDiffuse(QColor(r, g, b))
@@ -58,6 +61,7 @@ class VoxelViewport(QWindow):
     """Qt3D window that renders a scene as merged, coloured cuboids."""
 
     def __init__(self) -> None:
+        """Build the Qt3D window, its root entity, camera and lighting."""
         super().__init__()
         self.resize(QSize(1280, 720))
 
@@ -125,17 +129,20 @@ class VoxelViewport(QWindow):
             self._frame_camera(self._scene)
 
     def _clear_boxes(self) -> None:
+        """Detach and drop every box entity from the previous scene."""
         # Detaching the box root discards every entity parented to it.
         self._boxes_root.setParent(None)  # type: ignore[union-attr]  # Qt allows None.
         self._boxes_root = Qt3DCore.QEntity(self._root)
 
     def _add_box(self, box: MergedBox, scene: VoxelScene, vs: float) -> None:
+        """Add one merged box to the scene graph."""
         entity = Qt3DCore.QEntity(self._boxes_root)
         entity.addComponent(_box_mesh(entity, box, vs))
         entity.addComponent(_box_transform(entity, box, vs))
         entity.addComponent(_box_material(entity, scene.resolve_color(box.color)))
 
     def _frame_camera(self, scene: VoxelScene) -> None:
+        """Point the camera at the scene and back off to fit it in view."""
         b = scene.bounds()
         if not b:
             return

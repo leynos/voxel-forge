@@ -1,4 +1,4 @@
-"""แผงด้านข้าง — ข้อมูล scene, งานล่าสุด, ปุ่มลัด."""
+"""Side panel showing scene details, recent files and quick actions."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from voxel_forge.desktop.i18n import tr
 from voxel_forge.desktop.paths import blender_exports_dir, exports_dir, scenes_dir
 from voxel_forge.desktop.shell import open_folder
 from voxel_forge.mesh_merge import merge_stats
@@ -37,6 +38,7 @@ class SidePanel(QWidget):
     build_bear = Signal()
 
     def __init__(self) -> None:
+        """Assemble the side panel's boxes in top-to-bottom order."""
         super().__init__()
         self.setMinimumWidth(240)
         self.setMaximumWidth(320)
@@ -48,7 +50,7 @@ class SidePanel(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #7fdbff;")
         root.addWidget(title)
 
-        self._info = QLabel("ยังไม่มี scene")
+        self._info = QLabel(tr("sidebar.no_scene"))
         self._info.setWordWrap(True)
         self._info.setStyleSheet("color: #ccc; font-size: 12px; line-height: 1.4;")
         root.addWidget(self._info)
@@ -58,7 +60,7 @@ class SidePanel(QWidget):
         root.addWidget(self._build_recent_box())
         root.addWidget(self._build_folders_box())
 
-        hint = QLabel("เมาส์กลาง = หมุน | ล้อ = zoom")
+        hint = QLabel(tr("sidebar.mouse_hint"))
         hint.setStyleSheet("color: #888; font-size: 11px;")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -75,18 +77,21 @@ class SidePanel(QWidget):
             File backing the scene, or ``None`` when it is unsaved.
         """
         if not scene:
-            self._info.setText("ยังไม่มี scene\n\nกด เปิดไฟล์ หรือ สร้างด่วน")
+            self._info.setText(tr("sidebar.no_scene_hint"))
             return
         st = merge_stats(scene)
-        loc = str(path) if path else "(ยังไม่ได้บันทึก)"
+        loc = str(path) if path else tr("scene.unsaved")
         detail = round(1 / scene.voxel_size) if scene.voxel_size else 1
         self._info.setText(
-            f"<b>{scene.name}</b><br>"
-            f"voxels: {st['voxels']}<br>"
-            f"merged parts: {st['merged_boxes']}<br>"
-            f"ลด mesh: {st['reduction_percent']}%<br>"
-            f"ความละเอียด: {detail}x<br>"
-            f"<span style='color:#999'>{loc}</span>"
+            tr(
+                "sidebar.scene_info",
+                name=scene.name,
+                voxels=st["voxels"],
+                parts=st["merged_boxes"],
+                reduction=st["reduction_percent"],
+                detail=detail,
+                path=loc,
+            )
         )
 
     def set_recent_files(self, paths: list[str]) -> None:
@@ -105,13 +110,14 @@ class SidePanel(QWidget):
             self._recent.addItem(item)
 
     def _build_quick_box(self) -> QGroupBox:
-        quick = QGroupBox("ทางลัด")
+        """Build the box of quick actions for new, open, save and export."""
+        quick = QGroupBox(tr("sidebar.shortcuts_box"))
         ql = QVBoxLayout(quick)
         for text, slot in [
-            ("+ Scene ใหม่", self.quick_new.emit),
-            ("เปิดไฟล์...", self.quick_open.emit),
-            ("บันทึก", self.quick_save.emit),
-            ("Export → Blender (.obj)", self.export_blender.emit),
+            (tr("sidebar.quick_new"), self.quick_new.emit),
+            (tr("sidebar.quick_open"), self.quick_open.emit),
+            (tr("action.save"), self.quick_save.emit),
+            (tr("sidebar.quick_export"), self.export_blender.emit),
         ]:
             btn = QPushButton(text)
             btn.clicked.connect(slot)
@@ -119,18 +125,20 @@ class SidePanel(QWidget):
         return quick
 
     def _build_create_box(self) -> QGroupBox:
-        create = QGroupBox("สร้างด่วน")
+        """Build the box of one-click procedural presets."""
+        create = QGroupBox(tr("sidebar.create_box"))
         cl = QVBoxLayout(create)
-        btn_tree = QPushButton("ต้นไม้")
+        btn_tree = QPushButton(tr("create.tree_menu"))
         btn_tree.clicked.connect(self.build_tree.emit)
-        btn_bear = QPushButton("หมี Chibi")
+        btn_bear = QPushButton(tr("create.bear_menu"))
         btn_bear.clicked.connect(self.build_bear.emit)
         cl.addWidget(btn_tree)
         cl.addWidget(btn_bear)
         return create
 
     def _build_recent_box(self) -> QGroupBox:
-        recent_box = QGroupBox("เปิดล่าสุด")
+        """Build the list of recently opened scenes."""
+        recent_box = QGroupBox(tr("menu.open_recent"))
         rl = QVBoxLayout(recent_box)
         self._recent = QListWidget()
         self._recent.itemDoubleClicked.connect(self._on_recent_double)
@@ -139,15 +147,16 @@ class SidePanel(QWidget):
 
     @staticmethod
     def _build_folders_box() -> QGroupBox:
-        folders = QGroupBox("โฟลเดอร์")
+        """Build the row of buttons that reveal the data folders."""
+        folders = QGroupBox(tr("sidebar.folders_box"))
         fl = QVBoxLayout(folders)
         row = QHBoxLayout()
-        for label, path in [
-            ("Scenes", scenes_dir()),
-            ("Export", exports_dir()),
-            ("Blender", blender_exports_dir()),
+        for label_key, path in [
+            ("sidebar.folder_scenes", scenes_dir()),
+            ("sidebar.folder_export", exports_dir()),
+            ("sidebar.folder_blender", blender_exports_dir()),
         ]:
-            b = QPushButton(label)
+            b = QPushButton(tr(label_key))
             b.setToolTip(str(path))
             b.clicked.connect(lambda _=False, target=path: open_folder(target))
             row.addWidget(b)
@@ -155,6 +164,7 @@ class SidePanel(QWidget):
         return folders
 
     def _on_recent_double(self, item: QListWidgetItem) -> None:
+        """Ask the window to open the double-clicked recent entry."""
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
             self.open_recent_requested.emit(str(path))

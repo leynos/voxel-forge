@@ -1,4 +1,4 @@
-"""VoxelForge Desktop — โปรแกรม voxel editor แบบ native (ไม่ใช้เบราว์เซอร์)."""
+"""VoxelForge Desktop, the native voxel editor (no browser required)."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from voxel_forge.desktop.create_actions import CreateActionsMixin
 from voxel_forge.desktop.export_actions import ExportActionsMixin
 from voxel_forge.desktop.file_actions import FileActionsMixin
 from voxel_forge.desktop.help_actions import HelpActionsMixin
+from voxel_forge.desktop.i18n import tr
 from voxel_forge.desktop.menus import MenuBuilderMixin
 from voxel_forge.desktop.sidebar import SidePanel
 from voxel_forge.desktop.viewport import VoxelViewport
@@ -46,6 +47,7 @@ class MainWindow(
     """
 
     def __init__(self) -> None:
+        """Build the window, its viewport, dock and menus, then show empty state."""
         super().__init__()
         self.setWindowTitle("VoxelForge")
         self.resize(1360, 860)
@@ -58,7 +60,7 @@ class MainWindow(
         self.setCentralWidget(self._viewport.embed_widget())
 
         self._sidebar = SidePanel()
-        dock = QDockWidget("แผงควบคุม", self)
+        dock = QDockWidget(tr("sidebar.dock_title"), self)
         dock.setWidget(self._sidebar)
         dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
@@ -83,22 +85,25 @@ class MainWindow(
     # ── Recent files ──────────────────────────────────────────
 
     def _recent_paths(self) -> list[str]:
+        """Return the remembered scene paths that still exist on disk."""
         raw = self._settings.value("recent_files", [])
         if not isinstance(raw, list):
             return []
         return [str(p) for p in raw if Path(str(p)).exists()][:MAX_RECENT]
 
     def _push_recent(self, path: Path) -> None:
+        """Record a path as the most recent, trimming the tail of the list."""
         paths = [str(path)] + [p for p in self._recent_paths() if p != str(path)]
         self._settings.setValue("recent_files", paths[:MAX_RECENT])
         self._refresh_recent_menu()
         self._sidebar.set_recent_files(paths[:MAX_RECENT])
 
     def _refresh_recent_menu(self) -> None:
+        """Rebuild the recent-files menu, showing a disabled hint when empty."""
         self._recent_menu.clear()
         recent = self._recent_paths()
         if not recent:
-            empty = QAction("(ไม่มี)", self)
+            empty = QAction(tr("recent.empty"), self)
             empty.setEnabled(False)
             self._recent_menu.addAction(empty)
             return
@@ -111,12 +116,14 @@ class MainWindow(
     # ── Scene helpers ─────────────────────────────────────────
 
     def _require_scene(self) -> VoxelScene | None:
+        """Return the current scene, warning and returning ``None`` if unset."""
         if self._scene is None:
-            QMessageBox.warning(self, "VoxelForge", "ยังไม่มี scene — สร้างใหม่หรือเปิดไฟล์ก่อน")
+            QMessageBox.warning(self, "VoxelForge", tr("scene.none_warning"))
             return None
         return self._scene
 
     def _set_scene(self, scene: VoxelScene, path: Path | None = None) -> None:
+        """Adopt a scene, load it into the viewport and refresh the window."""
         self._scene = scene
         self._path = path
         self._viewport.load_scene(scene)
@@ -125,22 +132,30 @@ class MainWindow(
         self._update_ui()
 
     def _update_ui(self) -> None:
+        """Refresh the side panel, status line and title from the current scene."""
         self._sidebar.set_scene_info(self._scene, self._path)
         if not self._scene:
-            self._status.showMessage("พร้อมใช้งาน — เปิดไฟล์หรือสร้างโมเดลใหม่")
+            self._status.showMessage(tr("status.ready"))
             self.setWindowTitle("VoxelForge")
             return
         st = merge_stats(self._scene)
-        path = str(self._path) if self._path else "(ยังไม่ได้บันทึก)"
+        path = str(self._path) if self._path else tr("scene.unsaved")
         self._status.showMessage(
-            f"{self._scene.name} | {st['voxels']} voxels | "
-            f"{st['merged_boxes']} parts | ลด mesh {st['reduction_percent']}% | {path}"
+            tr(
+                "status.scene",
+                name=self._scene.name,
+                voxels=st["voxels"],
+                parts=st["merged_boxes"],
+                reduction=st["reduction_percent"],
+                path=path,
+            )
         )
         self.setWindowTitle(f"VoxelForge — {self._scene.name}")
 
     # ── View ──────────────────────────────────────────────────
 
     def _refresh_view(self) -> None:
+        """Reload the current scene into the viewport, discarding stale geometry."""
         if self._scene:
             self._viewport.load_scene(self._scene)
 

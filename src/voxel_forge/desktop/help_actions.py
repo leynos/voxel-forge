@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QMessageBox
 
+from voxel_forge.desktop.i18n import tr
 from voxel_forge.mesh_merge import merge_stats
 
 
@@ -15,52 +16,32 @@ class HelpActionsMixin:
     """Show merge statistics, usage guidance and the about box."""
 
     def _show_merge_stats(self) -> None:
+        """Report how far box merging reduced the current scene."""
         scene = self._require_scene()
         if not scene:
             return
         st = merge_stats(scene)
         QMessageBox.information(
             self,
-            "สถิติ Merge",
-            f"Scene: {scene.name}\n\n"
-            f"Voxels: {st['voxels']}\n"
-            f"Merged parts: {st['merged_boxes']}\n"
-            f"ลดได้: {st['parts_saved']} ({st['reduction_percent']}%)\n\n"
-            "Export Blender ใช้ merged — เหมาะกับเกมและ Blender",
+            tr("help.merge_stats_title"),
+            tr(
+                "help.merge_stats_body",
+                name=scene.name,
+                voxels=st["voxels"],
+                parts=st["merged_boxes"],
+                saved=st["parts_saved"],
+                reduction=st["reduction_percent"],
+            ),
         )
 
     def _usage_guide(self) -> None:
-        QMessageBox.information(
-            self,
-            "วิธีใช้งาน VoxelForge",
-            "1. สร้าง → เลือก ต้นไม้ / หมี Chibi\n"
-            "2. มุมมอง → F = จัดกล้อง\n"
-            "3. ไฟล์ → บันทึก (.json)\n"
-            "4. Export → Blender (.obj รวม mesh)\n"
-            "5. Blender: File → Import → Wavefront (.obj)\n\n"
-            "AI (Cursor): ใช้ MCP VoxelForge สร้าง scene\n"
-            "แล้วเปิดไฟล์จากโฟลเดอร์ Scenes",
-        )
+        """Show the short guide to building and exporting a scene."""
+        QMessageBox.information(self, tr("help.guide_title"), tr("help.guide_body"))
 
     def _shortcuts_help(self) -> None:
-        QMessageBox.information(
-            self,
-            "คีย์ลัด",
-            "Ctrl+N     Scene ใหม่\n"
-            "Ctrl+O     เปิด\n"
-            "Ctrl+S     บันทึก\n"
-            "Ctrl+Shift+S  บันทึกเป็น\n"
-            "Ctrl+E     Export Blender\n"
-            "F          จัดกล้อง\n"
-            "R          รีเฟรช 3D\n\n"
-            "เมาส์กลาง = หมุน | ล้อ = zoom",
-        )
+        """List the keyboard and mouse bindings."""
+        QMessageBox.information(self, tr("help.shortcuts"), tr("help.shortcuts_body"))
 
     def _about(self) -> None:
-        QMessageBox.about(
-            self,
-            "VoxelForge",
-            "VoxelForge Desktop v0.2\n\n"
-            "Voxel editor แบบ Goxel + MCP สำหรับ AI\n"
-            "Export: Blender (.obj), Roblox (Luau), .vox",
-        )
+        """Show the product summary and the formats it exports."""
+        QMessageBox.about(self, "VoxelForge", tr("help.about_body"))

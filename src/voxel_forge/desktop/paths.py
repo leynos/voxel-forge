@@ -1,4 +1,4 @@
-"""โฟลเดอร์มาตรฐานของ VoxelForge Desktop."""
+"""Standard data folders for VoxelForge Desktop."""
 
 from __future__ import annotations
 

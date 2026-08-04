@@ -117,6 +117,18 @@ uv run voxel-forge
 
 On Windows, `run-desktop.bat` wraps the same command.
 
+### Language
+
+The desktop interface follows the configured locale: Thai locales see
+Thai text and every other locale sees English. The language is resolved
+from the `VOXELFORGE_LANG` override (`th` or `en`), then the standard
+`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, and `LANG` variables, and finally
+the platform locale. To force a language explicitly:
+
+```bash
+VOXELFORGE_LANG=th voxel-forge
+```
+
 ### Building an .exe (Windows)
 
 ```powershell
