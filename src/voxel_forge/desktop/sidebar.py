@@ -146,12 +146,12 @@ class SidePanel(QWidget):
         folders = QGroupBox(tr("sidebar.folders_box"))
         fl = QVBoxLayout(folders)
         row = QHBoxLayout()
-        for label, path in [
-            ("Scenes", scenes_dir()),
-            ("Export", exports_dir()),
-            ("Blender", blender_exports_dir()),
+        for label_key, path in [
+            ("sidebar.folder_scenes", scenes_dir()),
+            ("sidebar.folder_export", exports_dir()),
+            ("sidebar.folder_blender", blender_exports_dir()),
         ]:
-            b = QPushButton(label)
+            b = QPushButton(tr(label_key))
             b.setToolTip(str(path))
             b.clicked.connect(lambda _=False, target=path: open_folder(target))
             row.addWidget(b)

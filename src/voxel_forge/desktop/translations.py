@@ -155,6 +155,11 @@ MESSAGES: typ.Final[dict[str, dict[str, str]]] = {
     },
     "sidebar.create_box": {"en": "Quick create", "th": "สร้างด่วน"},
     "sidebar.folders_box": {"en": "Folders", "th": "โฟลเดอร์"},
+    "sidebar.folder_scenes": {"en": "Scenes", "th": "Scene"},
+    "sidebar.folder_export": {"en": "Export", "th": "Export"},
+    # Blender is a product name and stays as it is in both languages, but
+    # it is registered so the whole caption row comes from one place.
+    "sidebar.folder_blender": {"en": "Blender", "th": "Blender"},
     # ── File actions ──────────────────────────────────────────
     "file.unsupported": {
         "en": "Only .json and .vox are supported",
@@ -167,6 +172,20 @@ MESSAGES: typ.Final[dict[str, dict[str, str]]] = {
     "file.saved": {"en": "Saved: {path}", "th": "บันทึกแล้ว: {path}"},
     "file.import_dialog": {"en": "Import .vox", "th": "นำเข้า .vox"},
     "file.import_failed": {"en": "Import failed", "th": "นำเข้าไม่สำเร็จ"},
+    # Qt file-dialog filters. The glob must survive translation, so each
+    # entry is registered whole rather than assembled from parts.
+    "file.open_filter": {
+        "en": "VoxelForge (*.json);;MagicaVoxel (*.vox);;All files (*.*)",
+        "th": "VoxelForge (*.json);;MagicaVoxel (*.vox);;ทุกไฟล์ (*.*)",
+    },
+    "file.save_filter": {
+        "en": "VoxelForge scene (*.json)",
+        "th": "VoxelForge scene (*.json)",
+    },
+    "file.import_filter": {
+        "en": "VOX (*.vox);;All files (*.*)",
+        "th": "VOX (*.vox);;ทุกไฟล์ (*.*)",
+    },
     # ── Create actions ────────────────────────────────────────
     "create.failed": {"en": "Create failed", "th": "สร้างไม่สำเร็จ"},
     "create.name_label": {"en": "Name:", "th": "ชื่อ:"},
@@ -199,6 +218,10 @@ MESSAGES: typ.Final[dict[str, dict[str, str]]] = {
     },
     "export.done_title": {"en": "Export complete", "th": "Export สำเร็จ"},
     "export.vox_dialog": {"en": "Export .vox", "th": "Export .vox"},
+    "export.vox_filter": {
+        "en": "MagicaVoxel (*.vox)",
+        "th": "MagicaVoxel (*.vox)",
+    },
     "export.roblox_done_title": {
         "en": "Roblox export complete",
         "th": "Export Roblox สำเร็จ",

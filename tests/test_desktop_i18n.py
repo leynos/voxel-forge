@@ -194,13 +194,29 @@ def _tr_key_literals(source: str) -> set[str]:
     return keys
 
 
-def _string_literals(source: str) -> set[str]:
-    """Collect every string literal in a module's source."""
-    return {
-        node.value
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    }
+def _key_table_literals(source: str) -> set[str]:
+    """Collect string literals held in tuple or list displays.
+
+    The menu presets and the folder-button row keep catalogue keys in
+    tables and reach ``tr()`` through a variable, so those keys never
+    appear as a literal argument. Counting tuple and list elements picks
+    them up while staying narrow: a docstring or a comparison is neither,
+    so prose mentioning a key cannot keep a dead entry alive.
+    """
+    keys: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Tuple | ast.List):
+            keys.update(
+                element.value
+                for element in node.elts
+                if isinstance(element, ast.Constant) and isinstance(element.value, str)
+            )
+    return keys
+
+
+def _referenced_keys(source: str) -> set[str]:
+    """Collect catalogue keys a module actually uses, directly or via a table."""
+    return _tr_key_literals(source) | _key_table_literals(source)
 
 
 def test_every_tr_call_uses_a_registered_key() -> None:
@@ -214,9 +230,24 @@ def test_every_catalogue_key_is_referenced() -> None:
     """The catalogue must not accumulate dead keys."""
     referenced: set[str] = set()
     for source in _desktop_sources().values():
-        referenced |= _string_literals(source)
+        referenced |= _referenced_keys(source)
     unused = set(MESSAGES) - referenced
     assert not unused, f"catalogue keys never referenced by the desktop: {unused}"
+
+
+def test_prose_mentions_do_not_count_as_references() -> None:
+    """A key named in prose must not disguise a dead catalogue entry.
+
+    Counting every string literal in a module would let a docstring or a
+    comparison keep an unused key alive, which is the failure the dead-key
+    test exists to catch.
+    """
+    source = (
+        '"""Mentions action.save in prose."""\n\nif name == "action.save":\n    pass\n'
+    )
+    assert not _referenced_keys(source), (
+        "only tr() arguments and key tables may count as references"
+    )
 
 
 def test_no_thai_text_outside_the_catalogue() -> None:

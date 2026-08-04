@@ -56,7 +56,7 @@ class ExportActionsMixin:
             self,
             tr("export.vox_dialog"),
             str(exports_dir() / f"{scene.name}.vox"),
-            "MagicaVoxel (*.vox)",
+            tr("export.vox_filter"),
         )
         if not path_str:
             return

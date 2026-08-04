@@ -79,7 +79,7 @@ class FileActionsMixin:
             self,
             tr("file.open_dialog"),
             str(scenes_dir()),
-            "VoxelForge (*.json);;MagicaVoxel (*.vox);;All (*.*)",
+            tr("file.open_filter"),
         )
         if path_str:
             self.open_path(path_str)
@@ -107,7 +107,7 @@ class FileActionsMixin:
             self,
             tr("file.save_dialog"),
             str(scenes_dir() / f"{scene.name}.json"),
-            "VoxelForge Scene (*.json)",
+            tr("file.save_filter"),
         )
         if not path_str:
             return
@@ -123,7 +123,10 @@ class FileActionsMixin:
 
     def _import_vox(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
-            self, tr("file.import_dialog"), str(exports_dir()), "VOX (*.vox);;All (*.*)"
+            self,
+            tr("file.import_dialog"),
+            str(exports_dir()),
+            tr("file.import_filter"),
         )
         if not path_str:
             return
