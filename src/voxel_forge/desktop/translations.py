@@ -174,17 +174,19 @@ MESSAGES: typ.Final[dict[str, dict[str, str]]] = {
     "file.import_failed": {"en": "Import failed", "th": "นำเข้าไม่สำเร็จ"},
     # Qt file-dialog filters. The glob must survive translation, so each
     # entry is registered whole rather than assembled from parts.
+    # Qt's portable "everything" glob is `*`; `*.*` matches only names
+    # that contain a dot, so it hides extensionless files on Unix.
     "file.open_filter": {
-        "en": "VoxelForge (*.json);;MagicaVoxel (*.vox);;All files (*.*)",
-        "th": "VoxelForge (*.json);;MagicaVoxel (*.vox);;ทุกไฟล์ (*.*)",
+        "en": "VoxelForge (*.json);;MagicaVoxel (*.vox);;All files (*)",
+        "th": "VoxelForge (*.json);;MagicaVoxel (*.vox);;ทุกไฟล์ (*)",
     },
     "file.save_filter": {
         "en": "VoxelForge scene (*.json)",
         "th": "VoxelForge scene (*.json)",
     },
     "file.import_filter": {
-        "en": "VOX (*.vox);;All files (*.*)",
-        "th": "VOX (*.vox);;ทุกไฟล์ (*.*)",
+        "en": "VOX (*.vox);;All files (*)",
+        "th": "VOX (*.vox);;ทุกไฟล์ (*)",
     },
     # ── Create actions ────────────────────────────────────────
     "create.failed": {"en": "Create failed", "th": "สร้างไม่สำเร็จ"},
