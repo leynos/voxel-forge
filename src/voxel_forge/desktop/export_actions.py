@@ -21,6 +21,7 @@ class ExportActionsMixin:
     """Write the current scene out in the supported interchange formats."""
 
     def _export_blender_quick(self) -> None:
+        """Export merged geometry for Blender and reveal the containing folder."""
         scene = self._require_scene()
         if not scene:
             return
@@ -41,6 +42,7 @@ class ExportActionsMixin:
         open_folder(blender_exports_dir())
 
     def _export_obj_raw(self) -> None:
+        """Export one cube per voxel, without merging, for inspection."""
         scene = self._require_scene()
         if not scene:
             return
@@ -49,6 +51,7 @@ class ExportActionsMixin:
         QMessageBox.information(self, tr("export.done_title"), str(out))
 
     def _export_vox(self) -> None:
+        """Ask for a destination and write the scene as MagicaVoxel .vox."""
         scene = self._require_scene()
         if not scene:
             return
@@ -64,6 +67,7 @@ class ExportActionsMixin:
         QMessageBox.information(self, tr("export.done_title"), path_str)
 
     def _export_roblox(self) -> None:
+        """Write a Luau script that rebuilds the merged scene in Roblox."""
         scene = self._require_scene()
         if not scene:
             return

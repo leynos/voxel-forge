@@ -41,6 +41,7 @@ class MenuBuilderMixin:
     _recent_menu: QMenu
 
     def _build_menus(self) -> None:
+        """Assemble every top-level menu on the window's menu bar."""
         mb = self.menuBar()
         self._build_file_menu(mb)
         self._build_create_menu(mb)
@@ -49,6 +50,7 @@ class MenuBuilderMixin:
         self._build_help_menu(mb)
 
     def _build_file_menu(self, menu_bar: QMenuBar) -> None:
+        """Build the File menu, including the recent-files submenu."""
         file_menu = menu_bar.addMenu(tr("menu.file"))
 
         self._act_new = QAction(tr("action.new_scene"), self)
@@ -90,6 +92,7 @@ class MenuBuilderMixin:
         file_menu.addAction(act_quit)
 
     def _build_export_menu(self, file_menu: QMenu) -> None:
+        """Build the Export menu covering Blender, .vox and Roblox."""
         export_menu = file_menu.addMenu(tr("menu.export"))
         for label, handler, shortcut in (
             (tr("export.blender_merged"), self._export_blender_quick, "Ctrl+E"),
@@ -104,6 +107,7 @@ class MenuBuilderMixin:
             export_menu.addAction(act)
 
     def _build_folder_menu(self, file_menu: QMenu) -> None:
+        """Build the menu that opens the data folders in the file manager."""
         folder_menu = file_menu.addMenu(tr("menu.open_folder"))
         for label, path_fn in (
             (tr("folder.scenes"), scenes_dir),
@@ -115,6 +119,7 @@ class MenuBuilderMixin:
             folder_menu.addAction(act)
 
     def _build_create_menu(self, menu_bar: QMenuBar) -> None:
+        """Build the Create menu from the tree and bear preset tables."""
         create_menu = menu_bar.addMenu(tr("menu.create"))
 
         tree_menu = create_menu.addMenu(tr("create.tree_menu"))
@@ -136,6 +141,7 @@ class MenuBuilderMixin:
         bear_menu.addAction(act_bear_custom)
 
     def _build_view_menu(self, menu_bar: QMenuBar) -> None:
+        """Build the View menu holding the camera and refresh actions."""
         view_menu = menu_bar.addMenu(tr("menu.view"))
         act_frame = QAction(tr("view.frame"), self)
         act_frame.setShortcut(QKeySequence("F"))
@@ -148,12 +154,14 @@ class MenuBuilderMixin:
         view_menu.addAction(act_refresh)
 
     def _build_tools_menu(self, menu_bar: QMenuBar) -> None:
+        """Build the Tools menu holding the merge statistics action."""
         tools_menu = menu_bar.addMenu(tr("menu.tools"))
         act_stats = QAction(tr("tools.merge_stats"), self)
         act_stats.triggered.connect(self._show_merge_stats)
         tools_menu.addAction(act_stats)
 
     def _build_help_menu(self, menu_bar: QMenuBar) -> None:
+        """Build the Help menu holding the guide, shortcuts and about entries."""
         help_menu = menu_bar.addMenu(tr("menu.help"))
         act_guide = QAction(tr("help.guide"), self)
         act_guide.triggered.connect(self._usage_guide)
@@ -168,6 +176,7 @@ class MenuBuilderMixin:
         help_menu.addAction(act_about)
 
     def _build_toolbars(self) -> None:
+        """Build the toolbar duplicating the most frequent actions."""
         main = QToolBar(tr("toolbar.main"))
         main.setMovable(False)
         self.addToolBar(main)

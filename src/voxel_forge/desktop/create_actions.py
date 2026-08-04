@@ -17,18 +17,21 @@ class CreateActionsMixin:
     """Build procedural scenes from presets or from prompted parameters."""
 
     def _build_tree_preset(self, resolution: int) -> None:
+        """Replace the scene with a tree built at a preset resolution."""
         try:
             self._set_scene(build_tree("tree", resolution=resolution))
         except Exception as exc:  # ruff: ignore[blind-except]  # Report any failure to the user.
             QMessageBox.critical(self, tr("create.failed"), str(exc))
 
     def _build_bear_preset(self, resolution: int) -> None:
+        """Replace the scene with a chibi bear built at a preset resolution."""
         try:
             self._set_scene(build_chibi_bear("chibi_bear", resolution=resolution))
         except Exception as exc:  # ruff: ignore[blind-except]  # Report any failure to the user.
             QMessageBox.critical(self, tr("create.failed"), str(exc))
 
     def _build_tree(self) -> None:
+        """Prompt for a name and resolution, then build a tree."""
         name, ok = QInputDialog.getText(
             self, tr("create.tree_menu"), tr("create.name_label"), text="tree"
         )
@@ -45,6 +48,7 @@ class CreateActionsMixin:
             QMessageBox.critical(self, tr("create.failed"), str(exc))
 
     def _build_chibi_bear(self) -> None:
+        """Prompt for a name and resolution, then build a chibi bear."""
         name, ok = QInputDialog.getText(
             self, tr("create.bear_menu"), tr("create.name_label"), text="chibi_bear"
         )

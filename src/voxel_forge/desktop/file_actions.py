@@ -64,6 +64,7 @@ class FileActionsMixin:
             QMessageBox.critical(self, tr("file.open_failed"), str(exc))
 
     def _new_scene(self) -> None:
+        """Prompt for a name and replace the current scene with an empty one."""
         name, ok = QInputDialog.getText(
             self,
             tr("action.new_scene"),
@@ -75,6 +76,7 @@ class FileActionsMixin:
         self._set_scene(VoxelScene(name=name.strip()))
 
     def _open_scene(self) -> None:
+        """Ask for a scene file and load whichever supported format it is."""
         path_str, _ = QFileDialog.getOpenFileName(
             self,
             tr("file.open_dialog"),
@@ -85,6 +87,7 @@ class FileActionsMixin:
             self.open_path(path_str)
 
     def _save_scene(self) -> None:
+        """Save to the current path, falling back to Save As when there is none."""
         scene = self._require_scene()
         if not scene:
             return
@@ -100,6 +103,7 @@ class FileActionsMixin:
         self._status.showMessage(tr("file.saved", path=self._path), STATUS_TIMEOUT_MS)
 
     def _save_scene_as(self) -> None:
+        """Ask for a destination, save there and adopt it as the current path."""
         scene = self._require_scene()
         if not scene:
             return
@@ -122,6 +126,7 @@ class FileActionsMixin:
         self._status.showMessage(tr("file.saved", path=path), STATUS_TIMEOUT_MS)
 
     def _import_vox(self) -> None:
+        """Load a MagicaVoxel .vox file as the current scene."""
         path_str, _ = QFileDialog.getOpenFileName(
             self,
             tr("file.import_dialog"),

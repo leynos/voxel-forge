@@ -38,6 +38,7 @@ class SidePanel(QWidget):
     build_bear = Signal()
 
     def __init__(self) -> None:
+        """Assemble the side panel's boxes in top-to-bottom order."""
         super().__init__()
         self.setMinimumWidth(240)
         self.setMaximumWidth(320)
@@ -109,6 +110,7 @@ class SidePanel(QWidget):
             self._recent.addItem(item)
 
     def _build_quick_box(self) -> QGroupBox:
+        """Build the box of quick actions for new, open, save and export."""
         quick = QGroupBox(tr("sidebar.shortcuts_box"))
         ql = QVBoxLayout(quick)
         for text, slot in [
@@ -123,6 +125,7 @@ class SidePanel(QWidget):
         return quick
 
     def _build_create_box(self) -> QGroupBox:
+        """Build the box of one-click procedural presets."""
         create = QGroupBox(tr("sidebar.create_box"))
         cl = QVBoxLayout(create)
         btn_tree = QPushButton(tr("create.tree_menu"))
@@ -134,6 +137,7 @@ class SidePanel(QWidget):
         return create
 
     def _build_recent_box(self) -> QGroupBox:
+        """Build the list of recently opened scenes."""
         recent_box = QGroupBox(tr("menu.open_recent"))
         rl = QVBoxLayout(recent_box)
         self._recent = QListWidget()
@@ -143,6 +147,7 @@ class SidePanel(QWidget):
 
     @staticmethod
     def _build_folders_box() -> QGroupBox:
+        """Build the row of buttons that reveal the data folders."""
         folders = QGroupBox(tr("sidebar.folders_box"))
         fl = QVBoxLayout(folders)
         row = QHBoxLayout()
@@ -159,6 +164,7 @@ class SidePanel(QWidget):
         return folders
 
     def _on_recent_double(self, item: QListWidgetItem) -> None:
+        """Ask the window to open the double-clicked recent entry."""
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
             self.open_recent_requested.emit(str(path))

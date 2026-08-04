@@ -47,6 +47,7 @@ class MainWindow(
     """
 
     def __init__(self) -> None:
+        """Build the window, its viewport, dock and menus, then show empty state."""
         super().__init__()
         self.setWindowTitle("VoxelForge")
         self.resize(1360, 860)
@@ -84,18 +85,21 @@ class MainWindow(
     # ── Recent files ──────────────────────────────────────────
 
     def _recent_paths(self) -> list[str]:
+        """Return the remembered scene paths that still exist on disk."""
         raw = self._settings.value("recent_files", [])
         if not isinstance(raw, list):
             return []
         return [str(p) for p in raw if Path(str(p)).exists()][:MAX_RECENT]
 
     def _push_recent(self, path: Path) -> None:
+        """Record a path as the most recent, trimming the tail of the list."""
         paths = [str(path)] + [p for p in self._recent_paths() if p != str(path)]
         self._settings.setValue("recent_files", paths[:MAX_RECENT])
         self._refresh_recent_menu()
         self._sidebar.set_recent_files(paths[:MAX_RECENT])
 
     def _refresh_recent_menu(self) -> None:
+        """Rebuild the recent-files menu, showing a disabled hint when empty."""
         self._recent_menu.clear()
         recent = self._recent_paths()
         if not recent:
@@ -112,12 +116,14 @@ class MainWindow(
     # ── Scene helpers ─────────────────────────────────────────
 
     def _require_scene(self) -> VoxelScene | None:
+        """Return the current scene, warning and returning ``None`` if unset."""
         if self._scene is None:
             QMessageBox.warning(self, "VoxelForge", tr("scene.none_warning"))
             return None
         return self._scene
 
     def _set_scene(self, scene: VoxelScene, path: Path | None = None) -> None:
+        """Adopt a scene, load it into the viewport and refresh the window."""
         self._scene = scene
         self._path = path
         self._viewport.load_scene(scene)
@@ -126,6 +132,7 @@ class MainWindow(
         self._update_ui()
 
     def _update_ui(self) -> None:
+        """Refresh the side panel, status line and title from the current scene."""
         self._sidebar.set_scene_info(self._scene, self._path)
         if not self._scene:
             self._status.showMessage(tr("status.ready"))
@@ -148,6 +155,7 @@ class MainWindow(
     # ── View ──────────────────────────────────────────────────
 
     def _refresh_view(self) -> None:
+        """Reload the current scene into the viewport, discarding stale geometry."""
         if self._scene:
             self._viewport.load_scene(self._scene)
 
