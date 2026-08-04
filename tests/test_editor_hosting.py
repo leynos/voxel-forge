@@ -216,6 +216,7 @@ def test_install_editor_deps_command_reports_failure(
     from voxel_forge import install_editor_deps
 
     def raise_runtime_error() -> Path:
+        """Stand in for a failing install."""
         msg = "Bun executable not found: bun"
         raise EditorRuntimeError(msg)
 
@@ -323,6 +324,7 @@ def test_install_editor_dependencies_keeps_timeout_diagnostics(
     from voxel_forge import orchestration
 
     def raise_timeout(*_args: object, **_kwargs: object) -> typ.NoReturn:
+        """Stand in for an install that outruns its deadline."""
         raise subprocess.TimeoutExpired(
             cmd=["bun", "install"],
             timeout=1.0,

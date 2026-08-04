@@ -100,6 +100,7 @@ def _start_stdout_reader(
     line_queue: queue.Queue[str | None] = queue.Queue()
 
     def _reader() -> None:
+        """Pump lines into the queue, ending with a sentinel at EOF."""
         for line in iter(stdout.readline, ""):
             line_queue.put(line)
         line_queue.put(None)
