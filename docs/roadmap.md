@@ -99,18 +99,20 @@ the dependency envelope and in the platform assumptions of the launchers.
     traceback.
 - [ ] 1.1.3. Replace the Windows-only launchers with a documented
   cross-platform invocation.
-  - The README configures MCP clients with absolute `C:\Users\...` paths to
-    `run-mcp.bat`, and the four wrappers (`run-mcp.bat`, `run-editor.bat`,
-    `run-desktop.bat`, `build-desktop.bat`) cover the whole launch surface, so
-    the documented entry points are Windows-only even though the Python itself
-    is portable — data directories already use `Path.home()`, and the
+  - The README now documents cross-platform `uv run` invocations for the MCP
+    server and the desktop app, and an npm invocation for the web editor, so
+    the documented entry points are no longer Windows-only. The four Windows
+    wrappers (`run-mcp.bat`, `run-editor.bat`, `run-desktop.bat`,
+    `build-desktop.bat`) remain as convenience alternatives. The Python was
+    already portable — data directories use `Path.home()`, and the
     `voxel-forge-mcp` and `voxel-forge` console scripts are
     platform-independent. Only the Windows path has been exercised.
   - Keep the `.bat` wrappers for Windows convenience; document the installed
     console scripts as the primary interface.
   - Success: the README's install and run instructions can be followed on
     Linux without translation, and a Linux machine reaches a running MCP
-    server.
+    server. Documentation work is complete; Linux execution remains unverified
+    until a Linux run confirms it.
 
 ### 1.2. Host the editor as a supervised Bun process
 

@@ -84,28 +84,7 @@ def _reject_reserved_scene_name(name: str) -> None:
 
 
 def _validate_rgb(rgb: tuple[int, int, int] | list[int], *, field_name: str = "palette") -> tuple[int, int, int]:
-    """
-    Validate three RGB channels without coercing non-integer values.
-
-    Parameters
-    ----------
-    rgb : tuple[int, int, int] | list[int]
-        Exactly three channels, each an ``int`` in the inclusive range 0..255.
-    field_name : str, optional
-        Name used in the error message. Defaults to ``"palette"``.
-
-    Returns
-    -------
-    tuple[int, int, int]
-        The validated channels.
-
-    Raises
-    ------
-    ValueError
-        If ``rgb`` does not hold exactly three integer channels in range.
-        Floats, numeric strings, and booleans are rejected rather than
-        truncated, because the declared contract is integer channels.
-    """
+    """Return three integer RGB channels in 0..255, rejecting booleans and other non-integers."""
     if not isinstance(rgb, (list, tuple)) or len(rgb) != 3:
         raise ValueError(f"{field_name} colours require three channels in the range 0..255")
     if any(type(channel) is not int or channel < 0 or channel > 255 for channel in rgb):
@@ -214,7 +193,14 @@ class VoxelLayer:
     blocks: dict[tuple[int, int, int], str] = field(default_factory=dict)
 
     def block_count(self) -> int:
-        """Return the number of voxels held by this layer."""
+        """
+        Return the number of voxels held by this layer.
+
+        Returns
+        -------
+        int
+            Count of coordinates currently occupied in this layer.
+        """
         return len(self.blocks)
 
 
@@ -403,6 +389,13 @@ class VoxelScene:
         -------
         int
             Number of voxels written.
+
+        Raises
+        ------
+        ValueError
+            If ``color`` is not a palette key or valid ``#RRGGBB`` literal, or
+            ``layer_index`` names no layer. Raised by :meth:`place` on the
+            first voxel, before any later voxel is written.
         """
         count = 0
         for x in range(min(x1, x2), max(x1, x2) + 1):
@@ -428,7 +421,16 @@ class VoxelScene:
             self.layers[layer_index].blocks.clear()
 
     def all_blocks(self) -> list[tuple[int, int, int, str, str]]:
-        """Return (x,y,z,color,layer_name) for all visible layers."""
+        """
+        Return (x,y,z,color,layer_name) for all visible layers.
+
+        Returns
+        -------
+        list[tuple[int, int, int, str, str]]
+            One tuple per voxel: its coordinates, the palette key or
+            ``#RRGGBB`` colour it carries, and the name of the layer holding
+            it. Voxels in hidden layers are excluded.
+        """
         out: list[tuple[int, int, int, str, str]] = []
         for layer in self.layers:
             if not layer.visible:
@@ -438,7 +440,14 @@ class VoxelScene:
         return out
 
     def block_count(self) -> int:
-        """Return the total number of voxels across all layers, visible or not."""
+        """
+        Return the total number of voxels across all layers, visible or not.
+
+        Returns
+        -------
+        int
+            Sum of every layer's voxel count, including hidden layers.
+        """
         return sum(layer.block_count() for layer in self.layers)
 
     def bounds(self) -> dict[str, int] | None:
@@ -467,7 +476,17 @@ class VoxelScene:
         }
 
     def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serialisable representation of the whole scene."""
+        """
+        Return a JSON-serialisable representation of the whole scene.
+
+        Returns
+        -------
+        dict[str, Any]
+            A mapping with ``name``, ``voxel_size``, ``palette`` (colour keys
+            mapped to ``[r, g, b]`` lists), ``active_layer``, and ``layers``.
+            Each layer holds its ``name``, ``visible`` flag, and ``blocks`` as
+            ``[x, y, z, color]`` rows sorted by coordinate.
+        """
         return {
             "name": self.name,
             "voxel_size": self.voxel_size,
@@ -555,6 +574,14 @@ class SceneStore:
         -------
         VoxelScene
             The newly created scene.
+
+        Raises
+        ------
+        ValueError
+            If ``name`` is not a safe filename component on this platform:
+            empty, over-long, edge-whitespaced, containing path separators or
+            control characters, or a Windows-reserved device name. Raised by
+            :func:`validate_scene_name` before any scene is registered.
         """
         scene = VoxelScene(name=validate_scene_name(name))
         self.register(scene)
@@ -628,5 +655,12 @@ class SceneStore:
         return self._scenes[name]
 
     def list_active(self) -> list[str]:
-        """Return the sorted names of every scene held in this session."""
+        """
+        Return the sorted names of every scene held in this session.
+
+        Returns
+        -------
+        list[str]
+            Registered scene names in ascending sort order.
+        """
         return sorted(self._scenes.keys())

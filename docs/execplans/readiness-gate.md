@@ -137,6 +137,16 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   format, lint, TypeScript, 42 Python contracts, wheel build and entry-point
   inspection, editor build, a zero-vulnerability npm audit, Markdown lint, and
   Mermaid validation all pass.
+- [x] (2026-10-10) Posted 17 disposition replies on the review threads and read
+  CodeRabbit's full responses. Fifteen findings were confirmed resolved. Two
+  remained open and are now repaired: the roadmap premise in item 1.1.3 still
+  described the README as Windows-only, and eight `model.py` docstrings were
+  missing `Returns`/`Raises` sections or carried structured prose where a
+  private-helper summary was requested.
+- [x] (2026-10-10) Accepted CodeRabbit's correction that `make lint` selects
+  only `E`, `F`, `I`, and `UP`, so `C90` is not enforced by the repository
+  gate. The earlier disposition reply overstated this; the corrected position
+  is recorded below.
 
 ## Surprises & discoveries
 
@@ -191,6 +201,20 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   18-file limit; the line tolerance is explicitly waived for the review round
   because the user's instruction is to action every review finding, which is
   not optional scope. See the Decision Log.
+
+- Observation: CodeRabbit's disposition replies contradicted one validation
+  claim made in my own review reply.
+  Evidence: I reported that `from_dict` satisfied a `C90`/`max-complexity = 9`
+  contract as if the repository enforced it. `pyproject.toml` selects only
+  `E`, `F`, `I`, and `UP`; an isolated `--select C90` run over `src` reports
+  six unrelated violations (`bridge._http_handler`, `mesh_merge.merge_boxes`,
+  `procedural.build_tree`, `procedural.build_chibi_bear`, `vox_io.import_vox`,
+  `vox_io.parse_at`), so the repository plainly does not gate on complexity.
+  Impact: the only accurate part of the claim is that `model.py` is clean at
+  that threshold. Complexity remains an unenforced local property rather than
+  a repository contract, and the correction is recorded rather than papered
+  over by adding `C90` to the lint selection, which would fail six pre-existing
+  functions and exceed this task's scope.
 
 ## Decision log
 
@@ -252,6 +276,22 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   do not carry ExecPlan references, so the plan reference belongs in the body
   where it already is. Each rebuttal is recorded with its evidence in the
   review ledger.
+  Date/Author: 2026-10-10 / Claude Code.
+- Decision: repair the two findings CodeRabbit kept open rather than treat its
+  fifteen confirmations as sufficient review closure.
+  Rationale: the skill requires reading each substantive reply and repairing
+  valid findings. The roadmap premise was still wrong in different words after
+  the first repair, and the docstring table named concrete missing sections.
+  Both were valid; neither was a style preference.
+  Date/Author: 2026-10-10 / Claude Code.
+- Decision: leave the six pre-existing `C90` violations in place and record the
+  corrected position instead of adding `C90` to the lint selection.
+  Rationale: the complexity claim was mine, not the repository's. Adding the
+  selector would fail six functions across `bridge.py`, `mesh_merge.py`,
+  `procedural.py`, and `vox_io.py` — well outside the reviewed surface — and
+  the user's instruction is to fix underlying issues, not to expand a lint gate
+  into unrelated refactoring mid-review. `model.py` is clean at the threshold,
+  which is the property the original finding actually concerned.
   Date/Author: 2026-10-10 / Claude Code.
 
 ## Outcomes & retrospective
