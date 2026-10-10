@@ -12,11 +12,15 @@ jobs:
   readiness:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      # Actions are pinned to full commit SHAs so a moved tag cannot change what
+      # runs in this workflow.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           enable-cache: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -32,6 +36,7 @@ jobs:
           src/voxel_forge/desktop/viewport.py
           src/voxel_forge/model.py
           src/voxel_forge/procedural.py
+          src/voxel_forge/scene_store.py
           src/voxel_forge/server.py
           src/voxel_forge/vox_io.py
           tests

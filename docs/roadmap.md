@@ -99,10 +99,13 @@ the dependency envelope and in the platform assumptions of the launchers.
     traceback.
 - [ ] 1.1.3. Replace the Windows-only launchers with a documented
   cross-platform invocation.
-  - `run-mcp.bat`, `run-editor.bat`, `run-desktop.bat`, and
-    `build-desktop.bat` are the only documented entry points, and the README
-    gives absolute `C:\Users\...` paths. The Python itself is portable —
-    data directories already use `Path.home()`.
+  - The README configures MCP clients with absolute `C:\Users\...` paths to
+    `run-mcp.bat`, and the four wrappers (`run-mcp.bat`, `run-editor.bat`,
+    `run-desktop.bat`, `build-desktop.bat`) cover the whole launch surface, so
+    the documented entry points are Windows-only even though the Python itself
+    is portable — data directories already use `Path.home()`, and the
+    `voxel-forge-mcp` and `voxel-forge` console scripts are
+    platform-independent. Only the Windows path has been exercised.
   - Keep the `.bat` wrappers for Windows convenience; document the installed
     console scripts as the primary interface.
   - Success: the README's install and run instructions can be followed on

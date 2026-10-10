@@ -21,6 +21,34 @@ def _read_chunk(f) -> tuple[bytes, bytes, int]:
 
 
 def import_vox(path: str | Path) -> VoxelScene:
+    """
+    Read a MagicaVoxel ``.vox`` file into a scene.
+
+    Only the ``SIZE``, ``XYZI`` and ``RGBA`` chunks of a version 150 single-model
+    file are consumed; the coordinate origin is preserved as stored in the file
+    and no normalisation is applied. When the file carries an ``RGBA`` chunk its
+    255 colour entries replace the default palette; otherwise the default
+    palette is kept and the imported voxels reference its keys. Every imported
+    voxel is placed on the first layer.
+
+    Parameters
+    ----------
+    path : str | Path
+        Path to the ``.vox`` file.
+
+    Returns
+    -------
+    VoxelScene
+        A scene named after the file stem, holding every voxel in the file.
+
+    Raises
+    ------
+    ValueError
+        If the file does not begin with the ``VOX `` magic, or its ``RGBA``
+        chunk is truncated.
+    OSError
+        If the file cannot be read.
+    """
     path = Path(path)
     data = path.read_bytes()
     if data[:4] != VOX_MAGIC:
@@ -82,6 +110,39 @@ def import_vox(path: str | Path) -> VoxelScene:
 
 
 def export_vox(scene: VoxelScene, path: str | Path) -> Path:
+    """
+    Write a scene as a version 150 MagicaVoxel ``.vox`` file.
+
+    Output is a single-model ``MAIN`` chunk holding ``SIZE``, ``XYZI`` and
+    ``RGBA`` children in that order. Coordinates are normalised to the model's
+    bounding box, so the file's own origin is the minimum corner of the visible
+    voxels. Each distinct visible colour receives a palette index; indices start
+    at 1 because index 0 is unused, and index ``n`` maps to palette entry
+    ``n - 1``. Hidden layers are omitted.
+
+    Parameters
+    ----------
+    scene : VoxelScene
+        Scene to export. Only visible layers are written.
+    path : str | Path
+        Destination file. Parent directories are created when absent.
+
+    Returns
+    -------
+    Path
+        The file that was written.
+
+    Raises
+    ------
+    ValueError
+        If any axis of the bounding box exceeds 256 voxels, if more than 255
+        distinct colours are visible, or if two visible voxels share a
+        coordinate. A ``.vox`` model stores one colour index per coordinate, so
+        overlapping visible layers cannot be represented; importing such a file
+        would silently drop all but one of the overlapping voxels.
+    OSError
+        If the destination cannot be written.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -102,8 +163,13 @@ def export_vox(scene: VoxelScene, path: str | Path) -> Path:
 
     palette = [(0, 0, 0, 0)] * 256
     colour_indices: dict[tuple[int, int, int], int] = {}
+    occupied: set[tuple[int, int, int]] = set()
     encoded_blocks: list[tuple[int, int, int, int]] = []
     for x, y, z, colour, _layer in blocks:
+        coordinate = (x, y, z)
+        if coordinate in occupied:
+            raise ValueError("VOX version 150 cannot represent overlapping visible-layer voxels")
+        occupied.add(coordinate)
         rgb = scene.resolve_color(colour)
         colour_index = colour_indices.get(rgb)
         if colour_index is None:

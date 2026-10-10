@@ -34,6 +34,17 @@ def _broadcast(payload: dict[str, Any]) -> None:
         coroutine.close()
 
 
+def _layer_index(message: dict[str, Any], scene: VoxelScene) -> int:
+    """Resolve an editor request's layer index, defaulting to the scene's active layer."""
+    raw = message.get("layer_index")
+    return scene.active_layer if raw is None else int(raw)
+
+
+def _block_coordinate(message: dict[str, Any]) -> tuple[int, int, int]:
+    """Return the grid coordinate an editor request targets."""
+    return int(message["x"]), int(message["y"]), int(message["z"])
+
+
 async def _async_broadcast(payload: dict[str, Any]) -> None:
     if not _clients:
         return
@@ -78,22 +89,18 @@ async def _ws_handler(websocket) -> None:
                     )
             elif msg.get("type") == "editor_place":
                 scene = store.get(msg.get("scene_name"))
-                scene.place(
-                    int(msg["x"]),
-                    int(msg["y"]),
-                    int(msg["z"]),
-                    str(msg.get("color", "1")),
-                    msg.get("layer_index"),
-                )
+                x, y, z = _block_coordinate(msg)
+                scene.place(x, y, z, str(msg.get("color", "1")), _layer_index(msg, scene))
                 await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
             elif msg.get("type") == "editor_remove":
                 scene = store.get(msg.get("scene_name"))
-                scene.remove(
-                    int(msg["x"]),
-                    int(msg["y"]),
-                    int(msg["z"]),
-                    msg.get("layer_index"),
-                )
+                x, y, z = _block_coordinate(msg)
+                layer_index = _layer_index(msg, scene)
+                # The editor picks the topmost rendered voxel, which may belong
+                # to a non-active layer. Fall back to any layer holding that
+                # coordinate so a removal is never silently dropped.
+                if not scene.remove(x, y, z, layer_index):
+                    scene.remove_from_any_layer(x, y, z)
                 await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
     finally:
         _clients.discard(websocket)

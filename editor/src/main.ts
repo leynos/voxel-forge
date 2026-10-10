@@ -97,37 +97,51 @@ function rebuildVoxels() {
   const box = vs * gap;
   const baseGeo = new THREE.BoxGeometry(box, box, box);
 
-  const byColor = new Map<string, Array<[number, number, number, string]>>();
-  for (const layer of sceneData.layers) {
-    if (!layer.visible) continue;
-    for (const block of layer.blocks) {
+  // Layers stay separate so each rendered voxel remembers the layer it came
+  // from. Merging them by colour loses that identity, which made an editor
+  // removal target the active layer instead of the layer actually clicked.
+  const visibleLayers: Array<[number, [number, number, number, string][]]> = [];
+  sceneData.layers.forEach((layer, layerIndex) => {
+    if (layer.visible) {
+      visibleLayers.push([layerIndex, layer.blocks]);
+    }
+  });
+
+  const dummy = new THREE.Object3D();
+  for (const layerEntry of visibleLayers) {
+    const layerIndex = layerEntry[0];
+    const blocks = layerEntry[1];
+    const byColor = new Map<string, Array<[number, number, number, string]>>();
+    for (const block of blocks) {
       const [x, y, z, color] = block;
       if (!byColor.has(color)) byColor.set(color, []);
       byColor.get(color)!.push([x, y, z, color]);
     }
-  }
 
-  const dummy = new THREE.Object3D();
-  for (const [color, blocks] of byColor) {
-    const mat = new THREE.MeshStandardMaterial({
-      color: resolveRgb(sceneData.palette, color),
-      roughness: 0.85,
-      metalness: 0.05,
-    });
-    const mesh = new THREE.InstancedMesh(baseGeo, mat, blocks.length);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    for (const colourEntry of Array.from(byColor.entries())) {
+      const color = colourEntry[0];
+      const colourBlocks = colourEntry[1];
+      const mat = new THREE.MeshStandardMaterial({
+        color: resolveRgb(sceneData.palette, color),
+        roughness: 0.85,
+        metalness: 0.05,
+      });
+      const mesh = new THREE.InstancedMesh(baseGeo, mat, colourBlocks.length);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
 
-    blocks.forEach(([x, y, z, c], i) => {
-      const p = worldPos(x, y, z);
-      dummy.position.copy(p);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      mesh.userData[`v_${i}`] = { x, y, z, color: c };
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.userData.blocks = blocks;
-    voxelGroup.add(mesh);
+      colourBlocks.forEach(([x, y, z, c], i) => {
+        const p = worldPos(x, y, z);
+        dummy.position.copy(p);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        mesh.userData[`v_${i}`] = { x, y, z, color: c, layer: layerIndex };
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.userData.blocks = colourBlocks;
+      mesh.userData.layer = layerIndex;
+      voxelGroup.add(mesh);
+    }
   }
 
   frameCamera();
@@ -223,16 +237,17 @@ function screenToRay(e: MouseEvent) {
   raycaster.setFromCamera(mouse, camera);
 }
 
-function pickVoxel(): { x: number; y: number; z: number; color: string } | null {
+function pickVoxel(): { x: number; y: number; z: number; color: string; layer: number } | null {
   const hits = raycaster.intersectObjects(voxelGroup.children, false);
   if (!hits.length) return null;
   const hit = hits[0];
   const mesh = hit.object as THREE.InstancedMesh;
   const idx = hit.instanceId ?? 0;
   const blocks = mesh.userData.blocks as [number, number, number, string][];
+  const layer = (mesh.userData.layer as number | undefined) ?? 0;
   if (blocks && blocks[idx]) {
     const [x, y, z, color] = blocks[idx];
-    return { x, y, z, color };
+    return { x, y, z, color, layer };
   }
   return null;
 }
@@ -243,6 +258,14 @@ function pickGround(): THREE.Vector3 | null {
     return target;
   }
   return null;
+}
+
+// Sending on a CONNECTING socket throws, which would surface as a silent lost
+// edit rather than the offline state the status bar already reports.
+function sendToBridge(message: unknown) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(message));
+  }
 }
 
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -270,20 +293,18 @@ canvas.addEventListener("mousedown", (e) => {
       y = 0;
       z = Math.floor(g.z / vs);
     }
-    ws?.send(JSON.stringify({ type: "editor_place", x, y, z, color: activeColor }));
+    sendToBridge({ type: "editor_place", x, y, z, color: activeColor });
   } else if (e.button === 2) {
     const hit = pickVoxel();
     if (hit && sceneData) {
-      ws?.send(
-        JSON.stringify({
-          type: "editor_remove",
-          x: hit.x,
-          y: hit.y,
-          z: hit.z,
-          scene_name: sceneData.name,
-          layer_index: sceneData.active_layer,
-        })
-      );
+      sendToBridge({
+        type: "editor_remove",
+        x: hit.x,
+        y: hit.y,
+        z: hit.z,
+        scene_name: sceneData.name,
+        layer_index: hit.layer,
+      });
     }
   }
 });

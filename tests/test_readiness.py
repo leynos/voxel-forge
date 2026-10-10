@@ -1,3 +1,16 @@
+"""Executable contract for the readiness gates.
+
+Each test here pins one behaviour that "basic agent-driven voxel scene creation"
+depends on: the MCP launcher, bridge scheduling and origin checks, editor
+removal round-trips, scene-name and payload validation, resource bounds,
+persistence, and the raw structure of exported MagicaVoxel files.
+
+Run the whole module with ``uv run pytest -q``. Tests that touch persistence
+request the ``scene_directory`` fixture from ``conftest.py`` so no real
+``~/.voxel-forge`` directory is read or written. Assertions carry messages
+because a readiness failure should name the broken contract directly.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -5,18 +18,23 @@ import contextlib
 import json
 import struct
 import sys
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from voxel_forge import bridge, server
+from voxel_forge import bridge, scene_store, server
 from voxel_forge.model import SceneStore, VoxelScene
 from voxel_forge.vox_io import export_vox, import_vox
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
 
 def exchange_http(request: bytes) -> bytes:
+    """Send one raw HTTP request to a throwaway bridge server and return the response."""
+
     async def exchange() -> bytes:
         http_server = await asyncio.start_server(bridge._http_handler, "127.0.0.1", 0)
         port = http_server.sockets[0].getsockname()[1]
@@ -33,8 +51,9 @@ def exchange_http(request: bytes) -> bytes:
 
 
 def child_chunks(data: bytes) -> dict[bytes, bytes]:
-    assert data[:4] == b"VOX "
-    assert data[8:12] == b"MAIN"
+    """Return the MAIN chunk's child chunks, keyed by chunk id."""
+    assert data[:4] == b"VOX ", "exported file must start with the VOX magic"
+    assert data[8:12] == b"MAIN", "the first chunk after the header must be MAIN"
     children_size = struct.unpack_from("<I", data, 16)[0]
     offset = 20
     end = offset + children_size
@@ -61,8 +80,18 @@ def test_broadcast_submits_to_bridge_event_loop(monkeypatch: pytest.MonkeyPatch)
 
     bridge._broadcast({"type": "scene_update"})
 
-    assert len(submitted) == 1
-    assert submitted[0][1] is bridge_loop
+    assert len(submitted) == 1, "a broadcast must schedule exactly one coroutine"
+    assert submitted[0][1] is bridge_loop, "the coroutine must be scheduled on the bridge loop"
+
+
+def test_broadcast_before_loop_is_ready_is_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(bridge, "_bridge_loop", None)
+    scheduled: list[Any] = []
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", lambda c, _loop: scheduled.append(c))
+
+    bridge._broadcast({"type": "scene_update"})
+
+    assert scheduled == [], "a broadcast before the bridge loop starts must not be scheduled"
 
 
 def test_editor_remove_updates_server_scene(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,9 +108,11 @@ def test_editor_remove_updates_server_scene(monkeypatch: pytest.MonkeyPatch) -> 
 
     class WebSocket:
         def __init__(self) -> None:
-            self.messages = iter(['{"type":"editor_remove","scene_name":"editor","layer_index":0,"x":1,"y":2,"z":3}'])
+            self.messages: Iterator[str] = iter(
+                ['{"type":"editor_remove","scene_name":"editor","layer_index":0,"x":1,"y":2,"z":3}']
+            )
 
-        def __aiter__(self):
+        def __aiter__(self) -> AsyncIterator[str]:
             return self
 
         async def __anext__(self) -> str:
@@ -95,8 +126,82 @@ def test_editor_remove_updates_server_scene(monkeypatch: pytest.MonkeyPatch) -> 
 
     asyncio.run(bridge._ws_handler(WebSocket()))
 
-    assert scene.block_count() == 0
-    assert broadcasts[-1]["scene"]["name"] == "editor"
+    assert scene.block_count() == 0, "an editor removal must delete the voxel from the scene"
+    assert broadcasts[-1]["scene"]["name"] == "editor", "a removal must broadcast the updated scene"
+
+
+def test_editor_remove_targets_the_clicked_layer(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SceneStore()
+    scene = store.create("layered")
+    scene.add_layer("upper")
+    scene.active_layer = 1
+    scene.place(4, 0, 0, "1", layer_index=0)
+    monkeypatch.setattr(bridge, "store", store)
+    broadcasts: list[dict[str, Any]] = []
+
+    async def capture(payload: dict[str, Any]) -> None:
+        broadcasts.append(payload)
+
+    monkeypatch.setattr(bridge, "_async_broadcast", capture)
+
+    class WebSocket:
+        def __init__(self) -> None:
+            self.messages: Iterator[str] = iter(
+                ['{"type":"editor_remove","scene_name":"layered","layer_index":0,"x":4,"y":0,"z":0}']
+            )
+
+        def __aiter__(self) -> AsyncIterator[str]:
+            return self
+
+        async def __anext__(self) -> str:
+            try:
+                return next(self.messages)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+        async def send(self, _message: str) -> None:
+            return None
+
+    asyncio.run(bridge._ws_handler(WebSocket()))
+
+    assert scene.layers[0].blocks == {}, "the removal must delete from the layer the editor sent"
+    assert scene.layers[1].blocks == {}, "the active layer must not be touched by a lower-layer removal"
+
+
+def test_editor_remove_falls_back_when_layer_is_wrong(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SceneStore()
+    scene = store.create("layered")
+    scene.add_layer("upper")
+    scene.active_layer = 1
+    scene.place(4, 0, 0, "1", layer_index=0)
+    monkeypatch.setattr(bridge, "store", store)
+
+    async def capture(_payload: dict[str, Any]) -> None:
+        return None
+
+    monkeypatch.setattr(bridge, "_async_broadcast", capture)
+
+    class WebSocket:
+        def __init__(self) -> None:
+            self.messages: Iterator[str] = iter(
+                ['{"type":"editor_remove","scene_name":"layered","layer_index":1,"x":4,"y":0,"z":0}']
+            )
+
+        def __aiter__(self) -> AsyncIterator[str]:
+            return self
+
+        async def __anext__(self) -> str:
+            try:
+                return next(self.messages)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+        async def send(self, _message: str) -> None:
+            return None
+
+    asyncio.run(bridge._ws_handler(WebSocket()))
+
+    assert scene.block_count() == 0, "a removal must not be silently dropped when the layer is stale"
 
 
 def test_http_bridge_rejects_non_local_origin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -111,19 +216,28 @@ def test_http_bridge_rejects_non_local_origin(monkeypatch: pytest.MonkeyPatch) -
 
     response = exchange_http(request)
 
-    assert response.startswith(b"HTTP/1.1 403 Forbidden")
-    assert store.list_active() == []
+    assert response.startswith(b"HTTP/1.1 403 Forbidden"), "a non-local origin must be refused"
+    assert store.list_active() == [], "a refused request must not create a scene"
+
+
+def test_http_bridge_rejects_oversized_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(bridge, "store", SceneStore())
+    request = b"POST /scene HTTP/1.1\r\nHost: 127.0.0.1:8766\r\nContent-Length: 10000001\r\n\r\n"
+
+    response = exchange_http(request)
+
+    assert response.startswith(b"HTTP/1.1 413"), "a body over MAX_HTTP_BODY_BYTES must be refused"
 
 
 def test_bridge_diagnostic_uses_stderr(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     class DummyServer:
-        async def __aenter__(self):
+        async def __aenter__(self) -> DummyServer:
             return self
 
-        async def __aexit__(self, *_args):
+        async def __aexit__(self, *_args: Any) -> None:
             return None
 
-    async def make_server(*_args, **_kwargs):
+    async def make_server(*_args: Any, **_kwargs: Any) -> DummyServer:
         return DummyServer()
 
     monkeypatch.setitem(sys.modules, "websockets", SimpleNamespace(serve=make_server))
@@ -139,43 +253,74 @@ def test_bridge_diagnostic_uses_stderr(monkeypatch: pytest.MonkeyPatch, capsys: 
     asyncio.run(run_until_started())
     captured = capsys.readouterr()
 
-    assert captured.out == ""
-    assert "VoxelForge bridge:" in captured.err
+    assert captured.out == "", "the bridge must not write to stdout, which carries MCP protocol data"
+    assert "VoxelForge bridge:" in captured.err, "the bridge must announce its ports on stderr"
 
 
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:
-    launcher = Path("run-mcp.bat").read_text(encoding="utf-8")
+    launcher = (REPOSITORY_ROOT / "run-mcp.bat").read_text(encoding="utf-8")
 
-    assert "uv run voxel-forge-mcp" in launcher
-    assert "python src/voxel_forge/server.py" not in launcher
+    assert "uv run voxel-forge-mcp" in launcher, "the launcher must call the installed console script"
+    assert "python src/voxel_forge/server.py" not in launcher, "the launcher must not run a source file directly"
+    assert "|| exit /b 1" in launcher, "a failed locked sync must abort the launcher"
+    assert launcher.rstrip().endswith("exit /b %errorlevel%"), (
+        "the launcher must return the exit status of the MCP server"
+    )
 
 
 def test_scene_name_cannot_escape_scene_directory(scene_directory: Path) -> None:
     scene = VoxelScene("../outside")
 
     with pytest.raises(ValueError, match="scene name"):
-        scene.save()
+        scene_store.save_scene(scene)
 
-    assert not (scene_directory.parent / "outside.json").exists()
+    assert not (scene_directory.parent / "outside.json").exists(), "an unsafe name must not write outside the directory"
 
 
 def test_unicode_scene_name_round_trips(scene_directory: Path) -> None:
     scene = VoxelScene("บ้าน เล็ก")
     scene.place(1, 2, 3, "2")
 
-    saved_path = scene.save()
-    loaded = VoxelScene.load(scene.name)
+    saved_path = scene_store.save_scene(scene)
+    loaded = scene_store.load_scene(scene.name)
 
-    assert saved_path.parent == scene_directory
-    assert loaded.to_dict() == scene.to_dict()
+    assert saved_path.parent == scene_directory, "a saved scene must stay inside the scenes directory"
+    assert loaded.to_dict() == scene.to_dict(), "a saved scene must reload unchanged"
 
 
-@pytest.mark.parametrize("name", ["", ".", "..", "bad/name", "bad\\name", "CON"])
+def test_list_saved_scenes_reports_saved_names(scene_directory: Path) -> None:
+    scene_store.save_scene(VoxelScene("beta"))
+    scene_store.save_scene(VoxelScene("alpha"))
+
+    assert scene_store.list_saved_scenes() == ["alpha", "beta"], "saved scenes must be listed sorted by name"
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "bad/name", "bad\\name", "CON", "CON.txt", "lpt1.scene", "trailing."])
 def test_scene_store_rejects_unsafe_names(name: str) -> None:
     store = SceneStore()
 
     with pytest.raises(ValueError, match="scene name"):
         store.create(name)
+
+
+def test_store_select_requires_a_registered_scene() -> None:
+    store = SceneStore()
+    store.create("original")
+    store.create("second")
+
+    selected = store.select("original")
+
+    assert selected is store.get(), "select must make the named scene current"
+    with pytest.raises(KeyError, match="not loaded in this session"):
+        store.select("never-created")
+
+
+def test_register_makes_a_scene_current() -> None:
+    store = SceneStore()
+
+    registered = store.register(VoxelScene("adopted"))
+
+    assert store.get() is registered, "register must adopt the scene and make it current"
 
 
 def test_from_dict_rejects_invalid_active_layer() -> None:
@@ -194,50 +339,85 @@ def test_from_dict_rejects_invalid_palette_channel() -> None:
         VoxelScene.from_dict(data)
 
 
+@pytest.mark.parametrize("channel", [1.9, True, "1"])
+def test_from_dict_rejects_coercible_rgb_channels(channel: Any) -> None:
+    data = VoxelScene("valid").to_dict()
+    data["palette"] = {"1": [channel, 0, 0]}
+
+    with pytest.raises(ValueError, match="palette"):
+        VoxelScene.from_dict(data)
+
+
+@pytest.mark.parametrize("name", [None, ["a"], {"a": 1}, 7])
+def test_from_dict_rejects_non_text_scene_name(name: Any) -> None:
+    data = VoxelScene("valid").to_dict()
+    data["name"] = name
+
+    with pytest.raises(ValueError, match="scene name"):
+        VoxelScene.from_dict(data)
+
+
 def test_place_rejects_unknown_colour_without_mutating_scene() -> None:
     scene = VoxelScene("valid")
 
     with pytest.raises(ValueError, match="colour"):
         scene.place(0, 0, 0, "not-a-colour")
 
-    assert scene.block_count() == 0
+    assert scene.block_count() == 0, "a rejected placement must not mutate the scene"
 
 
 @pytest.fixture
-def empty_server_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(server, "store", server.SceneStore())
+def empty_server_store(monkeypatch: pytest.MonkeyPatch) -> SceneStore:
+    """Replace the module-level scene registry and bridge sync for one test."""
+    replacement = SceneStore()
+    monkeypatch.setattr(server, "store", replacement)
     monkeypatch.setattr(server, "_sync_bridge", lambda _scene: None)
+    return replacement
 
 
-def test_fill_box_rejects_more_than_limit_without_mutation(empty_server_store) -> None:
-    server.store.create("bounded")
+def test_fill_box_rejects_more_than_limit_without_mutation(empty_server_store: SceneStore) -> None:
+    empty_server_store.create("bounded")
 
     with pytest.raises(ValueError, match="100,000"):
         server.voxelforge_fill_box(0, 100_000, 0, 0, 0, 0)
 
-    assert server.store.get().block_count() == 0
+    assert empty_server_store.get().block_count() == 0, "a rejected fill_box must not mutate the scene"
 
 
-def test_place_many_rejects_more_than_limit_without_mutation(empty_server_store) -> None:
-    server.store.create("bounded")
+def test_place_many_rejects_more_than_limit_without_mutation(empty_server_store: SceneStore) -> None:
+    empty_server_store.create("bounded")
     blocks = [[index, 0, 0, "1"] for index in range(100_001)]
 
     with pytest.raises(ValueError, match="100,000"):
         server.voxelforge_place_many(json.dumps(blocks))
 
-    assert server.store.get().block_count() == 0
+    assert empty_server_store.get().block_count() == 0, "a rejected place_many must not mutate the scene"
 
 
-def test_basic_agent_scene_workflow(empty_server_store, scene_directory) -> None:
-    assert "basic" in server.voxelforge_create_scene("basic")
-    assert "วาง" in server.voxelforge_place_block(0, 0, 0, "2")
-    assert "เติม" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3")
-    assert server.store.get().block_count() == 3
-    assert "บันทึก" in server.voxelforge_save()
+def test_place_many_rejects_oversized_payload_before_decoding(empty_server_store: SceneStore) -> None:
+    empty_server_store.create("bounded")
+    oversized = "[" + ("0," * server.MAX_BLOCKS_JSON_CHARS)
 
-    server.store = server.SceneStore()
-    assert "โหลด" in server.voxelforge_load("basic")
-    assert server.store.get().block_count() == 3
+    with pytest.raises(ValueError, match="at most"):
+        server.voxelforge_place_many(oversized)
+
+    assert empty_server_store.get().block_count() == 0, "an oversized payload must be rejected without mutation"
+
+
+def test_basic_agent_scene_workflow(
+    empty_server_store: SceneStore,
+    monkeypatch: pytest.MonkeyPatch,
+    scene_directory: Path,
+) -> None:
+    assert "basic" in server.voxelforge_create_scene("basic"), "create_scene must name the new scene"
+    assert "วาง" in server.voxelforge_place_block(0, 0, 0, "2"), "place_block must confirm the placement"
+    assert "เติม" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3"), "fill_box must confirm the fill"
+    assert empty_server_store.get().block_count() == 3, "place_block and fill_box must each add their voxels"
+    assert "บันทึก" in server.voxelforge_save(), "save must confirm the file it wrote"
+
+    monkeypatch.setattr(server, "store", SceneStore())
+    assert "โหลด" in server.voxelforge_load("basic"), "load must confirm the scene it read"
+    assert server.store.get().block_count() == 3, "a reloaded scene must keep its voxels"
 
 
 def test_export_contains_required_chunks_in_order(tmp_path: Path) -> None:
@@ -246,10 +426,12 @@ def test_export_contains_required_chunks_in_order(tmp_path: Path) -> None:
     path = export_vox(scene, tmp_path / "chunks.vox")
     data = path.read_bytes()
 
-    assert data.index(b"SIZE") < data.index(b"XYZI") < data.index(b"RGBA")
+    assert data.index(b"SIZE") < data.index(b"XYZI") < data.index(b"RGBA"), (
+        "VOX children must be written SIZE, then XYZI, then RGBA"
+    )
     chunks = child_chunks(data)
-    assert struct.unpack("<III", chunks[b"SIZE"]) == (1, 1, 1)
-    assert struct.unpack_from("<I", chunks[b"XYZI"])[0] == 1
+    assert struct.unpack("<III", chunks[b"SIZE"]) == (1, 1, 1), "SIZE must span the visible bounding box"
+    assert struct.unpack_from("<I", chunks[b"XYZI"])[0] == 1, "XYZI must hold one voxel per visible block"
 
 
 @pytest.mark.parametrize("hex_colour", ["#123456", "#000000"])
@@ -260,7 +442,9 @@ def test_export_preserves_hex_colour_through_round_trip(tmp_path: Path, hex_colo
     loaded = import_vox(export_vox(scene, tmp_path / "colour.vox"))
     colour_key = loaded.layer.blocks[(0, 0, 0)]
 
-    assert loaded.resolve_color(colour_key) == scene.resolve_color(hex_colour)
+    assert loaded.resolve_color(colour_key) == scene.resolve_color(hex_colour), (
+        "an exported colour must survive a round trip through the palette"
+    )
 
 
 def test_export_rejects_unrepresentable_dimension(tmp_path: Path) -> None:
@@ -270,3 +454,13 @@ def test_export_rejects_unrepresentable_dimension(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="256"):
         export_vox(scene, tmp_path / "wide.vox")
+
+
+def test_export_rejects_overlapping_visible_layers(tmp_path: Path) -> None:
+    scene = VoxelScene("overlap")
+    scene.place(0, 0, 0, "1")
+    scene.add_layer("upper")
+    scene.place(0, 0, 0, "2", layer_index=1)
+
+    with pytest.raises(ValueError, match="overlap"):
+        export_vox(scene, tmp_path / "overlap.vox")

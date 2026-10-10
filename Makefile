@@ -1,10 +1,11 @@
-.PHONY: check-fmt lint typecheck markdownlint nixie
+.PHONY: check-fmt lint typecheck test markdownlint nixie
 
 PYTHON_FORMAT_PATHS := \
 	src/voxel_forge/bridge.py \
 	src/voxel_forge/desktop/viewport.py \
 	src/voxel_forge/model.py \
 	src/voxel_forge/procedural.py \
+	src/voxel_forge/scene_store.py \
 	src/voxel_forge/server.py \
 	src/voxel_forge/vox_io.py \
 	tests
@@ -28,6 +29,9 @@ lint:
 
 typecheck:
 	cd editor && npm exec tsc -- --noEmit
+
+test:
+	uv run pytest -q
 
 markdownlint:
 	$(MDLINT) $(MARKDOWN_PATHS)

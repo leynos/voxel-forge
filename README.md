@@ -21,23 +21,26 @@
 
 ## ติดตั้ง
 
-```powershell
-cd C:\Users\thana\Desktop\voxel-forge
+รันจากโฟลเดอร์โปรเจกต์ ใช้ได้เหมือนกันบน Windows, macOS และ Linux:
+
+```bash
 uv sync
-cd editor
-npm install
+cd editor && npm install && cd ..
 ```
 
 `uv sync` จะติดตั้งคำสั่ง `voxel-forge-mcp` ใน environment ของโปรเจกต์
 
 ## เชื่อม MCP
 
+วิธีที่แนะนำคือให้ client เรียก console script ผ่าน `uv run --directory`
+ซึ่งใช้ได้ทุกแพลตฟอร์ม — แทน `/path/to/voxel-forge` ด้วยเส้นทางจริงของ repo
+
 ### Cursor (`~/.cursor/mcp.json`)
 
 ```json
 "VoxelForge": {
-  "command": "C:\\Users\\thana\\Desktop\\voxel-forge\\run-mcp.bat",
-  "args": []
+  "command": "uv",
+  "args": ["run", "--directory", "/path/to/voxel-forge", "voxel-forge-mcp"]
 }
 ```
 
@@ -47,18 +50,20 @@ npm install
 {
   "mcpServers": {
     "VoxelForge": {
-      "command": "C:\\Users\\thana\\Desktop\\voxel-forge\\run-mcp.bat",
-      "args": []
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/voxel-forge", "voxel-forge-mcp"]
     }
   }
 }
 ```
 
-`run-mcp.bat` เป็น wrapper สำหรับ Windows ที่เรียก entry point ที่ติดตั้งแล้ว
-ด้วย `uv run voxel-forge-mcp` ไม่ได้รันไฟล์ Python ใน `src/` โดยตรง หากต้องการ
-ทดสอบจาก PowerShell ให้รันคำสั่งนี้จากโฟลเดอร์โปรเจกต์:
+บน Windows จะใช้ `run-mcp.bat` เป็นทางลัดก็ได้ โดยตั้ง `command` เป็น
+`C:\\path\\to\\voxel-forge\\run-mcp.bat` แทน wrapper นี้เรียก entry point ที่
+ติดตั้งแล้วด้วย `uv run voxel-forge-mcp` ไม่ได้รันไฟล์ Python ใน `src/` โดยตรง
 
-```powershell
+ทดสอบจาก terminal ได้ด้วยคำสั่งเดียวกับที่ client ใช้:
+
+```bash
 uv run voxel-forge-mcp
 ```
 
@@ -68,18 +73,14 @@ uv run voxel-forge-mcp
 
 ### รันโปรแกรม
 
-```powershell
-cd C:\Users\thana\Desktop\voxel-forge
-.\run-desktop.bat
-```
-
-หรือหลัง `uv sync --extra desktop`:
-
-```powershell
+```bash
+uv sync --extra desktop
 uv run voxel-forge
 ```
 
-### Build เป็น .exe
+บน Windows จะรัน `.\run-desktop.bat` จากโฟลเดอร์โปรเจกต์ก็ได้
+
+### Build เป็น .exe (Windows)
 
 ```powershell
 .\build-desktop.bat
@@ -95,16 +96,18 @@ Python/เบราว์เซอร์
 - Create → Build Tree (resolution 1–8)
 - 3D view native (Qt3D) — หมุนกล้องด้วยเมาส์กลาง
 
-MCP สำหรับ AI ยังใช้แยก (`run-mcp.bat`) — สร้าง scene ผ่าน AI แล้วเปิดใน
-Desktop จาก `%USERPROFILE%\.voxel-forge\scenes\`
+MCP สำหรับ AI ยังใช้แยก (`voxel-forge-mcp`) — สร้าง scene ผ่าน AI แล้วเปิดใน
+Desktop จาก `~/.voxel-forge/scenes/`
 
 ---
 
 ## Web Editor (ทางเลือก)
 
-```powershell
-.\run-editor.bat
+```bash
+cd editor && npm install && npm run dev
 ```
+
+หรือบน Windows ใช้ `.\run-editor.bat`
 
 เปิด `http://127.0.0.1:5173` บนเครื่องเดียวกัน โดย editor จะ sync สองทางกับ MCP
 ผ่าน WebSocket ที่ `ws://127.0.0.1:8765` การสร้างหรือแก้ scene ผ่าน MCP จะส่งไป
@@ -135,8 +138,10 @@ voxels ต่อการเรียกหนึ่งครั้ง** หา�
 Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 
 ```text
-%USERPROFILE%\.voxel-forge\exports\my_house.vox
+~/.voxel-forge/exports/my_house.vox
 ```
+
+บน Windows เส้นทางนี้คือ `%USERPROFILE%\.voxel-forge\exports\my_house.vox`
 
 ## เครื่องมือ MCP หลัก
 
@@ -156,8 +161,10 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 
 ## โฟลเดอร์ข้อมูล
 
-- Scenes: `%USERPROFILE%\.voxel-forge\scenes\`
-- Exports: `%USERPROFILE%\.voxel-forge\exports\`
+อยู่ใต้ home ของผู้ใช้ (`Path.home()`) จึงใช้ได้ทุกแพลตฟอร์ม:
+
+- Scenes: `~/.voxel-forge/scenes/`
+- Exports: `~/.voxel-forge/exports/`
 
 ## สถาปัตยกรรม
 
