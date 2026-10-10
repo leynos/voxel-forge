@@ -37,12 +37,14 @@ MAX_BLOCKS_JSON_CHARS: int = 8_000_000
 
 
 def _ensure_bridge() -> None:
+    """Start the bridge if needed and point it at this module's scene registry."""
     start_bridge_background()
     bridge_store._scenes = store._scenes
     bridge_store._current = store._current
 
 
 def _sync_bridge(scene: VoxelScene) -> None:
+    """Share this module's registry with the bridge and broadcast one scene update."""
     _ensure_bridge()
     bridge_store._scenes = store._scenes
     bridge_store._current = store._current
@@ -51,28 +53,11 @@ def _sync_bridge(scene: VoxelScene) -> None:
 
 def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     """
-    Parse and validate a bulk voxel payload.
+    Parse a bulk voxel JSON array, rejecting oversized text before decoding.
 
-    Parameters
-    ----------
-    blocks_json : str
-        JSON array of ``[x, y, z, colour]`` rows, or rows with extra trailing
-        entries, which are ignored.
-
-    Returns
-    -------
-    list[tuple[int, int, int, str]]
-        One ``(x, y, z, colour)`` tuple per row, in the order supplied.
-
-    Raises
-    ------
-    ValueError
-        If the raw text exceeds ``MAX_BLOCKS_JSON_CHARS``, the text is not a
-        JSON array, the array holds more than ``MAX_TOOL_VOXELS`` rows, or any
-        row is not a sequence of at least four entries.
-    json.JSONDecodeError
-        If the text is not valid JSON. ``JSONDecodeError`` subclasses
-        ``ValueError``, so callers may catch ``ValueError`` alone.
+    Raises ``ValueError`` — including ``json.JSONDecodeError`` — when the text
+    exceeds ``MAX_BLOCKS_JSON_CHARS``, is not a JSON array, holds more than
+    ``MAX_TOOL_VOXELS`` rows, or carries a row shorter than four entries.
     """
     if not isinstance(blocks_json, str):
         raise ValueError("blocks ต้องเป็น JSON string")
@@ -92,6 +77,7 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
 
 
 def _exports_dir() -> Path:
+    """Return the export directory, creating it when absent."""
     root = Path.home() / ".voxel-forge" / "exports"
     root.mkdir(parents=True, exist_ok=True)
     return root

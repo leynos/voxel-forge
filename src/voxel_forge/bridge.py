@@ -46,6 +46,7 @@ def _block_coordinate(message: dict[str, Any]) -> tuple[int, int, int]:
 
 
 async def _async_broadcast(payload: dict[str, Any]) -> None:
+    """Send one payload to every connected editor, dropping clients that fail."""
     if not _clients:
         return
     msg = json.dumps(payload, ensure_ascii=False)
@@ -63,6 +64,7 @@ def notify_scene_update(scene: VoxelScene) -> None:
 
 
 async def _ws_handler(websocket) -> None:
+    """Serve one editor connection: push the current scene, then apply its edits."""
     _clients.add(websocket)
     try:
         current = store._current
@@ -107,6 +109,7 @@ async def _ws_handler(websocket) -> None:
 
 
 async def _http_handler(reader, writer) -> None:
+    """Serve one HTTP request, rejecting non-local origins and oversized bodies."""
     header_bytes = await reader.readuntil(b"\r\n\r\n")
     header_text = header_bytes.decode("utf-8", errors="ignore")
     lines = header_text.split("\r\n")
@@ -196,6 +199,7 @@ async def _http_handler(reader, writer) -> None:
 
 
 async def _run_servers() -> None:
+    """Serve the editor WebSocket and HTTP bridge until cancelled."""
     global _bridge_loop
 
     import websockets
