@@ -14,10 +14,12 @@ because a readiness failure should name the broken contract directly.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import json
 import struct
 import sys
+import threading
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -72,9 +74,12 @@ def test_broadcast_submits_to_bridge_event_loop(monkeypatch: pytest.MonkeyPatch)
     bridge_loop = object()
     monkeypatch.setattr(bridge, "_bridge_loop", bridge_loop)
 
-    def capture(coroutine: Any, loop: Any) -> None:
+    def capture(coroutine: Any, loop: Any) -> concurrent.futures.Future[None]:
         submitted.append((coroutine, loop))
         coroutine.close()
+        future: concurrent.futures.Future[None] = concurrent.futures.Future()
+        future.set_result(None)
+        return future
 
     monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", capture)
 
@@ -293,6 +298,110 @@ def test_list_saved_scenes_reports_saved_names(scene_directory: Path) -> None:
     scene_store.save_scene(VoxelScene("alpha"))
 
     assert scene_store.list_saved_scenes() == ["alpha", "beta"], "saved scenes must be listed sorted by name"
+
+
+def test_list_saved_scenes_leaves_an_absent_store_absent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    absent = tmp_path / "never-created"
+    monkeypatch.setattr(scene_store, "scenes_dir", lambda: absent)
+
+    listed = scene_store.list_saved_scenes()
+
+    assert listed == [], "an absent store must list as empty rather than failing"
+    assert not absent.exists(), "listing must not create the scene directory as a side effect"
+
+
+def test_broadcast_failure_is_reported_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(bridge, "_bridge_loop", object())
+
+    def failed(coroutine: Any, _loop: Any) -> concurrent.futures.Future[None]:
+        coroutine.close()
+        future: concurrent.futures.Future[None] = concurrent.futures.Future()
+        future.set_exception(RuntimeError("editor socket went away"))
+        return future
+
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", failed)
+
+    bridge._broadcast({"type": "scene_update", "scene": {"name": "hidden-payload"}})
+
+    captured = capsys.readouterr()
+    assert captured.out == "", "a broadcast failure must not write to protocol-carrying stdout"
+    assert "broadcast failed" in captured.err, "an unexpected broadcast failure must be reported"
+    assert "hidden-payload" not in captured.err, "diagnostics must not echo the broadcast payload"
+
+
+def test_editor_place_and_mcp_place_interleave_without_losing_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deterministic interleaving: an editor edit lands between two MCP edits.
+
+    The MCP tool surface and the editor bridge must share one lock, or an
+    editor edit can slip into the middle of an MCP read-modify-snapshot
+    sequence. The editor's placement is driven from a second thread while the
+    main thread holds the lock, so the test fails if the two sides do not
+    synchronize on the same store.
+    """
+    shared = SceneStore()
+    scene = shared.create("shared")
+    monkeypatch.setattr(bridge, "store", shared)
+    observed: list[dict[str, Any]] = []
+
+    async def capture(payload: dict[str, Any]) -> None:
+        observed.append(payload)
+
+    monkeypatch.setattr(bridge, "_async_broadcast", capture)
+
+    class WebSocket:
+        def __init__(self) -> None:
+            self.messages: Iterator[str] = iter(
+                ['{"type":"editor_place","scene_name":"shared","layer_index":0,"x":9,"y":0,"z":0,"color":"2"}']
+            )
+
+        def __aiter__(self) -> AsyncIterator[str]:
+            return self
+
+        async def __anext__(self) -> str:
+            try:
+                return next(self.messages)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+        async def send(self, _message: str) -> None:
+            return None
+
+    # _block_coordinate runs between the scene lookup and the mutation. Pausing
+    # the editor there lets the main thread test whether the handler still owns
+    # the shared lock at that instant: a handler that holds the lock across the
+    # whole read-modify-snapshot sequence refuses the main thread's non-blocking
+    # acquire, while one that only locked the lookup leaves the lock free.
+    at_parse = threading.Event()
+    proceed = threading.Event()
+
+    def hooked_coordinate(_message: dict[str, Any]) -> tuple[int, int, int]:
+        at_parse.set()
+        assert proceed.wait(timeout=5), "the main thread must release the editor hook"
+        return 9, 0, 0
+
+    monkeypatch.setattr(bridge, "_block_coordinate", hooked_coordinate)
+
+    def editor_edit() -> None:
+        asyncio.run(bridge._ws_handler(WebSocket()))
+
+    scene.place(0, 0, 0, "1")
+    thread = threading.Thread(target=editor_edit)
+    thread.start()
+    assert at_parse.wait(timeout=5), "the editor thread must reach the coordinate parse"
+    handler_holds_lock = not shared.lock.acquire(blocking=False)
+    if not handler_holds_lock:
+        shared.lock.release()
+    proceed.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive(), "the editor thread must finish"
+
+    assert handler_holds_lock, "the editor must hold the shared lock across the mutation, not only the lookup"
+    assert scene.block_count() == 2, "an editor placement must land alongside the MCP placement"
+    assert observed and observed[-1]["scene"]["layers"][0]["blocks"] == [[0, 0, 0, "1"], [9, 0, 0, "2"]], (
+        "the editor must broadcast the merged state"
+    )
 
 
 @pytest.mark.parametrize("name", ["", ".", "..", "bad/name", "bad\\name", "CON", "CON.txt", "lpt1.scene", "trailing."])

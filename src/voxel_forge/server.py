@@ -7,8 +7,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from . import bridge as bridge_module
 from .bridge import BRIDGE_HTTP_PORT, notify_scene_update, start_bridge_background
-from .bridge import store as bridge_store
 from .export_roblox import to_luau_merged, write_luau_file
 from .mesh_merge import merge_stats
 from .model import DEFAULT_PALETTE, SceneStore, VoxelScene
@@ -37,17 +37,14 @@ MAX_BLOCKS_JSON_CHARS: int = 8_000_000
 
 
 def _ensure_bridge() -> None:
-    """Start the bridge if needed and point it at this module's scene registry."""
+    """Start the bridge if needed and hand it this module's scene registry."""
     start_bridge_background()
-    bridge_store._scenes = store._scenes
-    bridge_store._current = store._current
+    bridge_module.use_store(store)
 
 
 def _sync_bridge(scene: VoxelScene) -> None:
-    """Share this module's registry with the bridge and broadcast one scene update."""
+    """Broadcast one scene update; callers hold the registry lock for the mutation."""
     _ensure_bridge()
-    bridge_store._scenes = store._scenes
-    bridge_store._current = store._current
     notify_scene_update(scene)
 
 
@@ -119,9 +116,10 @@ def voxelforge_create_scene(name: str) -> str:
     -----
     Scene ใหม่ยังไม่ถูกบันทึกลงดิสก์ ใช้ ``voxelforge_save`` เมื่อต้องการบันทึก
     """
-    scene = store.create(name)
-    _sync_bridge(scene)
-    return f"สร้าง scene '{scene.name}' แล้ว (layer เริ่มต้น: {scene.layers[0].name})"
+    with store.lock:
+        scene = store.create(name)
+        _sync_bridge(scene)
+        return f"สร้าง scene '{scene.name}' แล้ว (layer เริ่มต้น: {scene.layers[0].name})"
 
 
 @mcp.tool()
@@ -144,9 +142,10 @@ def voxelforge_select_scene(name: str) -> str:
     KeyError
         ถ้าไม่มี scene ชื่อนี้ใน session ให้ใช้ ``voxelforge_load`` โหลดจากดิสก์ก่อน
     """
-    scene = store.select(name)
-    _sync_bridge(scene)
-    return f"เลือก scene '{scene.name}' ({scene.block_count()} บล็อก)"
+    with store.lock:
+        scene = store.select(name)
+        _sync_bridge(scene)
+        return f"เลือก scene '{scene.name}' ({scene.block_count()} บล็อก)"
 
 
 @mcp.tool()
@@ -171,10 +170,11 @@ def voxelforge_add_layer(name: str, scene_name: str = "") -> str:
     KeyError
         ถ้าไม่พบ scene เป้าหมาย
     """
-    scene = store.get(scene_name or None)
-    layer = scene.add_layer(name)
-    _sync_bridge(scene)
-    return f"เพิ่ม layer '{layer.name}' ใน '{scene.name}' — รวม {len(scene.layers)} layers"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        layer = scene.add_layer(name)
+        _sync_bridge(scene)
+        return f"เพิ่ม layer '{layer.name}' ใน '{scene.name}' — รวม {len(scene.layers)} layers"
 
 
 @mcp.tool()
@@ -201,12 +201,13 @@ def voxelforge_set_active_layer(index: int, scene_name: str = "") -> str:
     KeyError
         ถ้าไม่พบ scene เป้าหมาย
     """
-    scene = store.get(scene_name or None)
-    if index < 0 or index >= len(scene.layers):
-        raise ValueError(f"layer index ต้องอยู่ระหว่าง 0..{len(scene.layers) - 1}")
-    scene.active_layer = index
-    _sync_bridge(scene)
-    return f"active layer = {scene.layers[index].name}"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        if index < 0 or index >= len(scene.layers):
+            raise ValueError(f"layer index ต้องอยู่ระหว่าง 0..{len(scene.layers) - 1}")
+        scene.active_layer = index
+        _sync_bridge(scene)
+        return f"active layer = {scene.layers[index].name}"
 
 
 @mcp.tool()
@@ -241,10 +242,11 @@ def voxelforge_set_palette(
     KeyError
         ถ้าไม่พบ scene เป้าหมาย
     """
-    scene = store.get(scene_name or None)
-    scene.set_palette_color(color_key, r, g, b)
-    _sync_bridge(scene)
-    return f"พาเลต {color_key} = RGB({r},{g},{b})"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        scene.set_palette_color(color_key, r, g, b)
+        _sync_bridge(scene)
+        return f"พาเลต {color_key} = RGB({r},{g},{b})"
 
 
 @mcp.tool()
@@ -283,10 +285,11 @@ def voxelforge_place_block(
     -----
     การเรียกที่ล้มเหลวไม่แก้ไข scene เพราะสีถูกตรวจสอบก่อนวางบล็อก
     """
-    scene = store.get(scene_name or None)
-    scene.place(x, y, z, color)
-    _sync_bridge(scene)
-    return f"วาง ({x},{y},{z}) สี '{color}' — รวม {scene.block_count()} บล็อก"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        scene.place(x, y, z, color)
+        _sync_bridge(scene)
+        return f"วาง ({x},{y},{z}) สี '{color}' — รวม {scene.block_count()} บล็อก"
 
 
 @mcp.tool()
@@ -321,14 +324,15 @@ def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     -----
     ทุกสีถูกตรวจสอบก่อนวางบล็อกแรก เพื่อให้การเรียกที่ล้มเหลวไม่แก้ไข scene
     """
-    scene = store.get(scene_name or None)
     blocks = _parse_blocks_json(blocks_json)
-    for _x, _y, _z, color in blocks:
-        scene.resolve_color(color)
-    for x, y, z, color in blocks:
-        scene.place(x, y, z, color)
-    _sync_bridge(scene)
-    return f"วาง {len(blocks)} voxel ใน '{scene.name}' — รวม {scene.block_count()} บล็อก"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        for _x, _y, _z, color in blocks:
+            scene.resolve_color(color)
+        for x, y, z, color in blocks:
+            scene.place(x, y, z, color)
+        _sync_bridge(scene)
+        return f"วาง {len(blocks)} voxel ใน '{scene.name}' — รวม {scene.block_count()} บล็อก"
 
 
 @mcp.tool()
@@ -370,13 +374,14 @@ def voxelforge_fill_box(
     -----
     ขอบเขตถูกตรวจสอบก่อนเติม เพื่อให้การเรียกที่ล้มเหลวไม่แก้ไข scene
     """
-    scene = store.get(scene_name or None)
-    volume = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1) * (abs(z2 - z1) + 1)
-    if volume > MAX_TOOL_VOXELS:
-        raise ValueError(f"fill_box supports at most {MAX_TOOL_VOXELS:,} voxels per call")
-    n = scene.fill_box(x1, x2, y1, y2, z1, z2, color)
-    _sync_bridge(scene)
-    return f"เติม {n} voxel สี '{color}' — รวม {scene.block_count()} บล็อก"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        volume = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1) * (abs(z2 - z1) + 1)
+        if volume > MAX_TOOL_VOXELS:
+            raise ValueError(f"fill_box supports at most {MAX_TOOL_VOXELS:,} voxels per call")
+        n = scene.fill_box(x1, x2, y1, y2, z1, z2, color)
+        _sync_bridge(scene)
+        return f"เติม {n} voxel สี '{color}' — รวม {scene.block_count()} บล็อก"
 
 
 @mcp.tool()
@@ -405,11 +410,12 @@ def voxelforge_remove_block(x: int, y: int, z: int, scene_name: str = "") -> str
     -----
     เมื่อพิกัดว่างจะไม่มีการประกาศ ``scene_update`` เพราะ scene ไม่เปลี่ยน
     """
-    scene = store.get(scene_name or None)
-    ok = scene.remove(x, y, z)
-    if ok:
-        _sync_bridge(scene)
-    return "ลบแล้ว" if ok else "ไม่มี voxel ตรงนั้น"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        ok = scene.remove(x, y, z)
+        if ok:
+            _sync_bridge(scene)
+        return "ลบแล้ว" if ok else "ไม่มี voxel ตรงนั้น"
 
 
 @mcp.tool()
@@ -432,10 +438,11 @@ def voxelforge_clear(scene_name: str = "") -> str:
     KeyError
         ถ้าไม่พบ scene เป้าหมาย
     """
-    scene = store.get(scene_name or None)
-    scene.clear()
-    _sync_bridge(scene)
-    return f"ล้าง scene '{scene.name}' แล้ว"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        scene.clear()
+        _sync_bridge(scene)
+        return f"ล้าง scene '{scene.name}' แล้ว"
 
 
 @mcp.tool()
@@ -458,8 +465,9 @@ def voxelforge_preview(scene_name: str = "") -> str:
     KeyError
         ถ้าไม่พบ scene เป้าหมาย
     """
-    scene = store.get(scene_name or None)
-    return summary(scene)
+    with store.lock:
+        scene = store.get(scene_name or None)
+        return summary(scene)
 
 
 @mcp.tool()
@@ -486,8 +494,9 @@ def voxelforge_get_info(scene_name: str = "") -> str:
     -----
     เป็นการอ่านเท่านั้น ไม่แก้ไข scene และไม่ประกาศ ``scene_update``
     """
-    scene = store.get(scene_name or None)
-    return json.dumps(scene.to_dict(), ensure_ascii=False, indent=2)
+    with store.lock:
+        scene = store.get(scene_name or None)
+        return json.dumps(scene.to_dict(), ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
@@ -514,9 +523,10 @@ def voxelforge_save(scene_name: str = "") -> str:
     OSError
         ถ้าเขียนโฟลเดอร์หรือไฟล์ไม่สำเร็จ
     """
-    scene = store.get(scene_name or None)
-    path = save_scene(scene)
-    return f"บันทึก '{scene.name}' ที่ {path}"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        path = save_scene(scene)
+        return f"บันทึก '{scene.name}' ที่ {path}"
 
 
 @mcp.tool()
@@ -544,9 +554,10 @@ def voxelforge_load(name: str) -> str:
         ถ้าอ่านไฟล์ไม่สำเร็จ
     """
     scene = load_scene(name)
-    store.register(scene)
-    _sync_bridge(scene)
-    return f"โหลด '{name}' ({scene.block_count()} บล็อก)"
+    with store.lock:
+        store.register(scene)
+        _sync_bridge(scene)
+        return f"โหลด '{name}' ({scene.block_count()} บล็อก)"
 
 
 @mcp.tool()
@@ -565,8 +576,10 @@ def voxelforge_list_scenes() -> str:
     OSError
         ถ้าเข้าถึงโฟลเดอร์ scene ไม่สำเร็จ การอ่านล้มเหลวจะไม่ถูกกลืนเป็นรายการว่าง
     """
+    with store.lock:
+        active = store.list_active()
     return json.dumps(
-        {"active_session": store.list_active(), "saved_on_disk": list_saved_scenes()},
+        {"active_session": active, "saved_on_disk": list_saved_scenes()},
         ensure_ascii=False,
         indent=2,
     )
@@ -595,9 +608,10 @@ def voxelforge_import_vox(file_path: str) -> str:
         ถ้าอ่านไฟล์ไม่สำเร็จ
     """
     scene = import_vox(file_path)
-    store.register(scene)
-    _sync_bridge(scene)
-    return f"import '{file_path}' → scene '{scene.name}' ({scene.block_count()} voxel)"
+    with store.lock:
+        store.register(scene)
+        _sync_bridge(scene)
+        return f"import '{file_path}' → scene '{scene.name}' ({scene.block_count()} voxel)"
 
 
 @mcp.tool()
@@ -627,13 +641,14 @@ def voxelforge_export_vox(scene_name: str = "", output_path: str = "") -> str:
     OSError
         ถ้าเขียนไฟล์ไม่สำเร็จ
     """
-    scene = store.get(scene_name or None)
-    if output_path:
-        path = Path(output_path)
-    else:
-        path = _exports_dir() / f"{scene.name}.vox"
-    export_vox(scene, path)
-    return f"export .vox → {path} ({scene.block_count()} voxel)"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        if output_path:
+            path = Path(output_path)
+        else:
+            path = _exports_dir() / f"{scene.name}.vox"
+        export_vox(scene, path)
+        return f"export .vox → {path} ({scene.block_count()} voxel)"
 
 
 @mcp.tool()
@@ -656,14 +671,15 @@ def voxelforge_merge_stats(scene_name: str = "") -> str:
     KeyError
         ถ้าไม่พบ scene เป้าหมาย
     """
-    scene = store.get(scene_name or None)
-    stats = merge_stats(scene)
-    return (
-        f"Scene '{scene.name}':\n"
-        f"  voxels (หลัง dedupe ทับกัน): {stats['voxels']}\n"
-        f"  merged boxes (parts): {stats['merged_boxes']}\n"
-        f"  ลดได้: {stats['parts_saved']} ({stats['reduction_percent']}%)"
-    )
+    with store.lock:
+        scene = store.get(scene_name or None)
+        stats = merge_stats(scene)
+        return (
+            f"Scene '{scene.name}':\n"
+            f"  voxels (หลัง dedupe ทับกัน): {stats['voxels']}\n"
+            f"  merged boxes (parts): {stats['merged_boxes']}\n"
+            f"  ลดได้: {stats['parts_saved']} ({stats['reduction_percent']}%)"
+        )
 
 
 @mcp.tool()
@@ -696,16 +712,17 @@ def voxelforge_export_obj(
     OSError
         ถ้าเขียนไฟล์ไม่สำเร็จ
     """
-    scene = store.get(scene_name or None)
-    if output_path:
-        path = Path(output_path)
-    else:
-        suffix = "_merged" if merge_boxes else ""
-        path = _exports_dir() / f"{scene.name}{suffix}.obj"
-    export_obj(scene, path, merge_boxes=merge_boxes)
-    stats = merge_stats(scene) if merge_boxes else {"merged_boxes": scene.block_count()}
-    parts = stats["merged_boxes"] if merge_boxes else scene.block_count()
-    return f"export .obj -> {path} ({parts} parts จาก {scene.block_count()} voxels, merge={merge_boxes})"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        if output_path:
+            path = Path(output_path)
+        else:
+            suffix = "_merged" if merge_boxes else ""
+            path = _exports_dir() / f"{scene.name}{suffix}.obj"
+        export_obj(scene, path, merge_boxes=merge_boxes)
+        stats = merge_stats(scene) if merge_boxes else {"merged_boxes": scene.block_count()}
+        parts = stats["merged_boxes"] if merge_boxes else scene.block_count()
+        return f"export .obj -> {path} ({parts} parts จาก {scene.block_count()} voxels, merge={merge_boxes})"
 
 
 @mcp.tool()
@@ -714,20 +731,21 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
     Export Luau สำหรับ Roblox — รวม voxel เป็น Part ใหญ่ใน Model เดียว (ลดแลag).
     ใช้ Roblox_Studio MCP execute_luau (Edit mode) รันโค้ดที่ได้
     """
-    scene = store.get(scene_name or None)
-    stats = merge_stats(scene)
-    if output_path:
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(to_luau_merged(scene), encoding="utf-8")
-    else:
-        path = write_luau_file(scene)
-    return (
-        f"export Roblox merged -> {path}\n"
-        f"  {stats['voxels']} voxels -> {stats['merged_boxes']} Parts "
-        f"(ลด {stats['reduction_percent']}%)\n"
-        f"  รันใน Studio ด้วย execute_luau"
-    )
+    with store.lock:
+        scene = store.get(scene_name or None)
+        stats = merge_stats(scene)
+        if output_path:
+            path = Path(output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(to_luau_merged(scene), encoding="utf-8")
+        else:
+            path = write_luau_file(scene)
+        return (
+            f"export Roblox merged -> {path}\n"
+            f"  {stats['voxels']} voxels -> {stats['merged_boxes']} Parts "
+            f"(ลด {stats['reduction_percent']}%)\n"
+            f"  รันใน Studio ด้วย execute_luau"
+        )
 
 
 @mcp.tool()
@@ -754,13 +772,14 @@ def voxelforge_export_obj_legacy(scene_name: str = "", output_path: str = "") ->
     OSError
         ถ้าเขียนไฟล์ไม่สำเร็จ
     """
-    scene = store.get(scene_name or None)
-    if output_path:
-        path = Path(output_path)
-    else:
-        path = _exports_dir() / f"{scene.name}.obj"
-    export_obj(scene, path, merge_boxes=False)
-    return f"export .obj (no merge) -> {path} ({scene.block_count()} voxels)"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        if output_path:
+            path = Path(output_path)
+        else:
+            path = _exports_dir() / f"{scene.name}.obj"
+        export_obj(scene, path, merge_boxes=False)
+        return f"export .obj (no merge) -> {path} ({scene.block_count()} voxels)"
 
 
 @mcp.tool()
@@ -781,9 +800,10 @@ def voxelforge_build_chibi_bear(name: str = "chibi_bear", resolution: int = 3) -
         ข้อความยืนยันพร้อมจำนวน voxel
     """
     scene = build_chibi_bear(name=name, resolution=resolution)
-    store.register(scene)
-    _sync_bridge(scene)
-    return f"สร้างหมี chibi '{scene.name}' — {scene.block_count()} voxels (resolution {resolution})"
+    with store.lock:
+        store.register(scene)
+        _sync_bridge(scene)
+        return f"สร้างหมี chibi '{scene.name}' — {scene.block_count()} voxels (resolution {resolution})"
 
 
 @mcp.tool()
@@ -805,14 +825,15 @@ def voxelforge_build_tree(name: str = "tree", resolution: int = 4) -> str:
         ข้อความยืนยันพร้อมจำนวน voxel และ voxel_size
     """
     scene = build_tree(name=name, resolution=resolution)
-    store.register(scene)
-    _sync_bridge(scene)
-    vs = scene.voxel_size
-    return (
-        f"สร้างต้นไม้ '{scene.name}' — {scene.block_count()} voxels, "
-        f"voxel_size={vs} (resolution {resolution}x)\n"
-        f"เปิด editor เพื่อดู 3D หรือ voxelforge_preview ตรวจ ASCII"
-    )
+    with store.lock:
+        store.register(scene)
+        _sync_bridge(scene)
+        vs = scene.voxel_size
+        return (
+            f"สร้างต้นไม้ '{scene.name}' — {scene.block_count()} voxels, "
+            f"voxel_size={vs} (resolution {resolution}x)\n"
+            f"เปิด editor เพื่อดู 3D หรือ voxelforge_preview ตรวจ ASCII"
+        )
 
 
 @mcp.tool()
@@ -837,10 +858,11 @@ def voxelforge_set_voxel_size(size: float, scene_name: str = "") -> str:
     KeyError
         ถ้าไม่พบ scene เป้าหมาย
     """
-    scene = store.get(scene_name or None)
-    scene.voxel_size = max(0.05, min(2.0, float(size)))
-    _sync_bridge(scene)
-    return f"ตั้ง voxel_size={scene.voxel_size} ใน '{scene.name}'"
+    with store.lock:
+        scene = store.get(scene_name or None)
+        scene.voxel_size = max(0.05, min(2.0, float(size)))
+        _sync_bridge(scene)
+        return f"ตั้ง voxel_size={scene.voxel_size} ใน '{scene.name}'"
 
 
 @mcp.tool()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import sys
 import threading
@@ -22,6 +23,25 @@ _lock = threading.Lock()
 _bridge_loop: asyncio.AbstractEventLoop | None = None
 
 
+def use_store(shared: SceneStore) -> None:
+    """
+    Adopt the MCP server's registry as this bridge's single source of scenes.
+
+    The server passes its own :class:`~voxel_forge.model.SceneStore`, so the
+    MCP tool surface and the editor bridge read and mutate the same scenes
+    through the same store — and therefore the same :attr:`SceneStore.lock`.
+    Rebinding the whole store keeps one owner of scene state instead of two
+    registries whose dicts merely happen to point at the same objects.
+
+    Parameters
+    ----------
+    shared : SceneStore
+        The registry the bridge should serve and mutate.
+    """
+    global store
+    store = shared
+
+
 def _broadcast(payload: dict[str, Any]) -> None:
     """Submit a broadcast to the bridge event loop from any thread."""
     loop = _bridge_loop
@@ -29,9 +49,20 @@ def _broadcast(payload: dict[str, Any]) -> None:
         return
     coroutine = _async_broadcast(payload)
     try:
-        asyncio.run_coroutine_threadsafe(coroutine, loop)
+        future = asyncio.run_coroutine_threadsafe(coroutine, loop)
     except RuntimeError:
         coroutine.close()
+        return
+    future.add_done_callback(_report_broadcast_failure)
+
+
+def _report_broadcast_failure(future: concurrent.futures.Future[None]) -> None:
+    """Report an unexpected broadcast failure on stderr, keeping stdout protocol-clean."""
+    if future.cancelled():
+        return
+    error = future.exception()
+    if error is not None:
+        print(f"VoxelForge bridge: broadcast failed: {type(error).__name__}: {error}", file=sys.stderr)
 
 
 def _layer_index(message: dict[str, Any], scene: VoxelScene) -> int:
@@ -60,50 +91,75 @@ async def _async_broadcast(payload: dict[str, Any]) -> None:
 
 
 def notify_scene_update(scene: VoxelScene) -> None:
-    _broadcast({"type": "scene_update", "scene": scene.to_dict()})
+    """
+    Announce a scene's current state to every connected editor.
+
+    The snapshot is taken under the store lock, so an editor never receives a
+    payload serialised from a scene that an MCP tool is midway through
+    mutating. The caller is expected to hold the lock already — the MCP tools
+    do — and the re-entrant lock makes the nested acquisition safe.
+
+    Parameters
+    ----------
+    scene : VoxelScene
+        Scene whose current state should be broadcast.
+    """
+    with store.lock:
+        payload = {"type": "scene_update", "scene": scene.to_dict()}
+    _broadcast(payload)
 
 
 async def _ws_handler(websocket) -> None:
     """Serve one editor connection: push the current scene, then apply its edits."""
     _clients.add(websocket)
     try:
-        current = store._current
-        if current and current in store._scenes:
-            await websocket.send(
-                json.dumps(
-                    {"type": "scene_update", "scene": store._scenes[current].to_dict()},
+        with store.lock:
+            current = store.get_or_none()
+            initial = (
+                None
+                if current is None
+                else json.dumps(
+                    {"type": "scene_update", "scene": current.to_dict()},
                     ensure_ascii=False,
                 )
             )
+        if initial is not None:
+            await websocket.send(initial)
         async for raw in websocket:
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
             if msg.get("type") == "get_scene":
-                name = msg.get("name") or store._current
-                if name and name in store._scenes:
-                    await websocket.send(
-                        json.dumps(
-                            {"type": "scene_update", "scene": store._scenes[name].to_dict()},
-                            ensure_ascii=False,
-                        )
-                    )
+                with store.lock:
+                    scene = store.get_or_none(msg.get("name"))
+                    snapshot = scene.to_dict() if scene is not None else None
+                if snapshot is not None:
+                    await websocket.send(json.dumps({"type": "scene_update", "scene": snapshot}, ensure_ascii=False))
             elif msg.get("type") == "editor_place":
-                scene = store.get(msg.get("scene_name"))
-                x, y, z = _block_coordinate(msg)
-                scene.place(x, y, z, str(msg.get("color", "1")), _layer_index(msg, scene))
-                await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
+                with store.lock:
+                    scene = store.get_or_none(msg.get("scene_name"))
+                    if scene is None:
+                        continue
+                    x, y, z = _block_coordinate(msg)
+                    scene.place(x, y, z, str(msg.get("color", "1")), _layer_index(msg, scene))
+                    snapshot = scene.to_dict()
+                await _async_broadcast({"type": "scene_update", "scene": snapshot})
             elif msg.get("type") == "editor_remove":
-                scene = store.get(msg.get("scene_name"))
-                x, y, z = _block_coordinate(msg)
-                layer_index = _layer_index(msg, scene)
-                # The editor picks the topmost rendered voxel, which may belong
-                # to a non-active layer. Fall back to any layer holding that
-                # coordinate so a removal is never silently dropped.
-                if not scene.remove(x, y, z, layer_index):
-                    scene.remove_from_any_layer(x, y, z)
-                await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
+                with store.lock:
+                    scene = store.get_or_none(msg.get("scene_name"))
+                    if scene is None:
+                        continue
+                    x, y, z = _block_coordinate(msg)
+                    layer_index = _layer_index(msg, scene)
+                    # The editor picks the topmost rendered voxel, which may
+                    # belong to a non-active layer. Fall back to any layer
+                    # holding that coordinate so a removal is never silently
+                    # dropped.
+                    if not scene.remove(x, y, z, layer_index):
+                        scene.remove_from_any_layer(x, y, z)
+                    snapshot = scene.to_dict()
+                await _async_broadcast({"type": "scene_update", "scene": snapshot})
     finally:
         _clients.discard(websocket)
 
@@ -173,21 +229,25 @@ async def _http_handler(reader, writer) -> None:
         try:
             data = json.loads(payload)
             scene = VoxelScene.from_dict(data)
-            store._scenes[scene.name] = scene
-            store._current = scene.name
-            await _async_broadcast({"type": "scene_update", "scene": scene.to_dict()})
-            body = json.dumps({"ok": True, "name": scene.name, "blocks": scene.block_count()}).encode()
+            with store.lock:
+                store.register(scene)
+                snapshot = scene.to_dict()
+                blocks = scene.block_count()
+            await _async_broadcast({"type": "scene_update", "scene": snapshot})
+            body = json.dumps({"ok": True, "name": scene.name, "blocks": blocks}).encode()
         except Exception as exc:
             status = b"HTTP/1.1 400 Bad Request\r\n"
             body = json.dumps({"error": str(exc)}).encode()
     elif method == "GET" and path == "/health":
         body = json.dumps({"ok": True, "editor_clients": len(_clients)}).encode()
     elif method == "GET" and path == "/scene":
-        name = store._current
-        if not name or name not in store._scenes:
+        with store.lock:
+            scene = store.get_or_none()
+            snapshot = scene.to_dict() if scene is not None else None
+        if snapshot is None:
             body = json.dumps({"error": "no active scene"}).encode()
         else:
-            body = json.dumps(store._scenes[name].to_dict(), ensure_ascii=False).encode()
+            body = json.dumps(snapshot, ensure_ascii=False).encode()
     else:
         body = json.dumps({"endpoints": ["GET /health", "GET /scene", "POST /scene"]}).encode()
 

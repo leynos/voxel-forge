@@ -147,6 +147,21 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   only `E`, `F`, `I`, and `UP`, so `C90` is not enforced by the repository
   gate. The earlier disposition reply overstated this; the corrected position
   is recorded below.
+- [x] (2026-10-10) Repaired the four implementation concerns CodeRabbit
+  retained in its reconciliation reply (comment 6102163728): scene listing no
+  longer creates the directory, the broadcast future is observed on stderr,
+  bridge and MCP share one store and one lock, and the ExecPlan's architecture
+  paragraph now assigns persistence to `scene_store.py`.
+- [x] (2026-10-10) Added four regression contracts for the retained concerns:
+  listing an absent store leaves it absent, a failed broadcast reports on
+  stderr without echoing the payload or touching stdout, and an editor edit
+  waits for the shared lock with the snapshot taken inside the critical
+  section.
+- [x] (2026-10-10) Proved the interleaving contract is not vacuous by
+  sabotaging a working copy: with the bridge mutating outside the lock, the
+  test fails with "the editor must hold the shared lock across the mutation,
+  not only the lookup"; with the lock held the test passes, stably, five runs
+  in a row.
 
 ## Surprises & discoveries
 
@@ -215,6 +230,18 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   a repository contract, and the correction is recorded rather than papered
   over by adding `C90` to the lint selection, which would fail six pre-existing
   functions and exceed this task's scope.
+- Observation: the first interleaving test written for the concurrency concern
+  passed even against a deliberately unsynchronized handler, so it proved
+  nothing.
+  Evidence: two sabotage runs on a scratch copy — one giving `use_store` a
+  fresh store, one removing the lock from the whole `editor_place` branch —
+  both stayed green, because `SceneStore.get_or_none` takes the lock internally
+  and the test's own thread held it.
+  Impact: the contract was rewritten to probe lock ownership at the instant
+  between the scene lookup and the mutation, where the sabotaged handler now
+  fails with the intended message. A concurrency test that cannot fail against
+  a broken handler is weaker than no test, because it implies coverage that
+  does not exist.
 
 ## Decision log
 
@@ -293,6 +320,32 @@ contains only MCP protocol output while bridge diagnostics go to stderr.
   into unrelated refactoring mid-review. `model.py` is clean at the threshold,
   which is the property the original finding actually concerned.
   Date/Author: 2026-10-10 / Claude Code.
+- Decision: give `SceneStore` one re-entrant lock and make the bridge adopt the
+  server's whole store instance (`bridge.use_store`), rather than duplicate the
+  registry or lock only individual fields.
+  Rationale: CodeRabbit correctly rejected the claim that atomic dict rebinding
+  was sufficient — it is not, because the scene *objects* were still mutated
+  from two loops. A single owner plus one lock is the smallest correct
+  strategy: it covers dict reads, `_current` changes, scene mutation, and the
+  snapshot that feeds each broadcast, and it makes the previous "shared dict"
+  aliasing unnecessary. Re-entrancy keeps the nested acquisition in the store
+  methods from deadlocking a caller that already holds the lock.
+  Date/Author: 2026-10-10 / Claude Code.
+- Decision: split `scenes_dir()` (pure path) from `ensure_scenes_dir()`
+  (`mkdir`), and let `list_saved_scenes()` return `[]` for an absent directory.
+  Rationale: listing is a read, and the previous `mkdir(parents=True,
+  exist_ok=True)` inside it made a read create directories as a side effect —
+  exactly the finding. Creating on the save path and returning an empty list on
+  the read path separates the two, and keeps the `OSError` documented instead
+  of swallowed.
+  Date/Author: 2026-10-10 / Claude Code.
+- Decision: observe the `run_coroutine_threadsafe` future via
+  `add_done_callback` and report unexpected failures on stderr only.
+  Rationale: the retained finding asked for exactly this, and "unexpected" is
+  enforced by returning early on cancellation. stderr is the only safe sink for
+  a stdio MCP server, and the regression test asserts stdout stays empty and
+  that the payload is not echoed into the diagnostic.
+  Date/Author: 2026-10-10 / Claude Code.
 
 ## Outcomes & retrospective
 
@@ -317,16 +370,33 @@ run supplied completion evidence. No product work remains within this plan.
 The post-turn build-driver failure was subsequently closed by the Makefile;
 every target requested by that integration hook passes.
 
+The review round closed four further holes that the original readiness work
+left open, all raised by CodeRabbit's reconciliation reply and all repaired at
+the underlying cause: listing scenes no longer makes a read create a directory,
+an unexpected broadcast failure is reported on stderr instead of being dropped,
+persistence is attributed to `scene_store.py` in this document's architecture
+paragraph, and the MCP tool surface and the editor bridge now share one
+`SceneStore` instance guarded by one re-entrant lock taken across each mutation
+and its snapshot. Each repair carries a regression contract, and the
+interleaving contract was validated against a deliberately sabotaged handler to
+show it fails when the lock is not held.
+
 ## Context and orientation
 
 `src/voxel_forge/server.py` declares the MCP tools and starts the bridge before
 running FastMCP over standard input/output. `src/voxel_forge/bridge.py` owns the
-loopback WebSocket and minimal HTTP servers and shares the in-memory
-`SceneStore`. `src/voxel_forge/model.py` defines scenes, layers, persistence,
-palette resolution, and voxel mutation. `src/voxel_forge/vox_io.py` reads and
-writes MagicaVoxel version 150 and Wavefront OBJ files. `editor/src/main.ts`
-renders scenes and sends browser edits. `run-mcp.bat`, `pyproject.toml`, and the
-frontend manifests define installation and launch behaviour.
+loopback WebSocket and minimal HTTP servers and adopts the same in-memory
+`SceneStore` instance as the server (through `bridge.use_store`), so both
+threads read and mutate one registry under one re-entrant lock held across each
+mutation and the snapshot it broadcasts. `src/voxel_forge/model.py` defines
+scenes, layers, palette resolution, voxel mutation, and that registry lock as
+pure domain state, with no filesystem access.
+`src/voxel_forge/scene_store.py` is the persistence adapter that owns scene
+directory resolution, directory creation, and JSON reads and writes.
+`src/voxel_forge/vox_io.py` reads and writes MagicaVoxel version 150 and
+Wavefront OBJ files. `editor/src/main.ts` renders scenes and sends browser
+edits. `run-mcp.bat`, `pyproject.toml`, and the frontend manifests define
+installation and launch behaviour.
 
 The MCP transport is a JSON-RPC byte stream on stdout; ordinary diagnostics on
 stdout can make the client unable to parse replies. The bridge uses an asyncio

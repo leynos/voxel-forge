@@ -8,6 +8,7 @@ lives in :mod:`voxel_forge.scene_store`.
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -555,11 +556,38 @@ def _require_text(value: Any, field_name: str) -> str:
 
 
 class SceneStore:
-    """In-memory scene registry for MCP session."""
+    """
+    In-memory scene registry for the MCP session, and the owner of scene state.
+
+    One store instance is the single owner of the registry. The MCP tool
+    surface and the editor bridge hold a reference to that same instance
+    (``bridge.store`` is set to the server's store, not copied) and mutate
+    scenes only while holding :attr:`lock`. The store's own methods take the
+    lock for the registry operation itself; a caller that needs the mutation
+    and its snapshot to be one atomic step holds the lock across both, which is
+    what keeps a reader on another thread from seeing a half-written scene.
+    """
 
     def __init__(self) -> None:
         self._scenes: dict[str, VoxelScene] = {}
         self._current: str | None = None
+        self._lock = threading.RLock()
+
+    @property
+    def lock(self) -> threading.RLock:
+        """
+        Return the re-entrant lock guarding scene reads and mutations.
+
+        Returns
+        -------
+        threading.RLock
+            The single lock shared by the MCP tool surface and the editor
+            bridge. Hold it across a read-modify-snapshot sequence so that the
+            mutation and the snapshot it feeds are one atomic step; the
+            store's methods re-acquire it internally, which the re-entrant
+            lock permits.
+        """
+        return self._lock
 
     def create(self, name: str) -> VoxelScene:
         """
@@ -601,8 +629,9 @@ class SceneStore:
         VoxelScene
             The same scene, now registered.
         """
-        self._scenes[scene.name] = scene
-        self._current = scene.name
+        with self._lock:
+            self._scenes[scene.name] = scene
+            self._current = scene.name
         return scene
 
     def get(self, name: str | None = None) -> VoxelScene:
@@ -624,10 +653,36 @@ class SceneStore:
         KeyError
             If no scene is current, or the requested name is not registered.
         """
-        key = name or self._current
-        if not key or key not in self._scenes:
-            raise KeyError("ยังไม่มี scene — เรียก voxelforge_create_scene ก่อน")
-        return self._scenes[key]
+        with self._lock:
+            key = name or self._current
+            if not key or key not in self._scenes:
+                raise KeyError("ยังไม่มี scene — เรียก voxelforge_create_scene ก่อน")
+            return self._scenes[key]
+
+    def get_or_none(self, name: str | None = None) -> VoxelScene | None:
+        """
+        Return a registered scene, or ``None`` when it is not present.
+
+        This is the non-raising counterpart of :meth:`get`, for callers such as
+        the editor bridge that must tolerate an absent scene instead of failing
+        the request that named it.
+
+        Parameters
+        ----------
+        name : str | None, optional
+            Scene to return. Defaults to the current scene.
+
+        Returns
+        -------
+        VoxelScene | None
+            The registered scene, or ``None`` when no scene is current or the
+            requested name is not registered.
+        """
+        with self._lock:
+            key = name or self._current
+            if not key:
+                return None
+            return self._scenes.get(key)
 
     def select(self, name: str) -> VoxelScene:
         """
@@ -649,10 +704,11 @@ class SceneStore:
             If the name is not registered. Loading from disk is the caller's
             responsibility, so this registry stays free of file I/O.
         """
-        if name not in self._scenes:
-            raise KeyError(f"scene '{name}' is not loaded in this session")
-        self._current = name
-        return self._scenes[name]
+        with self._lock:
+            if name not in self._scenes:
+                raise KeyError(f"scene '{name}' is not loaded in this session")
+            self._current = name
+            return self._scenes[name]
 
     def list_active(self) -> list[str]:
         """
@@ -663,4 +719,5 @@ class SceneStore:
         list[str]
             Registered scene names in ascending sort order.
         """
-        return sorted(self._scenes.keys())
+        with self._lock:
+            return sorted(self._scenes.keys())
