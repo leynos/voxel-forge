@@ -1,4 +1,5 @@
 @echo off
 cd /d "%~dp0"
-uv sync
-uv run python src/voxel_forge/server.py
+uv sync --locked || exit /b 1
+uv run voxel-forge-mcp
+exit /b %errorlevel%

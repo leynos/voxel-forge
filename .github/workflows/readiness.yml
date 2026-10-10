@@ -1,0 +1,57 @@
+name: Readiness
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are pinned to full commit SHAs so a moved tag cannot change what
+      # runs in this workflow.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - name: Install Python dependencies
+        run: uv sync --locked --all-extras
+      - name: Check Python lint
+        run: uv run ruff check src tests
+      - name: Check Python formatting
+        run: >-
+          uv run ruff format --check
+          src/voxel_forge/bridge.py
+          src/voxel_forge/desktop/viewport.py
+          src/voxel_forge/model.py
+          src/voxel_forge/procedural.py
+          src/voxel_forge/scene_store.py
+          src/voxel_forge/server.py
+          src/voxel_forge/vox_io.py
+          tests
+      - name: Test Python contracts
+        run: uv run pytest -q
+      - name: Build Python wheel
+        run: uv build --wheel
+      - name: Install editor dependencies
+        run: npm ci --prefix editor
+      - name: Check editor types
+        working-directory: editor
+        run: npm exec tsc -- --noEmit
+      - name: Build editor
+        run: npm run build --prefix editor
+      - name: Audit editor dependencies
+        run: npm audit --prefix editor --audit-level=high
+      - name: Check Markdown
+        run: make markdownlint MDLINT="npx --yes markdownlint-cli2"
