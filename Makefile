@@ -6,6 +6,15 @@ UV ?= uv
 # The helper finds uv on PATH, so a caller's UV=/path/to/uv is honoured by putting
 # that uv's directory first on PATH for every recipe.
 export PATH := $(if $(findstring /,$(UV)),$(patsubst %/,%,$(dir $(UV))):)$(PATH)
+# A UV given on the command line or in the environment must exist: the helper would
+# otherwise fall back to whichever uv is found next on PATH.
+ifneq ($(filter command line environment,$(origin UV)),)
+ifneq ($(findstring /,$(UV)),)
+ifeq ($(wildcard $(UV)),)
+$(error UV=$(UV) does not exist)
+endif
+endif
+endif
 .PHONY: prepare check-fmt lint typecheck test markdownlint nixie
 
 .DEFAULT_GOAL := check-fmt
