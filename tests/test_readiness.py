@@ -277,16 +277,53 @@ def test_desktop_entry_point_degrades_without_pyside6(
     assert exit_code == 1
     assert "desktop" in captured.err
     assert "uv" in captured.err
+    assert "PySide6" in captured.err, "the message must name the missing distribution"
     assert "Traceback" not in captured.err
 
 
-def test_desktop_entry_point_reraises_unrelated_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "voxel_forge.export_roblox", None)
-    monkeypatch.delitem(sys.modules, "voxel_forge.desktop.app", raising=False)
+def test_desktop_entry_point_propagates_unrelated_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An app.py import that fails for another reason must surface, not be misreported.
+
+    Halting the module forces the failure before any PySide6 import could run,
+    so the guard must decline it in every environment, whether or not the
+    ``desktop`` extra is installed.
+    """
+    monkeypatch.setitem(sys.modules, "voxel_forge.desktop.app", None)
     from voxel_forge.desktop import launch
 
-    with pytest.raises(ImportError, match="export_roblox"):
+    with pytest.raises(ImportError, match="voxel_forge.desktop.app"):
         launch.main()
+
+
+@pytest.mark.parametrize(
+    ("error", "is_desktop_extra_failure"),
+    [
+        # The extra is absent: CPython names the missing distribution, or a
+        # dotted submodule once the top-level package itself is present.
+        (ImportError("No module named 'PySide6'", name="PySide6"), True),
+        (ImportError("import of PySide6.QtCore halted; None in sys.modules", name="PySide6.QtCore"), True),
+        (ImportError("No module named 'shiboken6'", name="shiboken6"), True),
+        # PySide6 is installed but its native stack cannot load, which a
+        # headless Linux runner reaches through Qt's EGL dependency. CPython
+        # names the leaf extension instead, and that traceback is the only
+        # thing that identifies the missing library, so it must not be
+        # replaced by advice to install an extra that is already there.
+        (
+            ImportError(
+                "libEGL.so.1: cannot open shared object file: No such file or directory",
+                name="QtCore",
+                path="/venv/site-packages/PySide6/QtCore.abi3.so",
+            ),
+            False,
+        ),
+        (ImportError("No module named 'voxel_forge.export_roblox'", name="voxel_forge.export_roblox"), False),
+        (ImportError("desktop import failed without naming a module"), False),
+    ],
+)
+def test_desktop_extra_failure_classification(error: ImportError, is_desktop_extra_failure: bool) -> None:
+    from voxel_forge.desktop import launch
+
+    assert launch._names_missing_desktop_extra(error) is is_desktop_extra_failure
 
 
 def test_runtime_dependencies_are_bounded_below_next_major() -> None:

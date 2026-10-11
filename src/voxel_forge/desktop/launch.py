@@ -18,6 +18,25 @@ _EXTRA_HINT = (
     "  uv sync --extra desktop  (from a checkout)"
 )
 
+# Top-level distributions that only the `desktop` extra installs. CPython
+# reports the leaf module name for an extension that fails to load, so the
+# prefix match has to tolerate dotted names such as ``PySide6.QtCore``.
+_DESKTOP_DISTRIBUTIONS = ("PySide6", "shiboken")
+
+
+def _names_missing_desktop_extra(exc: ImportError) -> bool:
+    """Report whether ``exc`` is the optional GUI stack failing to import.
+
+    A plain absent package arrives as ``name='PySide6'``, which means the
+    extra was not installed. A PySide6 that *is* installed but whose shared
+    libraries cannot load arrives as the extension's leaf name instead
+    (``name='QtCore'``, with ``path`` naming the ``.so``), so it stays
+    unrelated here and the traceback names the missing native library rather
+    than misdirecting the user to an extra they already have.
+    """
+    missing = getattr(exc, "name", None) or ""
+    return missing.startswith(_DESKTOP_DISTRIBUTIONS)
+
 
 def main() -> int:
     """Launch the desktop application, degrading gracefully without PySide6.
@@ -29,9 +48,9 @@ def main() -> int:
     try:
         from .app import main as run_desktop_app
     except ImportError as exc:
-        missing = getattr(exc, "name", None) or ""
-        if not missing.startswith(("PySide6", "shiboken")):
+        if not _names_missing_desktop_extra(exc):
             raise
+        missing = getattr(exc, "name", None) or ""
         print(_EXTRA_HINT.format(missing=missing), file=sys.stderr)
         return 1
     run_desktop_app()
