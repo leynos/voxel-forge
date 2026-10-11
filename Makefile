@@ -1,4 +1,21 @@
-.PHONY: check-fmt lint typecheck test markdownlint nixie
+# Every uv call goes through the vendored helper, which cleans the environment,
+# uses the global uv cache, runs offline first and goes online at most once. See
+# https://github.com/leynos/shared-actions/tree/main/uv_gate for the contract.
+UV_GATE ?= python3 scripts/uv_gate.py
+UV ?= uv
+# The helper finds uv on PATH, so a caller's UV=/path/to/uv is honoured by putting
+# that uv's directory first on PATH for every recipe.
+export PATH := $(if $(findstring /,$(UV)),$(patsubst %/,%,$(dir $(UV))):)$(PATH)
+# A UV given on the command line or in the environment must be uv itself or an executable
+# file named uv: the helper finds uv on PATH by that name and would otherwise use another.
+UV_SELECTION_CHECK := $(if $(filter command line environment,$(origin UV)),$(if $(filter uv,$(UV)),,$(if $(findstring /,$(UV)),$(if $(shell test -f '$(UV)' -a -x '$(UV)' && printf y),$(if $(filter uv,$(notdir $(UV))),,$(error UV=$(UV) must be named uv)),$(error UV=$(UV) is not an executable file)),$(error UV=$(UV) must be uv or a path to an executable file named uv))))
+
+.PHONY: prepare check-fmt lint typecheck test markdownlint nixie
+
+.DEFAULT_GOAL := check-fmt
+
+prepare: ## Install the locked development environment, offline first
+	$(UV_GATE) prepare
 
 PYTHON_FORMAT_PATHS := \
 	src/voxel_forge/bridge.py \
@@ -21,17 +38,17 @@ MARKDOWN_PATHS := \
 	docs/roadmap.md \
 	docs/execplans/readiness-gate.md
 
-check-fmt:
-	uv run ruff format --check $(PYTHON_FORMAT_PATHS)
+check-fmt: prepare
+	$(UV_GATE) run -- ruff format --check $(PYTHON_FORMAT_PATHS)
 
-lint:
-	uv run ruff check src tests
+lint: prepare
+	$(UV_GATE) run -- ruff check src tests
 
 typecheck:
 	cd editor && npm exec tsc -- --noEmit
 
-test:
-	uv run pytest -q
+test: prepare
+	$(UV_GATE) run -- pytest -q
 
 markdownlint:
 	$(MDLINT) $(MARKDOWN_PATHS)
