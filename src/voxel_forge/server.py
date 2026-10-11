@@ -898,7 +898,7 @@ def voxelforge_launch_editor() -> str:
 
     webbrowser.open("http://localhost:5173")
     return (
-        "เปิด http://localhost:5173 แล้ว (ถ้ายังไม่รัน editor ให้ใช้ run-editor.bat ก่อน)\n"
+        "เปิด http://localhost:5173 แล้ว (ถ้ายังไม่รัน editor ให้รัน `cd editor && npm run dev` ก่อน)\n"
         f"Bridge: ws://127.0.0.1:8765 | HTTP scene: http://127.0.0.1:{BRIDGE_HTTP_PORT}/scene"
     )
 

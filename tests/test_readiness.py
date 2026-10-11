@@ -376,27 +376,77 @@ def test_readme_documents_cross_platform_installation() -> None:
     assert "C:\\Users" not in readme, "README must not rely on user-specific absolute paths"
 
 
-def test_readme_qualifies_every_windows_launcher() -> None:
+def _windows_launcher_offenders(root: Path) -> list[str]:
+    """Find user-facing lines naming a ``.bat`` launcher without Windows context.
+
+    Scanned across the README and the source modules rather than the README
+    alone. A launcher named only in the README is the easiest case to catch,
+    but the same string reaches users through tool output: an MCP tool result
+    that says "use run-editor.bat" is read on Linux too, and no heading can
+    qualify prose emitted from a function body.
+
+    Planning records and tests are deliberately out of scope. An ExecPlan or a
+    roadmap entry is a historical account of work, and a test docstring is
+    explanation of a check -- neither is followed by a user as an instruction,
+    so requiring Windows context there would force edits to records without
+    protecting anyone. Only text presented as the thing to do is scanned.
+
+    Parameters
+    ----------
+    root : Path
+        Repository root to scan.
+
+    Returns
+    -------
+    list[str]
+        ``path:line: text`` for each offending line, empty when none remain.
+    """
+    targets = [root / "README.md", *sorted((root / "src").rglob("*.py"))]
+    offenders: list[str] = []
+
+    for path in targets:
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
+        heading = ""
+        for number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("#"):
+                heading = line
+            if ".bat" not in line:
+                continue
+            if "windows" in f"{heading} {line}".lower():
+                continue
+            offenders.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
+
+    return offenders
+
+
+def test_no_launcher_is_named_outside_windows_context() -> None:
     """A `.bat` reference must sit in Windows context, or it misleads Linux readers.
 
     Asserting only that the README mentions `voxel-forge-mcp` somewhere is too
     weak: the desktop section can name the Windows-only wrapper instead while
     the string still appears elsewhere, which is how `.bat` survived in a
     section whose whole purpose was the cross-platform path. Requiring the
-    line or its enclosing heading to establish Windows context keeps the
-    wrappers documented as conveniences rather than as the general command.
-    """
-    readme = Path("README.md").read_text(encoding="utf-8")
-    heading = ""
+    line, its enclosing heading, or the explanatory text on the line itself to
+    establish Windows context keeps the wrappers documented as conveniences
+    rather than as the general command.
 
-    for number, line in enumerate(readme.splitlines(), start=1):
-        if line.lstrip().startswith("#"):
-            heading = line
-        if ".bat" not in line:
-            continue
-        assert "windows" in f"{heading} {line}".lower(), (
-            f"README.md:{number} names a .bat launcher outside Windows context: {line.strip()!r}"
-        )
+    The scan covers emitted source strings as well as the README, because the
+    same defect hides in a tool result: `voxelforge_launch_editor` told every
+    user to run `run-editor.bat`, which a Linux caller cannot follow, while the
+    sibling branch of that same function already gave the portable command.
+    """
+    offenders = _windows_launcher_offenders(REPOSITORY_ROOT)
+
+    assert not offenders, (
+        "these lines name a Windows-only .bat launcher without saying so, "
+        "which reads as the general instruction on Linux:\n  " + "\n  ".join(offenders)
+    )
 
 
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:
