@@ -327,12 +327,33 @@ def test_desktop_extra_failure_classification(error: ImportError, is_desktop_ext
 
 
 def test_runtime_dependencies_are_bounded_below_next_major() -> None:
-    """A fresh resolution (``uv tool install``) must not select a breaking major."""
+    """A fresh resolution (``uv tool install``) must not select a breaking major.
+
+    The caps are the versions each library is known to break at, which is not
+    always the next major above the floor: ``mcp`` and ``httpx`` break at
+    their next major, while ``websockets`` breaks at 17. Asserting the exact
+    intended cap rather than the presence of a ``<`` keeps a typo such as
+    ``mcp>=1.9.0,<3`` from passing while it permits the incompatible 2.x line
+    the bound exists to exclude.
+    """
     import tomllib
 
+    expected_caps = {"mcp": "2", "websockets": "17", "httpx": "1"}
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    declared: dict[str, str] = {}
     for requirement in pyproject["project"]["dependencies"]:
-        assert "<" in requirement, f"dependency {requirement!r} has no upper bound"
+        name, _, specifier = requirement.partition(">=")
+        assert specifier, f"dependency {requirement!r} has no lower bound"
+        declared[name] = specifier
+
+    assert set(declared) == set(expected_caps), f"runtime dependency set changed: {sorted(declared)}"
+
+    for name, expected_cap in expected_caps.items():
+        _, _, upper = declared[name].partition(",")
+        assert upper == f"<{expected_cap}", (
+            f"{name} must be capped at <{expected_cap}, found {upper or 'no upper bound'}"
+        )
 
 
 def test_mcp_entry_point_supports_help(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

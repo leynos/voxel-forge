@@ -84,8 +84,12 @@ a checkout; it invokes the same installed entry point via
 You can run the same command the client runs, to test it from a terminal:
 
 ```bash
-uv run voxel-forge-mcp
+voxel-forge-mcp
 ```
+
+This invokes the installed console script, so it fails the same way the client
+would if the tool is not on `PATH`. From a checkout, `uv run voxel-forge-mcp`
+exercises the project environment instead.
 
 Restart the client and check its MCP panel shows `VoxelForge` as connected.
 

@@ -25,15 +25,13 @@ _DESKTOP_DISTRIBUTIONS = ("PySide6", "shiboken")
 
 
 def _names_missing_desktop_extra(exc: ImportError) -> bool:
-    """Report whether ``exc`` is the optional GUI stack failing to import.
-
-    A plain absent package arrives as ``name='PySide6'``, which means the
-    extra was not installed. A PySide6 that *is* installed but whose shared
-    libraries cannot load arrives as the extension's leaf name instead
-    (``name='QtCore'``, with ``path`` naming the ``.so``), so it stays
-    unrelated here and the traceback names the missing native library rather
-    than misdirecting the user to an extra they already have.
-    """
+    """Report whether ``exc`` is the optional GUI stack failing to import."""
+    # A plain absent package arrives as ``name='PySide6'``, which means the
+    # extra was not installed. A PySide6 that *is* installed but whose shared
+    # libraries cannot load arrives as the extension's leaf name instead
+    # (``name='QtCore'``, with ``path`` naming the ``.so``), so it stays
+    # unrelated here and the traceback names the missing native library rather
+    # than misdirecting the user to an extra they already have.
     missing = getattr(exc, "name", None) or ""
     return missing.startswith(_DESKTOP_DISTRIBUTIONS)
 
@@ -41,9 +39,17 @@ def _names_missing_desktop_extra(exc: ImportError) -> bool:
 def main() -> int:
     """Launch the desktop application, degrading gracefully without PySide6.
 
-    Returns ``0`` on a clean exit and ``1`` when the ``desktop`` extra is
-    not installed. Import errors unrelated to the optional GUI stack are
-    re-raised so genuine defects still surface as tracebacks.
+    Only the failure of the optional GUI stack is handled here; on the normal
+    path this function does not return, because the application terminates the
+    process itself through ``sys.exit(app.exec())`` once its window closes.
+
+    Returns
+    -------
+    int
+        ``1`` when the ``desktop`` extra is not installed, after an actionable
+        message has been written to standard error. Import errors unrelated to
+        the optional GUI stack are re-raised so genuine defects still surface
+        as tracebacks.
     """
     try:
         from .app import main as run_desktop_app
