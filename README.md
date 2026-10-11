@@ -123,7 +123,7 @@ Python/เบราว์เซอร์
 - Create → Build Tree (resolution 1–8)
 - 3D view native (Qt3D) — หมุนกล้องด้วยเมาส์กลาง
 
-MCP สำหรับ AI ยังใช้แยก (`run-mcp.bat`) — สร้าง scene ผ่าน AI แล้วเปิดใน
+MCP สำหรับ AI ยังใช้แยก (`voxel-forge-mcp`) — สร้าง scene ผ่าน AI แล้วเปิดใน
 Desktop จาก `~/.voxel-forge/scenes/` (Windows: `%USERPROFILE%\.voxel-forge\scenes\`)
 
 ---
