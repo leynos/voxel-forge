@@ -355,6 +355,29 @@ def test_readme_documents_cross_platform_installation() -> None:
     assert "C:\\Users" not in readme, "README must not rely on user-specific absolute paths"
 
 
+def test_readme_qualifies_every_windows_launcher() -> None:
+    """A `.bat` reference must sit in Windows context, or it misleads Linux readers.
+
+    Asserting only that the README mentions `voxel-forge-mcp` somewhere is too
+    weak: the desktop section can name the Windows-only wrapper instead while
+    the string still appears elsewhere, which is how `.bat` survived in a
+    section whose whole purpose was the cross-platform path. Requiring the
+    line or its enclosing heading to establish Windows context keeps the
+    wrappers documented as conveniences rather than as the general command.
+    """
+    readme = Path("README.md").read_text(encoding="utf-8")
+    heading = ""
+
+    for number, line in enumerate(readme.splitlines(), start=1):
+        if line.lstrip().startswith("#"):
+            heading = line
+        if ".bat" not in line:
+            continue
+        assert "windows" in f"{heading} {line}".lower(), (
+            f"README.md:{number} names a .bat launcher outside Windows context: {line.strip()!r}"
+        )
+
+
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:
     launcher = (REPOSITORY_ROOT / "run-mcp.bat").read_text(encoding="utf-8")
 
