@@ -22,11 +22,12 @@ import sys
 import threading
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 
+import voxel_forge
 from voxel_forge import bridge, scene_store, server
 from voxel_forge.model import SceneStore, VoxelScene
 from voxel_forge.vox_io import export_vox, import_vox
@@ -260,6 +261,367 @@ def test_bridge_diagnostic_uses_stderr(monkeypatch: pytest.MonkeyPatch, capsys: 
 
     assert captured.out == "", "the bridge must not write to stdout, which carries MCP protocol data"
     assert "VoxelForge bridge:" in captured.err, "the bridge must announce its ports on stderr"
+
+
+def test_desktop_entry_point_degrades_without_pyside6(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without the `desktop` extra, `voxel-forge` must explain, not traceback."""
+    monkeypatch.setitem(sys.modules, "PySide6", None)
+    monkeypatch.setitem(sys.modules, "PySide6.QtCore", None)
+    monkeypatch.delitem(sys.modules, "voxel_forge.desktop.app", raising=False)
+    from voxel_forge.desktop import launch
+
+    exit_code = launch.main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "desktop" in captured.err
+    assert "uv" in captured.err
+    assert "PySide6" in captured.err, "the message must name the missing distribution"
+    assert "Traceback" not in captured.err
+
+
+def test_desktop_entry_point_propagates_unrelated_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An app.py import that fails for another reason must surface, not be misreported.
+
+    Halting the module forces the failure before any PySide6 import could run,
+    so the guard must decline it in every environment, whether or not the
+    ``desktop`` extra is installed.
+    """
+    monkeypatch.setitem(sys.modules, "voxel_forge.desktop.app", None)
+    from voxel_forge.desktop import launch
+
+    with pytest.raises(ImportError, match="voxel_forge.desktop.app"):
+        launch.main()
+
+
+@pytest.mark.parametrize(
+    ("error", "is_desktop_extra_failure"),
+    [
+        # The extra is absent: CPython names the missing distribution, or a
+        # dotted submodule once the top-level package itself is present.
+        (ImportError("No module named 'PySide6'", name="PySide6"), True),
+        (ImportError("import of PySide6.QtCore halted; None in sys.modules", name="PySide6.QtCore"), True),
+        (ImportError("No module named 'shiboken6'", name="shiboken6"), True),
+        # PySide6 is installed but its native stack cannot load, which a
+        # headless Linux runner reaches through Qt's EGL dependency. CPython
+        # names the leaf extension instead, and that traceback is the only
+        # thing that identifies the missing library, so it must not be
+        # replaced by advice to install an extra that is already there.
+        (
+            ImportError(
+                "libEGL.so.1: cannot open shared object file: No such file or directory",
+                name="QtCore",
+                path="/venv/site-packages/PySide6/QtCore.abi3.so",
+            ),
+            False,
+        ),
+        (ImportError("No module named 'voxel_forge.export_roblox'", name="voxel_forge.export_roblox"), False),
+        (ImportError("desktop import failed without naming a module"), False),
+    ],
+)
+def test_desktop_extra_failure_classification(error: ImportError, is_desktop_extra_failure: bool) -> None:
+    """Each import failure is classified as the missing extra, or not."""
+    from voxel_forge.desktop import launch
+
+    assert launch._names_missing_desktop_extra(error) is is_desktop_extra_failure
+
+
+def test_runtime_dependencies_are_bounded_below_next_major() -> None:
+    """A fresh resolution (``uv tool install``) must not select a breaking major.
+
+    The caps are the versions each library is known to break at, which is not
+    always the next major above the floor: ``mcp`` and ``httpx`` break at
+    their next major, while ``websockets`` breaks at 17. Asserting the exact
+    intended cap rather than the presence of a ``<`` keeps a typo such as
+    ``mcp>=1.9.0,<3`` from passing while it permits the incompatible 2.x line
+    the bound exists to exclude.
+    """
+    import tomllib
+
+    expected_caps = {"mcp": "2", "websockets": "17", "httpx": "1"}
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    declared: dict[str, str] = {}
+    for requirement in pyproject["project"]["dependencies"]:
+        name, _, specifier = requirement.partition(">=")
+        assert specifier, f"dependency {requirement!r} has no lower bound"
+        declared[name] = specifier
+
+    assert set(declared) == set(expected_caps), f"runtime dependency set changed: {sorted(declared)}"
+
+    for name, expected_cap in expected_caps.items():
+        _, _, upper = declared[name].partition(",")
+        assert upper == f"<{expected_cap}", (
+            f"{name} must be capped at <{expected_cap}, found {upper or 'no upper bound'}"
+        )
+
+
+def test_mcp_entry_point_supports_help(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """`voxel-forge-mcp --help` must succeed without starting the server."""
+    monkeypatch.setattr(sys, "argv", ["voxel-forge-mcp", "--help"])
+    started: list[str] = []
+    monkeypatch.setattr(server, "_ensure_bridge", lambda: started.append("bridge"))
+    monkeypatch.setattr(server.mcp, "run", lambda **_: started.append("run"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        server.main()
+
+    assert excinfo.value.code == 0
+    assert "VoxelForge" in capsys.readouterr().out
+    assert started == [], "argument parsing must exit before the bridge or server starts"
+
+
+def test_mcp_entry_point_starts_the_bridge_then_the_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The no-argument path must start the bridge and then serve on stdio.
+
+    The ``--help`` test alone cannot catch this: a ``main()`` that parsed its
+    arguments and then returned without doing anything would satisfy it, and
+    the server would silently never start. The transport is asserted as well
+    as the calls, because an MCP client speaks stdio and a server started on
+    any other transport is unreachable to it.
+    """
+    monkeypatch.setattr(sys, "argv", ["voxel-forge-mcp"])
+    calls: list[str] = []
+    transports: list[str] = []
+
+    def record_run(**kwargs: str) -> None:
+        calls.append("run")
+        transports.append(kwargs["transport"])
+
+    monkeypatch.setattr(server, "_ensure_bridge", lambda: calls.append("bridge"))
+    monkeypatch.setattr(server.mcp, "run", record_run)
+
+    server.main()
+
+    assert calls == ["bridge", "run"], "the bridge must start before the server, and both must run"
+    assert transports == ["stdio"], "an MCP client connects over stdio"
+
+
+def test_installed_entry_points_target_the_launchers() -> None:
+    """The installed commands must map to the modules this branch makes correct.
+
+    ``voxel-forge`` pointing at the desktop application directly is the defect
+    this branch fixes: without the optional extra the command then died with a
+    traceback instead of an explanation. Pinning the target here means the
+    regression cannot return unnoticed, because the mapping itself is asserted
+    rather than only the behaviour of the module it names.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["scripts"] == {
+        "voxel-forge": "voxel_forge.desktop.launch:main",
+        "voxel-forge-mcp": "voxel_forge.server:main",
+        "voxel-forge-bridge": "voxel_forge.bridge:main",
+    }
+
+
+def test_migration_document_matches_the_declared_version() -> None:
+    """The migration document, the package version, and the lockfile must agree.
+
+    This branch changes the installed commands, so it needs a migration
+    document. A document named for a version the package does not have is worse
+    than none: it describes a release that does not exist and is not the file a
+    reader upgrading to the real version would open. Asserting all three
+    together is what keeps the name, the metadata, and the lock in step when
+    the version moves again.
+
+    Every path is resolved from ``REPOSITORY_ROOT`` rather than the current
+    working directory, so the test reads the same files whatever directory
+    pytest was invoked from. A relative path here would silently test nothing
+    if the suite were ever run from elsewhere, since the reads would raise
+    ``FileNotFoundError`` against files that do exist in the repository.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+    assert version == voxel_forge.__version__, (
+        f"pyproject declares {version} but the package reports {voxel_forge.__version__}"
+    )
+
+    # A migration document is named for the release line (``0.2``), not the
+    # full patch version, so one file covers every patch in that line.
+    release_line = ".".join(version.split(".")[:2])
+    # Kept relative for the Makefile comparison below, which lists its inputs
+    # relative to the repository root, and made absolute for reading, so the
+    # test works whatever directory pytest was invoked from.
+    migration_relative = f"docs/migration-{release_line}.md"
+    migration = REPOSITORY_ROOT / migration_relative
+    assert migration.is_file(), f"version {version} has no migration document at {migration}"
+
+    lock = (REPOSITORY_ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert f'name = "voxel-forge"\nversion = "{version}"' in lock, (
+        f"uv.lock does not record voxel-forge at {version}; run `uv lock`"
+    )
+
+    # The document is only reachable if it is linked, and it is only validated
+    # if the Markdown gate is pointed at it.
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    assert migration_relative in makefile, f"{migration_relative} is not covered by the Markdown gate"
+
+    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    users_guide = (REPOSITORY_ROOT / "docs/users-guide.md").read_text(encoding="utf-8")
+    assert migration.name in readme, f"README does not link {migration.name}"
+    assert migration.name in users_guide, f"the users guide does not link {migration.name}"
+
+
+def test_desktop_entry_point_runs_the_application_on_the_happy_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the extra present, `voxel-forge` must actually run the desktop app.
+
+    A fake ``voxel_forge.desktop.app`` stands in for the real module, so the
+    check holds whether or not PySide6 is installed. The assertion is on the
+    call, not only the exit code: a launcher that returned 0 without running
+    anything would otherwise pass while doing nothing at all.
+    """
+    ran: list[str] = []
+    fake_app = ModuleType("voxel_forge.desktop.app")
+    fake_app.main = lambda: ran.append("ran")  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "voxel_forge.desktop.app", fake_app)
+    from voxel_forge.desktop import launch
+
+    exit_code = launch.main()
+
+    assert ran == ["ran"], "the launcher must call the desktop application"
+    assert exit_code == 0
+
+
+def test_readme_documents_cross_platform_installation() -> None:
+    """The README must be followable on Linux without translation."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "uv tool install" in readme
+    assert "voxel-forge-mcp" in readme
+    assert "C:\\Users" not in readme, "README must not rely on user-specific absolute paths"
+
+
+def _windows_launcher_offenders(root: Path) -> list[str]:
+    """Find user-facing lines naming a ``.bat`` launcher without Windows context.
+
+    Scanned across the README and the source modules rather than the README
+    alone. A launcher named only in the README is the easiest case to catch,
+    but the same string reaches users through tool output: an MCP tool result
+    that says "use run-editor.bat" is read on Linux too, and no heading can
+    qualify prose emitted from a function body.
+
+    Planning records and tests are deliberately out of scope. An ExecPlan or a
+    roadmap entry is a historical account of work, and a test docstring is
+    explanation of a check -- neither is followed by a user as an instruction,
+    so requiring Windows context there would force edits to records without
+    protecting anyone. Only text presented as the thing to do is scanned.
+
+    Context is established differently per file type. In the README a launcher
+    reference inherits its enclosing heading, so a `.bat` named under a
+    "### Build ... (Windows)" heading is qualified. In Python source a ``#``
+    line is a comment, not a heading: it never reaches the user alongside the
+    string, so it must not qualify one. A docstring or comment reading "# the
+    Windows helper" would otherwise silence the check for the very string it
+    fails to qualify -- confirmed by negative control, where a preceding
+    ``# Windows helper is run-editor.bat`` comment let a user-visible
+    ``run-editor.bat`` string pass. Python lines must therefore say Windows on
+    the same line that names the launcher.
+
+    Parameters
+    ----------
+    root : Path
+        Repository root to scan.
+
+    Returns
+    -------
+    list[str]
+        ``path:line: text`` for each offending line, empty when none remain.
+    """
+    readme = root / "README.md"
+    targets = [readme, *sorted((root / "src").rglob("*.py"))]
+    offenders: list[str] = []
+
+    for path in targets:
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
+        heading = ""
+        for number, line in enumerate(text.splitlines(), start=1):
+            if path == readme and line.lstrip().startswith("#"):
+                heading = line
+            if ".bat" not in line:
+                continue
+            if "windows" in f"{heading} {line}".lower():
+                continue
+            offenders.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
+
+    return offenders
+
+
+def test_no_launcher_is_named_outside_windows_context() -> None:
+    """A `.bat` reference must sit in Windows context, or it misleads Linux readers.
+
+    Asserting only that the README mentions `voxel-forge-mcp` somewhere is too
+    weak: the desktop section can name the Windows-only wrapper instead while
+    the string still appears elsewhere, which is how `.bat` survived in a
+    section whose whole purpose was the cross-platform path. Requiring the
+    line, its enclosing heading, or the explanatory text on the line itself to
+    establish Windows context keeps the wrappers documented as conveniences
+    rather than as the general command.
+
+    The scan covers emitted source strings as well as the README, because the
+    same defect hides in a tool result: `voxelforge_launch_editor` told every
+    user to run `run-editor.bat`, which a Linux caller cannot follow, while the
+    sibling branch of that same function already gave the portable command.
+    """
+    offenders = _windows_launcher_offenders(REPOSITORY_ROOT)
+
+    assert not offenders, (
+        "these lines name a Windows-only .bat launcher without saying so, "
+        "which reads as the general instruction on Linux:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_launch_editor_tool_returns_a_command_linux_can_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The editor tool must answer with a portable command, not a Windows wrapper.
+
+    The sibling branch of the same function already returned the portable
+    ``cd editor && npm run dev``; this pins both branches to it. Checking the
+    returned string is what makes the guarantee real: a source-text scan can
+    only show a ``.bat`` was not written down, not that the value handed to the
+    caller is runnable on the platform reading it.
+    """
+    import webbrowser
+
+    monkeypatch.setattr(server, "_ensure_bridge", lambda: None)
+    opened: list[str] = []
+    # ``webbrowser`` is imported inside the function body, so the patch has to
+    # land on the standard-library module the import statement resolves.
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+
+    running_editor = server.voxelforge_launch_editor()
+
+    assert "cd editor && npm run dev" in running_editor
+    assert ".bat" not in running_editor, "a Windows-only launcher must not reach Linux callers"
+    assert opened == ["http://localhost:5173"], "the editor is already served, so it must be opened"
+
+    # The absent-index branch is reached by pointing the module at a directory
+    # whose sibling ``editor`` is missing, which selects the guidance branch
+    # rather than the open one. The layout mirrors the real one, since the
+    # function locates the editor relative to the module file.
+    laid_out = tmp_path / "src" / "voxel_forge" / "server.py"
+    laid_out.parent.mkdir(parents=True)
+    monkeypatch.setattr(server, "__file__", str(laid_out))
+    opened.clear()
+
+    missing_editor = server.voxelforge_launch_editor()
+
+    assert "cd editor && npm install && npm run dev" in missing_editor
+    assert ".bat" not in missing_editor, "a Windows-only launcher must not reach Linux callers"
+    assert opened == [], "the editor is not running, so nothing should be opened"
 
 
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:

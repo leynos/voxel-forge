@@ -79,40 +79,46 @@ rather than as a checked-out project. The packaging is already close: the
 wheel builds cleanly and declares three console scripts. The failures are in
 the dependency envelope and in the platform assumptions of the launchers.
 
-- [ ] 1.1.1. Bound the `mcp` dependency below the next major version.
-  - `pyproject.toml` requires `mcp>=1.9.0` with no upper bound, while
+- [x] 1.1.1. Bound the `mcp` dependency below the next major version.
+  - `pyproject.toml` required `mcp>=1.9.0` with no upper bound, while
     `uv.lock` pins 1.28.1. A fresh resolution — which is exactly what
-    `uv tool install` performs, because it ignores the lockfile — selects the
+    `uv tool install` performs, because it ignores the lockfile — selected the
     2.x line, where `mcp.server.fastmcp` no longer exists, and
-    `src/voxel_forge/server.py` fails at import.
-  - Audit `websockets` and `httpx` for the same unbounded-major exposure.
+    `src/voxel_forge/server.py` failed at import.
+  - `websockets` and `httpx` carried the same unbounded-major exposure. The
+    runtime envelope is now `mcp>=1.9.0,<2`, `websockets>=14.0,<17`, and
+    `httpx>=0.28.0,<1`, and a contract test pins each intended cap rather than
+    merely requiring that some upper bound exists.
   - Success: `uv tool install git+https://github.com/leynos/voxel-forge`
     followed by `voxel-forge-mcp --help` succeeds on a machine with no
     checkout and no lockfile.
-- [ ] 1.1.2. Make the desktop entry point degrade gracefully without its
+- [x] 1.1.2. Make the desktop entry point degrade gracefully without its
   extra.
-  - `voxel-forge` resolves to `voxel_forge.desktop.app:main`, but PySide6 is
-    an optional `desktop` extra, so an installed tool exposes a command that
-    fails with an import traceback.
+  - `voxel-forge` resolved to `voxel_forge.desktop.app:main`, but PySide6 is
+    an optional `desktop` extra, so an installed tool exposed a command that
+    failed with an import traceback. It now points at
+    `voxel_forge.desktop.launch:main`, which classifies the import failure.
   - Success: running `voxel-forge` without the extra prints an actionable
     message naming the extra to install, and exits non-zero without a
-    traceback.
-- [ ] 1.1.3. Replace the Windows-only launchers with a documented
+    traceback. An import error unrelated to the GUI stack still propagates, so
+    a genuine defect surfaces rather than being misreported as a missing
+    extra.
+- [x] 1.1.3. Replace the Windows-only launchers with a documented
   cross-platform invocation.
-  - The README now documents cross-platform `uv run` invocations for the MCP
-    server and the desktop app, and an npm invocation for the web editor, so
-    the documented entry points are no longer Windows-only. The four Windows
-    wrappers (`run-mcp.bat`, `run-editor.bat`, `run-desktop.bat`,
-    `build-desktop.bat`) remain as convenience alternatives. The Python was
-    already portable — data directories use `Path.home()`, and the
-    `voxel-forge-mcp` and `voxel-forge` console scripts are
-    platform-independent. Only the Windows path has been exercised.
-  - Keep the `.bat` wrappers for Windows convenience; document the installed
-    console scripts as the primary interface.
+  - The README's primary guidance is now `uv tool install` and the installed
+    console scripts (`voxel-forge-mcp`, `voxel-forge-bridge`, `voxel-forge`);
+    the four Windows wrappers (`run-mcp.bat`, `run-editor.bat`,
+    `run-desktop.bat`, `build-desktop.bat`) remain documented as convenience
+    alternatives, each qualified as Windows-specific. `uv run` is presented as
+    the checkout-only alternative. The Python was already portable — data
+    directories use `Path.home()`.
   - Success: the README's install and run instructions can be followed on
     Linux without translation, and a Linux machine reaches a running MCP
-    server. Documentation work is complete; Linux execution remains unverified
-    until a Linux run confirms it.
+    server. This was confirmed on Linux from an isolated `uv tool install`
+    outside the checkout: `voxel-forge-mcp --help` exits zero, a stdio
+    `initialize`/`tools/list` handshake returns 27 tools, `voxel-forge`
+    without the extra exits non-zero naming the extra with no traceback, and
+    `voxel-forge-bridge` binds its two loopback ports.
 
 ### 1.2. Host the editor as a supervised Bun process
 
