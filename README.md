@@ -224,6 +224,8 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 - [Developers guide](docs/developers-guide.md) — entry points, the desktop
   launcher boundary, dependency and toolchain requirements, and the
   verification gates.
+- [Migrating to 0.2](docs/migration-0.2.md) — the installed-command changes in
+  this release and what an existing setup has to update.
 
 The long-term direction of the project is recorded in the
 [roadmap](docs/roadmap.md).

@@ -3,9 +3,9 @@
 VoxelForge is a voxel editor inspired by
 [Goxel](https://github.com/guillaumechereau/goxel) with an MCP bridge, so AI
 clients such as Cursor and Claude Desktop can create and edit 3D models
-directly. This guide covers installation and everyday use. If you intend to
-change the code rather than drive the tool, read the
-[developers guide](developers-guide.md) instead.
+directly. This guide covers installation and everyday use. Contributors
+changing the code rather than driving the tool should read the
+[developers guide](developers-guide.md).
 
 ## Installing
 
@@ -18,7 +18,7 @@ uv tool install git+https://github.com/leynos/voxel-forge
 ```
 
 This puts the three commands listed under
-[installed commands](#installed-commands) on your `PATH`. VoxelForge is MIT
+[installed commands](#installed-commands) on the `PATH`. VoxelForge is MIT
 licensed.
 
 ### The desktop app
@@ -65,7 +65,7 @@ blocks. That is what an MCP client expects.
 
 `voxel-forge-mcp --help` (or `-h`) prints usage and exits with status 0
 without starting the bridge or binding a socket, so it is a safe way to check
-that the command is on your `PATH`.
+that the command is on the `PATH`.
 
 `voxel-forge-bridge` runs the bridge on its own rather than under an MCP
 client. It announces the ports it has bound on standard error, because
@@ -101,8 +101,8 @@ npm run dev
 ```
 
 Then open `http://localhost:5173`. The MCP tool `voxelforge_launch_editor`
-directs you to this portable invocation on every platform, rather than to a
-platform-specific wrapper.
+directs callers to this portable invocation on every platform, rather than to
+a platform-specific wrapper.
 
 The editor talks to the bridge over WebSocket at `ws://127.0.0.1:8765`, and
 the bridge serves the current scene as JSON at
@@ -142,3 +142,6 @@ this guide instead.
 The [developers guide](developers-guide.md) records the console-script entry
 points, the desktop launcher boundary, the toolchain requirements, and the
 verification gates a change must pass.
+
+Upgrading an existing 0.1.x installation is covered by
+[migrating to 0.2](migration-0.2.md).

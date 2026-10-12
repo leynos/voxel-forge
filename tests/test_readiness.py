@@ -27,6 +27,7 @@ from typing import Any
 
 import pytest
 
+import voxel_forge
 from voxel_forge import bridge, scene_store, server
 from voxel_forge.model import SceneStore, VoxelScene
 from voxel_forge.vox_io import export_vox, import_vox
@@ -372,6 +373,32 @@ def test_mcp_entry_point_supports_help(monkeypatch: pytest.MonkeyPatch, capsys: 
     assert started == [], "argument parsing must exit before the bridge or server starts"
 
 
+def test_mcp_entry_point_starts_the_bridge_then_the_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The no-argument path must start the bridge and then serve on stdio.
+
+    The ``--help`` test alone cannot catch this: a ``main()`` that parsed its
+    arguments and then returned without doing anything would satisfy it, and
+    the server would silently never start. The transport is asserted as well
+    as the calls, because an MCP client speaks stdio and a server started on
+    any other transport is unreachable to it.
+    """
+    monkeypatch.setattr(sys, "argv", ["voxel-forge-mcp"])
+    calls: list[str] = []
+    transports: list[str] = []
+
+    def record_run(**kwargs: str) -> None:
+        calls.append("run")
+        transports.append(kwargs["transport"])
+
+    monkeypatch.setattr(server, "_ensure_bridge", lambda: calls.append("bridge"))
+    monkeypatch.setattr(server.mcp, "run", record_run)
+
+    server.main()
+
+    assert calls == ["bridge", "run"], "the bridge must start before the server, and both must run"
+    assert transports == ["stdio"], "an MCP client connects over stdio"
+
+
 def test_installed_entry_points_target_the_launchers() -> None:
     """The installed commands must map to the modules this branch makes correct.
 
@@ -390,6 +417,46 @@ def test_installed_entry_points_target_the_launchers() -> None:
         "voxel-forge-mcp": "voxel_forge.server:main",
         "voxel-forge-bridge": "voxel_forge.bridge:main",
     }
+
+
+def test_migration_document_matches_the_declared_version() -> None:
+    """The migration document, the package version, and the lockfile must agree.
+
+    This branch changes the installed commands, so it needs a migration
+    document. A document named for a version the package does not have is worse
+    than none: it describes a release that does not exist and is not the file a
+    reader upgrading to the real version would open. Asserting all three
+    together is what keeps the name, the metadata, and the lock in step when
+    the version moves again.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+    assert version == voxel_forge.__version__, (
+        f"pyproject declares {version} but the package reports {voxel_forge.__version__}"
+    )
+
+    # A migration document is named for the release line (``0.2``), not the
+    # full patch version, so one file covers every patch in that line.
+    release_line = ".".join(version.split(".")[:2])
+    migration = Path(f"docs/migration-{release_line}.md")
+    assert migration.is_file(), f"version {version} has no migration document at {migration}"
+
+    lock = Path("uv.lock").read_text(encoding="utf-8")
+    assert f'name = "voxel-forge"\nversion = "{version}"' in lock, (
+        f"uv.lock does not record voxel-forge at {version}; run `uv lock`"
+    )
+
+    # The document is only reachable if it is linked, and it is only validated
+    # if the Markdown gate is pointed at it.
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    assert migration.as_posix() in makefile, f"{migration} is not covered by the Markdown gate"
+
+    readme = Path("README.md").read_text(encoding="utf-8")
+    users_guide = Path("docs/users-guide.md").read_text(encoding="utf-8")
+    assert migration.name in readme, f"README does not link {migration.name}"
+    assert migration.name in users_guide, f"the users guide does not link {migration.name}"
 
 
 def test_desktop_entry_point_runs_the_application_on_the_happy_path(

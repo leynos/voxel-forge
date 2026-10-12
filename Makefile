@@ -21,6 +21,7 @@ MARKDOWN_PATHS := \
 	README.md \
 	docs/developers-guide.md \
 	docs/execplans/readiness-gate.md \
+	docs/migration-0.2.md \
 	docs/roadmap.md \
 	docs/users-guide.md
 

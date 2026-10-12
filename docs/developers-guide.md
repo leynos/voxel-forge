@@ -61,7 +61,7 @@ The classifier, `_names_missing_desktop_extra(exc: ImportError) -> bool`, is a
 pure predicate and is the unit under test. It matches the missing name
 against the top-level distributions that only the `desktop` extra installs,
 and it tolerates dotted names so a nested import such as `PySide6.QtCore` is
-still recognised.
+still recognized.
 
 A subtlety is worth recording, because it looks like a bug and is not one.
 When PySide6 is absent, CPython reports the missing *distribution* in
