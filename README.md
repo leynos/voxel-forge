@@ -217,6 +217,17 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 
 ทั้งสองใช้ MCP คู่กันได้ใน Cursor พร้อมกัน
 
+## Documentation
+
+- [Users guide](docs/users-guide.md) — installation, the three commands, the
+  MCP client setup, the web editor, and where scenes and exports are stored.
+- [Developers guide](docs/developers-guide.md) — entry points, the desktop
+  launcher boundary, dependency and toolchain requirements, and the
+  verification gates.
+
+The long-term direction of the project is recorded in the
+[roadmap](docs/roadmap.md).
+
 ## License
 
 MIT — โค้ด VoxelForge เป็นของเรา  

@@ -22,7 +22,7 @@ import sys
 import threading
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -321,6 +321,7 @@ def test_desktop_entry_point_propagates_unrelated_import_errors(monkeypatch: pyt
     ],
 )
 def test_desktop_extra_failure_classification(error: ImportError, is_desktop_extra_failure: bool) -> None:
+    """Each import failure is classified as the missing extra, or not."""
     from voxel_forge.desktop import launch
 
     assert launch._names_missing_desktop_extra(error) is is_desktop_extra_failure
@@ -359,12 +360,58 @@ def test_runtime_dependencies_are_bounded_below_next_major() -> None:
 def test_mcp_entry_point_supports_help(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """`voxel-forge-mcp --help` must succeed without starting the server."""
     monkeypatch.setattr(sys, "argv", ["voxel-forge-mcp", "--help"])
+    started: list[str] = []
+    monkeypatch.setattr(server, "_ensure_bridge", lambda: started.append("bridge"))
+    monkeypatch.setattr(server.mcp, "run", lambda **_: started.append("run"))
 
     with pytest.raises(SystemExit) as excinfo:
         server.main()
 
     assert excinfo.value.code == 0
     assert "VoxelForge" in capsys.readouterr().out
+    assert started == [], "argument parsing must exit before the bridge or server starts"
+
+
+def test_installed_entry_points_target_the_launchers() -> None:
+    """The installed commands must map to the modules this branch makes correct.
+
+    ``voxel-forge`` pointing at the desktop application directly is the defect
+    this branch fixes: without the optional extra the command then died with a
+    traceback instead of an explanation. Pinning the target here means the
+    regression cannot return unnoticed, because the mapping itself is asserted
+    rather than only the behaviour of the module it names.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["scripts"] == {
+        "voxel-forge": "voxel_forge.desktop.launch:main",
+        "voxel-forge-mcp": "voxel_forge.server:main",
+        "voxel-forge-bridge": "voxel_forge.bridge:main",
+    }
+
+
+def test_desktop_entry_point_runs_the_application_on_the_happy_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the extra present, `voxel-forge` must actually run the desktop app.
+
+    A fake ``voxel_forge.desktop.app`` stands in for the real module, so the
+    check holds whether or not PySide6 is installed. The assertion is on the
+    call, not only the exit code: a launcher that returned 0 without running
+    anything would otherwise pass while doing nothing at all.
+    """
+    ran: list[str] = []
+    fake_app = ModuleType("voxel_forge.desktop.app")
+    fake_app.main = lambda: ran.append("ran")  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "voxel_forge.desktop.app", fake_app)
+    from voxel_forge.desktop import launch
+
+    exit_code = launch.main()
+
+    assert ran == ["ran"], "the launcher must call the desktop application"
+    assert exit_code == 0
 
 
 def test_readme_documents_cross_platform_installation() -> None:
@@ -459,6 +506,45 @@ def test_no_launcher_is_named_outside_windows_context() -> None:
         "these lines name a Windows-only .bat launcher without saying so, "
         "which reads as the general instruction on Linux:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_launch_editor_tool_returns_a_command_linux_can_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The editor tool must answer with a portable command, not a Windows wrapper.
+
+    The sibling branch of the same function already returned the portable
+    ``cd editor && npm run dev``; this pins both branches to it. Checking the
+    returned string is what makes the guarantee real: a source-text scan can
+    only show a ``.bat`` was not written down, not that the value handed to the
+    caller is runnable on the platform reading it.
+    """
+    import webbrowser
+
+    monkeypatch.setattr(server, "_ensure_bridge", lambda: None)
+    opened: list[str] = []
+    # ``webbrowser`` is imported inside the function body, so the patch has to
+    # land on the standard-library module the import statement resolves.
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+
+    running_editor = server.voxelforge_launch_editor()
+
+    assert "cd editor && npm run dev" in running_editor
+    assert ".bat" not in running_editor, "a Windows-only launcher must not reach Linux callers"
+    assert opened == ["http://localhost:5173"], "the editor is already served, so it must be opened"
+
+    # The absent-index branch is reached by pointing the module at a directory
+    # whose sibling ``editor`` is missing, which selects the guidance branch
+    # rather than the open one. The layout mirrors the real one, since the
+    # function locates the editor relative to the module file.
+    laid_out = tmp_path / "src" / "voxel_forge" / "server.py"
+    laid_out.parent.mkdir(parents=True)
+    monkeypatch.setattr(server, "__file__", str(laid_out))
+    opened.clear()
+
+    missing_editor = server.voxelforge_launch_editor()
+
+    assert "cd editor && npm install && npm run dev" in missing_editor
+    assert ".bat" not in missing_editor, "a Windows-only launcher must not reach Linux callers"
+    assert opened == [], "the editor is not running, so nothing should be opened"
 
 
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:

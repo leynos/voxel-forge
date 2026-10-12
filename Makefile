@@ -19,8 +19,10 @@ MDLINT ?= markdownlint-cli2
 
 MARKDOWN_PATHS := \
 	README.md \
+	docs/developers-guide.md \
+	docs/execplans/readiness-gate.md \
 	docs/roadmap.md \
-	docs/execplans/readiness-gate.md
+	docs/users-guide.md
 
 check-fmt:
 	uv run ruff format --check $(PYTHON_FORMAT_PATHS)

@@ -904,6 +904,13 @@ def voxelforge_launch_editor() -> str:
 
 
 def main() -> None:
+    """Run the MCP server on stdio, or print usage and exit for ``--help``.
+
+    Argument parsing happens before the bridge starts so that ``--help``
+    answers and exits without binding a socket. ``argparse`` raises
+    ``SystemExit`` for ``--help``, which is why the server is only reached once
+    parsing returns.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(
