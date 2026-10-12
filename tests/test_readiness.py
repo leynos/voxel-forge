@@ -428,10 +428,16 @@ def test_migration_document_matches_the_declared_version() -> None:
     reader upgrading to the real version would open. Asserting all three
     together is what keeps the name, the metadata, and the lock in step when
     the version moves again.
+
+    Every path is resolved from ``REPOSITORY_ROOT`` rather than the current
+    working directory, so the test reads the same files whatever directory
+    pytest was invoked from. A relative path here would silently test nothing
+    if the suite were ever run from elsewhere, since the reads would raise
+    ``FileNotFoundError`` against files that do exist in the repository.
     """
     import tomllib
 
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     version = pyproject["project"]["version"]
     assert version == voxel_forge.__version__, (
         f"pyproject declares {version} but the package reports {voxel_forge.__version__}"
@@ -440,21 +446,25 @@ def test_migration_document_matches_the_declared_version() -> None:
     # A migration document is named for the release line (``0.2``), not the
     # full patch version, so one file covers every patch in that line.
     release_line = ".".join(version.split(".")[:2])
-    migration = Path(f"docs/migration-{release_line}.md")
+    # Kept relative for the Makefile comparison below, which lists its inputs
+    # relative to the repository root, and made absolute for reading, so the
+    # test works whatever directory pytest was invoked from.
+    migration_relative = f"docs/migration-{release_line}.md"
+    migration = REPOSITORY_ROOT / migration_relative
     assert migration.is_file(), f"version {version} has no migration document at {migration}"
 
-    lock = Path("uv.lock").read_text(encoding="utf-8")
+    lock = (REPOSITORY_ROOT / "uv.lock").read_text(encoding="utf-8")
     assert f'name = "voxel-forge"\nversion = "{version}"' in lock, (
         f"uv.lock does not record voxel-forge at {version}; run `uv lock`"
     )
 
     # The document is only reachable if it is linked, and it is only validated
     # if the Markdown gate is pointed at it.
-    makefile = Path("Makefile").read_text(encoding="utf-8")
-    assert migration.as_posix() in makefile, f"{migration} is not covered by the Markdown gate"
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    assert migration_relative in makefile, f"{migration_relative} is not covered by the Markdown gate"
 
-    readme = Path("README.md").read_text(encoding="utf-8")
-    users_guide = Path("docs/users-guide.md").read_text(encoding="utf-8")
+    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    users_guide = (REPOSITORY_ROOT / "docs/users-guide.md").read_text(encoding="utf-8")
     assert migration.name in readme, f"README does not link {migration.name}"
     assert migration.name in users_guide, f"the users guide does not link {migration.name}"
 

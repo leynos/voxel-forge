@@ -8,9 +8,15 @@ commands a user actually runs.
 
 Each test here builds the wheel from the working tree, installs it into a
 throwaway virtual environment, and runs the real command. The environment is
-isolated by ``UV_PROJECT_ENVIRONMENT`` and ``UV_CACHE_DIR`` pointed at
-``tmp_path``, so nothing reads or writes the developer's own environments or
-cache, and the suite stays hermetic.
+isolated by ``UV_CACHE_DIR`` pointed at ``tmp_path``, so nothing reads or
+writes the developer's own cache, and the suite stays hermetic.
+
+The commands are run with ``PYTHONPATH`` and ``PYTHONHOME`` removed. That is
+load-bearing rather than tidiness: ``test_readiness.py`` imports the project
+from the source tree, so if pytest were started in a way that exports the
+repository root on ``PYTHONPATH``, the subprocess would import
+``src/voxel_forge`` and the test would pass without the wheel ever being
+imported — exactly the defect class it exists to detect.
 
 These are the slowest tests in the repository because each one builds a wheel.
 They are worth that cost: the defect class they guard — a command that is
@@ -22,6 +28,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,6 +40,33 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 # genuine hang run forever.
 BUILD_TIMEOUT_SECONDS = 600
 COMMAND_TIMEOUT_SECONDS = 120
+
+IS_WINDOWS = sys.platform == "win32"
+
+# A venv puts its interpreter and console scripts in ``Scripts\\`` on Windows
+# and in ``bin/`` elsewhere, and Windows names the interpreter ``python.exe``.
+# Hardcoding the POSIX layout would make the fixture fail on Windows before any
+# command was ever run.
+VENV_BIN = Path("Scripts" if IS_WINDOWS else "bin")
+VENV_PYTHON = VENV_BIN / ("python.exe" if IS_WINDOWS else "python")
+
+# The commands are console-script shims; on Windows they carry a ``.exe`` (and
+# a ``.cmd``) suffix, so existence has to be checked per platform.
+COMMAND_SUFFIXES = (".exe", ".cmd", "") if IS_WINDOWS else ("",)
+
+
+def installed_command(bin_dir: Path, name: str) -> Path:
+    """Return the installed path of ``name``, or fail naming what was searched.
+
+    ``shutil.which`` is not enough here: it would find an identically named
+    command already on the host ``PATH`` and so could pass without the wheel
+    having installed anything. Only candidates inside ``bin_dir`` count.
+    """
+    candidates = [bin_dir / f"{name}{suffix}" for suffix in COMMAND_SUFFIXES]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise AssertionError(f"installing the wheel did not create {name}; looked for {candidates}")
 
 
 @pytest.fixture(scope="module")
@@ -68,15 +102,43 @@ def installed_commands(tmp_path_factory: pytest.TempPathFactory) -> Path:
     assert created.returncode == 0, f"uv venv failed:\n{created.stdout}\n{created.stderr}"
 
     installed = run(
-        ["uv", "pip", "install", "--python", str(environment / "bin" / "python"), str(wheels[0])],
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(environment / VENV_PYTHON),
+            str(wheels[0]),
+        ],
         capture=True,
     )
     assert installed.returncode == 0, f"uv pip install failed:\n{installed.stdout}\n{installed.stderr}"
 
-    bin_dir = environment / "bin"
+    bin_dir = environment / VENV_BIN
     for command in ("voxel-forge", "voxel-forge-mcp", "voxel-forge-bridge"):
-        assert (bin_dir / command).exists(), f"installing the wheel did not create the {command} command"
+        installed_command(bin_dir, command)
     return bin_dir
+
+
+def run_installed(command: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run an installed command in an environment that can only see the wheel.
+
+    ``PYTHONPATH`` and ``PYTHONHOME`` are dropped so the interpreter cannot
+    fall back to the source tree, and ``PYTHONNOUSERSITE`` keeps a user site
+    directory from supplying ``voxel_forge`` instead of the venv. Everything
+    else, in particular ``PATH`` and the venv's own variables, is preserved.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in {"PYTHONPATH", "PYTHONHOME"}}
+    env["PYTHONNOUSERSITE"] = "1"
+    return subprocess.run(
+        [str(command), *args],
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+        cwd=REPOSITORY_ROOT,
+        env=env,
+    )
 
 
 def test_installed_mcp_command_answers_help(installed_commands: Path) -> None:
@@ -87,13 +149,7 @@ def test_installed_mcp_command_answers_help(installed_commands: Path) -> None:
     this branch, the installed command ignored its arguments and blocked on
     stdio, so ``--help`` never returned.
     """
-    completed = subprocess.run(
-        [str(installed_commands / "voxel-forge-mcp"), "--help"],
-        check=False,
-        text=True,
-        capture_output=True,
-        timeout=COMMAND_TIMEOUT_SECONDS,
-    )
+    completed = run_installed(installed_command(installed_commands, "voxel-forge-mcp"), "--help")
 
     assert completed.returncode == 0, f"--help must succeed, got {completed.returncode}:\n{completed.stderr}"
     assert "VoxelForge" in completed.stdout, "usage must name the server it describes"
@@ -111,13 +167,7 @@ def test_installed_desktop_command_degrades_without_the_extra(installed_commands
     branch it resolved straight to the PySide6-backed application and died with
     an ``ImportError`` traceback instead.
     """
-    completed = subprocess.run(
-        [str(installed_commands / "voxel-forge")],
-        check=False,
-        text=True,
-        capture_output=True,
-        timeout=COMMAND_TIMEOUT_SECONDS,
-    )
+    completed = run_installed(installed_command(installed_commands, "voxel-forge"))
 
     assert completed.returncode != 0, "the command must report failure, not exit silently as if it had started"
     assert "desktop" in completed.stderr, "the message must name the missing optional extra"

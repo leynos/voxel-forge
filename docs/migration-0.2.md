@@ -44,7 +44,7 @@ For the desktop application, add the `desktop` extra:
 uv tool install 'voxel-forge[desktop] @ git+https://github.com/leynos/voxel-forge'
 ```
 
-From a checkout the equivalent is `uv sync`, or `uv sync --extra desktop` for
+From a checkout, the equivalent is `uv sync`, or `uv sync --extra desktop` for
 the desktop application.
 
 ## `voxel-forge` without the `desktop` extra
@@ -76,7 +76,7 @@ without starting the bridge or binding a socket. In 0.1.x the arguments were
 ignored: the server started on stdio and blocked, so a help query hung rather
 than returning.
 
-With no arguments the command behaves as before and blocks on stdio, which is
+With no arguments, the command behaves as before and blocks on stdio, which is
 what an MCP client expects.
 
 ## Dependency bounds
