@@ -391,6 +391,17 @@ def _windows_launcher_offenders(root: Path) -> list[str]:
     so requiring Windows context there would force edits to records without
     protecting anyone. Only text presented as the thing to do is scanned.
 
+    Context is established differently per file type. In the README a launcher
+    reference inherits its enclosing heading, so a `.bat` named under a
+    "### Build ... (Windows)" heading is qualified. In Python source a ``#``
+    line is a comment, not a heading: it never reaches the user alongside the
+    string, so it must not qualify one. A docstring or comment reading "# the
+    Windows helper" would otherwise silence the check for the very string it
+    fails to qualify -- confirmed by negative control, where a preceding
+    ``# Windows helper is run-editor.bat`` comment let a user-visible
+    ``run-editor.bat`` string pass. Python lines must therefore say Windows on
+    the same line that names the launcher.
+
     Parameters
     ----------
     root : Path
@@ -401,7 +412,8 @@ def _windows_launcher_offenders(root: Path) -> list[str]:
     list[str]
         ``path:line: text`` for each offending line, empty when none remain.
     """
-    targets = [root / "README.md", *sorted((root / "src").rglob("*.py"))]
+    readme = root / "README.md"
+    targets = [readme, *sorted((root / "src").rglob("*.py"))]
     offenders: list[str] = []
 
     for path in targets:
@@ -414,7 +426,7 @@ def _windows_launcher_offenders(root: Path) -> list[str]:
 
         heading = ""
         for number, line in enumerate(text.splitlines(), start=1):
-            if line.lstrip().startswith("#"):
+            if path == readme and line.lstrip().startswith("#"):
                 heading = line
             if ".bat" not in line:
                 continue
