@@ -26,8 +26,9 @@ invisible to every faster test.
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -66,7 +67,39 @@ def installed_command(bin_dir: Path, name: str) -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise AssertionError(f"installing the wheel did not create {name}; looked for {candidates}")
+    msg = f"installing the wheel did not create {name}; looked for {candidates}"
+    raise AssertionError(msg)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _CommandResult:
+    """Captured status and output from a task-owned command."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+async def _execute_command(
+    args: list[str], env: dict[str, str], timeout: int, *, capture: bool = True
+) -> _CommandResult:
+    """Run an argument vector directly, with bounded owned-process cleanup."""
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=REPOSITORY_ROOT,
+        env=env,
+        stdout=asyncio.subprocess.PIPE if capture else None,
+        stderr=asyncio.subprocess.PIPE if capture else None,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+    return _CommandResult(
+        process.returncode, (stdout or b"").decode(), (stderr or b"").decode()
+    )
 
 
 @pytest.fixture(scope="module")
@@ -81,25 +114,28 @@ def installed_commands(tmp_path_factory: pytest.TempPathFactory) -> Path:
     wheel_dir = workspace / "wheels"
     cache = workspace / "cache"
 
-    def run(args: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            args,
-            cwd=REPOSITORY_ROOT,
-            check=False,
-            text=True,
-            timeout=BUILD_TIMEOUT_SECONDS,
-            capture_output=capture,
-            env={**os.environ, "UV_CACHE_DIR": str(cache)},
+    def run(args: list[str], *, capture: bool = False) -> _CommandResult:
+        return asyncio.run(
+            _execute_command(
+                args,
+                {**os.environ, "UV_CACHE_DIR": str(cache)},
+                BUILD_TIMEOUT_SECONDS,
+                capture=capture,
+            )
         )
 
     built = run(["uv", "build", "--wheel", "--out-dir", str(wheel_dir)], capture=True)
     assert built.returncode == 0, f"uv build failed:\n{built.stdout}\n{built.stderr}"
 
     wheels = sorted(wheel_dir.glob("voxel_forge-*.whl"))
-    assert len(wheels) == 1, f"expected exactly one wheel, found {[w.name for w in wheels]}"
+    assert len(wheels) == 1, (
+        f"expected exactly one wheel, found {[w.name for w in wheels]}"
+    )
 
     created = run(["uv", "venv", "--python", "3.11", str(environment)], capture=True)
-    assert created.returncode == 0, f"uv venv failed:\n{created.stdout}\n{created.stderr}"
+    assert created.returncode == 0, (
+        f"uv venv failed:\n{created.stdout}\n{created.stderr}"
+    )
 
     installed = run(
         [
@@ -112,7 +148,9 @@ def installed_commands(tmp_path_factory: pytest.TempPathFactory) -> Path:
         ],
         capture=True,
     )
-    assert installed.returncode == 0, f"uv pip install failed:\n{installed.stdout}\n{installed.stderr}"
+    assert installed.returncode == 0, (
+        f"uv pip install failed:\n{installed.stdout}\n{installed.stderr}"
+    )
 
     bin_dir = environment / VENV_BIN
     for command in ("voxel-forge", "voxel-forge-mcp", "voxel-forge-bridge"):
@@ -120,7 +158,7 @@ def installed_commands(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return bin_dir
 
 
-def run_installed(command: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def run_installed(command: Path, *args: str) -> _CommandResult:
     """Run an installed command in an environment that can only see the wheel.
 
     ``PYTHONPATH`` and ``PYTHONHOME`` are dropped so the interpreter cannot
@@ -130,14 +168,8 @@ def run_installed(command: Path, *args: str) -> subprocess.CompletedProcess[str]
     """
     env = {k: v for k, v in os.environ.items() if k not in {"PYTHONPATH", "PYTHONHOME"}}
     env["PYTHONNOUSERSITE"] = "1"
-    return subprocess.run(
-        [str(command), *args],
-        check=False,
-        text=True,
-        capture_output=True,
-        timeout=COMMAND_TIMEOUT_SECONDS,
-        cwd=REPOSITORY_ROOT,
-        env=env,
+    return asyncio.run(
+        _execute_command([str(command), *args], env, COMMAND_TIMEOUT_SECONDS)
     )
 
 
@@ -149,15 +181,24 @@ def test_installed_mcp_command_answers_help(installed_commands: Path) -> None:
     this branch, the installed command ignored its arguments and blocked on
     stdio, so ``--help`` never returned.
     """
-    completed = run_installed(installed_command(installed_commands, "voxel-forge-mcp"), "--help")
+    completed = run_installed(
+        installed_command(installed_commands, "voxel-forge-mcp"), "--help"
+    )
 
-    assert completed.returncode == 0, f"--help must succeed, got {completed.returncode}:\n{completed.stderr}"
+    assert completed.returncode == 0, (
+        f"--help must succeed, got {completed.returncode}:\n{completed.stderr}"
+    )
     assert "VoxelForge" in completed.stdout, "usage must name the server it describes"
     assert "usage:" in completed.stdout, "help must print usage"
-    assert completed.stderr == "", "a help query must not start the bridge and report its ports"
+    assert not completed.stderr, (
+        "a help query must not start the bridge and report its ports"
+    )
 
 
-def test_installed_desktop_command_degrades_without_the_extra(installed_commands: Path) -> None:
+def test_installed_desktop_command_degrades_without_the_extra(
+    installed_commands: Path,
+    desktop_extra_hint: str,
+) -> None:
     """The installed ``voxel-forge`` must degrade cleanly when PySide6 is absent.
 
     This is the roadmap 1.1.2 success criterion. The throwaway environment
@@ -169,8 +210,9 @@ def test_installed_desktop_command_degrades_without_the_extra(installed_commands
     """
     completed = run_installed(installed_command(installed_commands, "voxel-forge"))
 
-    assert completed.returncode != 0, "the command must report failure, not exit silently as if it had started"
-    assert "desktop" in completed.stderr, "the message must name the missing optional extra"
-    assert "PySide6" in completed.stderr, "the message must name the dependency that is actually missing"
-    assert "uv tool install" in completed.stderr, "the message must give the command that fixes it"
-    assert "Traceback" not in completed.stderr, "a missing optional extra is an expected state, not a crash"
+    assert completed.returncode != 0, (
+        "the command must report failure, not exit silently as if it had started"
+    )
+    assert completed.stderr == desktop_extra_hint.format(missing="PySide6"), (
+        "the installed command must give the complete portable extra-install guidance"
+    )

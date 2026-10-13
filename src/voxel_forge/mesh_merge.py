@@ -1,4 +1,7 @@
-"""Greedy box merging — รวม voxel สีเดียวกันที่ติดกันเป็นกล่องใหญ่ ลด mesh/part ตอน export."""
+"""Greedy box merging — รวม voxel สีเดียวกันที่ติดกันเป็นกล่องใหญ่ ลด mesh/part ตอน.
+
+export.
+"""
 
 from __future__ import annotations
 

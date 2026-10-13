@@ -12,7 +12,7 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { asSceneData, resolveRgb, sceneFromMessage } from "./scene-data";
+import { asSceneData, groupBlocksByColour, resolveRgb, sceneFromMessage } from "./scene-data";
 import type { Block, SceneData } from "./scene-data";
 
 const WS_URL = "ws://127.0.0.1:8765";
@@ -22,12 +22,16 @@ const RECONNECT_DELAY_MS = 2000;
 const VOXEL_GAP = 0.96;
 /** `userData` key under which an instanced mesh records its source blocks. */
 const USER_DATA_BLOCKS = "blocks";
+const USER_DATA_LAYER = "layer";
 const MOUSE_BUTTON = { LEFT: 0, MIDDLE: 1, RIGHT: 2 } as const;
 
 type GridCell = { x: number; y: number; z: number };
 
 type PickedVoxel = GridCell & {
-  layer: number; color: string; normal: THREE.Vector3 | null };
+  layer: number;
+  color: string;
+  normal: THREE.Vector3 | null;
+};
 
 type Bounds = { min: THREE.Vector3; max: THREE.Vector3 };
 
@@ -123,25 +127,12 @@ function disposeVoxelMeshes(): void {
   voxelGroup.clear();
 }
 
-/** Bucket the blocks of every visible layer by their palette key. */
-function groupBlocksByColour(blocks: readonly Block[]): Map<string, Block[]> {
-  const byColour = new Map<string, Block[]>();
-  for (const block of blocks) {
-    const colour = block[3];
-    const bucket = byColour.get(colour);
-    if (bucket) bucket.push(block);
-    else byColour.set(colour, [block]);
-  }
-  return byColour;
-}
-
 /** Build one instanced mesh holding every block of a single colour. */
 function buildColourMesh(
   geometry: THREE.BoxGeometry,
   palette: Record<string, number[]>,
   colour: string,
   blocks: Block[],
-  layerIndex: number,
 ): THREE.InstancedMesh {
   const material = new THREE.MeshStandardMaterial({
     color: resolveRgb(palette, colour),
@@ -161,7 +152,6 @@ function buildColourMesh(
   });
   mesh.instanceMatrix.needsUpdate = true;
   mesh.userData[USER_DATA_BLOCKS] = blocks;
-  mesh.userData["layer"] = layerIndex;
   return mesh;
 }
 
@@ -186,7 +176,9 @@ function rebuildVoxels(): void {
   data.layers.forEach((layer, layerIndex) => {
     if (!layer.visible) return;
     for (const [colour, blocks] of groupBlocksByColour(layer.blocks)) {
-      voxelGroup.add(buildColourMesh(baseGeo, data.palette, colour, blocks, layerIndex));
+      const mesh = buildColourMesh(baseGeo, data.palette, colour, blocks);
+      mesh.userData[USER_DATA_LAYER] = layerIndex;
+      voxelGroup.add(mesh);
     }
   });
 
@@ -315,7 +307,14 @@ function pickVoxel(): PickedVoxel | null {
   const block = blockAt(mesh, hit.instanceId ?? 0);
   if (!block) return null;
   const [x, y, z, color] = block;
-  return { x, y, z, color, layer: Number(mesh.userData["layer"]), normal: hit.face?.normal ?? null };
+  return {
+    x,
+    y,
+    z,
+    color,
+    layer: Number(mesh.userData[USER_DATA_LAYER]),
+    normal: hit.face?.normal ?? null,
+  };
 }
 
 /** Grid cell on the ground plane under the current ray. */
@@ -366,7 +365,6 @@ function removeVoxel(): void {
       z: voxel.z,
       scene_name: data.name,
       layer_index: voxel.layer,
-      layer_index: data.active_layer,
     }),
   );
 }

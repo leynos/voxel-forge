@@ -65,8 +65,9 @@ silently overlap the shared caches.
 Duplication fixes keep shared operations at their owning boundary:
 
 - `voxel_forge.paths` owns creation of the application's scene and export
-  directories. Existing desktop, persistence, and MCP import surfaces remain
-  available; explicit user-chosen paths stay with the file operation.
+  directories for desktop and MCP operations. The persistence adapter retains
+  its separate path-only query; explicit user-chosen paths stay with the file
+  operation.
 - `model_validation.validate_layer_index` owns the range check shared by
   scene edits and persisted active-layer validation, preserving each field's
   error label.
@@ -94,3 +95,29 @@ Duplication fixes keep shared operations at their owning boundary:
 - Bear-body colour queries check the existing region priority explicitly:
   head first, then body/belly, then limbs. Placement remains a separate
   command over the classified cells; head/body overlaps retain fur colour.
+
+## Integration with the readiness baseline
+
+The rebase onto `main` retains its Python 3.11 runtime and version 0.2.0,
+installed-wheel checks, strict scene decoding, and layer-aware editor removal.
+The lint refactors adapt to those contracts:
+
+- `model` remains the public domain facade. Layer and scene records, decoding,
+  field validation, and the in-memory registry live in focused sibling modules
+  so each stays below the 400-line ceiling. Disk I/O remains in `scene_store`.
+- `SceneStore` owns one re-entrant lock. MCP and bridge share the same registry
+  instance and hold its lock through mutation and snapshot creation. The
+  `_edit_scene` context publishes successful palette and single-voxel edits
+  before releasing that lock.
+- Invalid scene-schema types remain semantic `ValueError` failures through
+  `InvalidSceneDataError`; callers catching `ValueError` retain the baseline
+  contract. This exception is limited to scene and bulk-block input validation.
+- Listing an absent saved-scene directory does not create it. The persistence
+  fixture continues to redirect `scene_store.scenes_dir`.
+- Rendering groups voxels by both layer and colour, and removal messages carry
+  the clicked layer. A stale layer still uses the baseline visible-layer
+  fallback. VOX export continues to reject overlapping visible layers.
+- Readiness tests are grouped by bridge, model, documentation, and launcher
+  contracts. The shared finite editor socket preserves routing and lock tests.
+  Installed-command execution uses argument vectors and bounded async process
+  cleanup, retaining the source-path and user-site isolation checks.

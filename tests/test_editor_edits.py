@@ -1,72 +1,71 @@
-"""WebSocket edit routing and post-mutation broadcast contracts."""
+"""Layer-aware WebSocket editing and post-mutation publication contracts."""
 
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import typing as typ
 
 import pytest
+from readiness_helpers import EditorSocket
 
 from voxel_forge import bridge
 from voxel_forge.model import SceneStore, VoxelScene
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _EditorCase:
+    """Edit command, requested layer, and expected total after one mutation."""
+
+    command: str
+    layer_index: int
+    expected_count: int
+
+
+@pytest.mark.parametrize("coordinates", [(1, 2, 3), ("1", "2", "3")])
 @pytest.mark.parametrize(
-    ("command", "expected_count"), [("editor_remove", 0), ("editor_place", 1)]
+    "case",
+    [
+        _EditorCase("editor_place", 0, 1),
+        _EditorCase("editor_remove", 0, 0),
+        _EditorCase("editor_remove", 1, 0),
+    ],
+    ids=["place", "remove-clicked", "remove-stale-layer"],
 )
 def test_editor_edits_update_server_scene(
-    monkeypatch: pytest.MonkeyPatch, command: str, expected_count: int
+    editor_bridge: tuple[SceneStore, asyncio.Queue[dict[str, typ.Any]]],
+    coordinates: tuple[int | str, int | str, int | str],
+    case: _EditorCase,
 ) -> None:
-    """Both editor variants must mutate the target scene and publish its snapshot."""
-    store = SceneStore()
+    """Route both edit variants, preserving clicked-layer and stale-layer removal."""
+    store, broadcasts = editor_bridge
     scene = store.create("editor")
-    scene.place(1, 2, 3, "1")
-    monkeypatch.setattr(bridge, "store", store)
-    broadcasts: asyncio.Queue[VoxelScene] = asyncio.Queue()
-
-    async def capture(
-        payload: dict[str, typ.Any],
-    ) -> None:
-        await broadcasts.put(VoxelScene.from_dict(payload["scene"]))
-
-    monkeypatch.setattr(bridge, "_async_broadcast", capture)
-
-    class WebSocket:
-        def __init__(self) -> None:
-            self.messages = iter([
-                json.dumps({
-                    "type": command,
-                    "scene_name": "editor",
-                    "layer_index": 0,
-                    "x": "1",
-                    "y": "2",
-                    "z": "3",
-                    "color": "2",
-                })
-            ])
-
-        def __aiter__(self) -> typ.Self:
-            return self
-
-        async def __anext__(self) -> str:
-            try:
-                return next(self.messages)
-            except StopIteration as exc:
-                raise StopAsyncIteration from exc
-
-        async def send(self, _message: str) -> None:
-            return None
-
-    asyncio.run(bridge._ws_handler(WebSocket()))
-
-    assert scene.block_count() == expected_count, (
+    scene.add_layer("upper")
+    scene.active_layer = 1
+    scene.place(1, 2, 3, "1", layer_index=0)
+    x, y, z = coordinates
+    message = {
+        "type": case.command,
+        "scene_name": "editor",
+        "layer_index": case.layer_index,
+        "x": x,
+        "y": y,
+        "z": z,
+        "color": "2",
+    }
+    asyncio.run(bridge._ws_handler(EditorSocket([json.dumps(message)])))
+    snapshot = VoxelScene.from_dict(broadcasts.get_nowait()["scene"])
+    assert scene.block_count() == case.expected_count, (
         "the edit must change the target voxel"
     )
-    snapshot = broadcasts.get_nowait()
-    assert snapshot.name == "editor", "the update must name the target scene"
-    assert snapshot.block_count() == expected_count, "the update must include the edit"
-    if command == "editor_place":
-        assert scene.layer.blocks[1, 2, 3] == "2", (
-            "placement must keep the chosen colour"
+    assert scene.layers[1].blocks == {}, (
+        "a lower-layer edit must leave the active layer untouched"
+    )
+    assert snapshot.to_dict() == scene.to_dict(), (
+        "publication must include the complete edit"
+    )
+    if case.command == "editor_place":
+        assert scene.layers[0].blocks[1, 2, 3] == "2", (
+            "placement must retain the chosen colour"
         )

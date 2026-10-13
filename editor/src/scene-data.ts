@@ -87,3 +87,19 @@ export function asSceneData(payload: unknown): SceneData | null {
   if (!hasNonEmptyName(payload)) return null;
   return payload as SceneData;
 }
+
+/**
+ * Bucket one layer's blocks by palette key, retaining that layer's identity.
+ * @param blocks - Blocks of one visible layer, for example [[0, 0, 0, "2"]].
+ * @returns Colour keys mapped to their source blocks in input order.
+ */
+export function groupBlocksByColour(blocks: readonly Block[]): Map<string, Block[]> {
+  const byColour = new Map<string, Block[]>();
+  for (const block of blocks) {
+    const colour = block[3];
+    const bucket = byColour.get(colour);
+    if (bucket) bucket.push(block);
+    else byColour.set(colour, [block]);
+  }
+  return byColour;
+}
