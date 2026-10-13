@@ -77,8 +77,12 @@
   - Formatting is correct and validated.
 - **For Python files:**
   - **Testing:** Passes all relevant tests (`make test`).
-  - **Linting:** Passes lint checks (`make lint` — Ruff plus Pylint with the
-    `df12_python_lints` plugin).
+  - **Linting:** Passes lint checks (`make lint` — Ruff, base Pylint on
+    managed PyPy 8,
+    `df12_python_lints` on CPython 3.14, strict Skylos, and Nose).
+    Both Pylint passes use the Python 3.11 runtime baseline. The shared
+    scanner policy and contributor commands are documented in
+    `docs/lint-standards.md`.
   - **Formatting:** Adheres to formatting standards (`make check-fmt`; use
     `make fmt` to apply fixes).
 - **For TypeScript files (the `editor/`):**

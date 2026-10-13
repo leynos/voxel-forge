@@ -74,9 +74,8 @@ def voxelforge_set_palette(  # ruff: ignore[too-many-arguments, too-many-positio
     scene_name: str = "",
 ) -> str:
     """กำหนดสีในพาเลต (24-bit RGB)."""
-    scene = server.store.get(scene_name or None)
-    scene.set_palette_color(color_key, r, g, b)
-    server._sync_bridge(scene)
+    with server._edit_scene(scene_name) as scene:
+        scene.set_palette_color(color_key, r, g, b)
     return f"พาเลต {color_key} = RGB({r},{g},{b})"
 
 
@@ -90,9 +89,8 @@ def voxelforge_place_block(  # ruff: ignore[too-many-arguments, too-many-positio
     scene_name: str = "",
 ) -> str:
     """วาง voxel 1 ลูกที่พิกัด (x,y,z)."""
-    scene = server.store.get(scene_name or None)
-    scene.place(x, y, z, color)
-    server._sync_bridge(scene)
+    with server._edit_scene(scene_name) as scene:
+        scene.place(x, y, z, color)
     return f"วาง ({x},{y},{z}) สี '{color}' — รวม {scene.block_count()} บล็อก"
 
 

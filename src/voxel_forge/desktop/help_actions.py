@@ -6,9 +6,39 @@ The mixin in this module is only ever combined with
 
 from __future__ import annotations
 
+import functools
+
 from PySide6.QtWidgets import QMessageBox
 
 from voxel_forge.mesh_merge import merge_stats
+
+_HELP_MESSAGES: dict[str, tuple[str, str]] = {
+    "usage": (
+        "วิธีใช้งาน VoxelForge",
+        (
+            "1. สร้าง → เลือก ต้นไม้ / หมี Chibi\n"
+            "2. มุมมอง → F = จัดกล้อง\n"
+            "3. ไฟล์ → บันทึก (.json)\n"
+            "4. Export → Blender (.obj รวม mesh)\n"
+            "5. Blender: File → Import → Wavefront (.obj)\n\n"
+            "AI (Cursor): ใช้ MCP VoxelForge สร้าง scene\n"
+            "แล้วเปิดไฟล์จากโฟลเดอร์ Scenes"
+        ),
+    ),
+    "shortcuts": (
+        "คีย์ลัด",
+        (
+            "Ctrl+N     Scene ใหม่\n"
+            "Ctrl+O     เปิด\n"
+            "Ctrl+S     บันทึก\n"
+            "Ctrl+Shift+S  บันทึกเป็น\n"
+            "Ctrl+E     Export Blender\n"
+            "F          จัดกล้อง\n"
+            "R          รีเฟรช 3D\n\n"
+            "เมาส์กลาง = หมุน | ล้อ = zoom"
+        ),
+    ),
+}
 
 
 class HelpActionsMixin:
@@ -29,32 +59,13 @@ class HelpActionsMixin:
             "Export Blender ใช้ merged — เหมาะกับเกมและ Blender",
         )
 
-    def _usage_guide(self) -> None:
-        QMessageBox.information(
-            self,
-            "วิธีใช้งาน VoxelForge",
-            "1. สร้าง → เลือก ต้นไม้ / หมี Chibi\n"
-            "2. มุมมอง → F = จัดกล้อง\n"
-            "3. ไฟล์ → บันทึก (.json)\n"
-            "4. Export → Blender (.obj รวม mesh)\n"
-            "5. Blender: File → Import → Wavefront (.obj)\n\n"
-            "AI (Cursor): ใช้ MCP VoxelForge สร้าง scene\n"
-            "แล้วเปิดไฟล์จากโฟลเดอร์ Scenes",
-        )
+    def _show_help(self, topic: str) -> None:
+        """Show one static help topic using the shared informational dialog."""
+        title, message = _HELP_MESSAGES[topic]
+        QMessageBox.information(self, title, message)
 
-    def _shortcuts_help(self) -> None:
-        QMessageBox.information(
-            self,
-            "คีย์ลัด",
-            "Ctrl+N     Scene ใหม่\n"
-            "Ctrl+O     เปิด\n"
-            "Ctrl+S     บันทึก\n"
-            "Ctrl+Shift+S  บันทึกเป็น\n"
-            "Ctrl+E     Export Blender\n"
-            "F          จัดกล้อง\n"
-            "R          รีเฟรช 3D\n\n"
-            "เมาส์กลาง = หมุน | ล้อ = zoom",
-        )
+    _usage_guide = functools.partialmethod(_show_help, "usage")
+    _shortcuts_help = functools.partialmethod(_show_help, "shortcuts")
 
     def _about(self) -> None:
         QMessageBox.about(

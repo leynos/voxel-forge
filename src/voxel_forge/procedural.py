@@ -202,33 +202,34 @@ def _in_belly(point: tuple[int, int, int], r: int) -> bool:
 
 
 def _bear_body_colour(point: tuple[int, int, int], r: int) -> str | None:
-    """Return the colour for one torso, head or limb voxel, or ``None``."""
+    """Classify a bear voxel in priority order: head, belly/body, then limbs."""
     body_y = 4 * r
-    head_y = 9 * r
-    in_body = _in_ellipsoid(point, (0, body_y, 0), (2.8 * r, 2.4 * r, 2.5 * r))
-    in_head = _in_ellipsoid(point, (0, head_y, 0), (3.6 * r, 3.2 * r, 3.4 * r))
+    if _in_ellipsoid(point, (0, 9 * r, 0), (3.6 * r, 3.2 * r, 3.4 * r)):
+        return "F"
+    if _in_ellipsoid(point, (0, body_y, 0), (2.8 * r, 2.4 * r, 2.5 * r)):
+        return "L" if _in_belly(point, r) else "F"
     limbs = (
         ((-3.2 * r, body_y + 0.5 * r, 0), (1.2 * r, 1.6 * r, 1.1 * r)),
         ((3.2 * r, body_y + 0.5 * r, 0), (1.2 * r, 1.6 * r, 1.1 * r)),
         ((-1.3 * r, 2.2 * r, 0.3 * r), (1.1 * r, 1.5 * r, 1.2 * r)),
         ((1.3 * r, 2.2 * r, 0.3 * r), (1.1 * r, 1.5 * r, 1.2 * r)),
     )
-    torso = in_body or in_head
-    if not torso and not any(
-        _in_ellipsoid(point, centre, radii) for centre, radii in limbs
-    ):
-        return None
-    if in_body and not in_head:
-        return "L" if _in_belly(point, r) else "F"
-    return "F"
+    return (
+        "F"
+        if any(_in_ellipsoid(point, centre, radii) for centre, radii in limbs)
+        else None
+    )
 
 
 def _place_bear_body(scene: VoxelScene, r: int, span: int) -> None:
     """Fill the bear's torso, head and stubby limbs."""
-    for point in _voxel_range(span, (2, 14 * r), span):
-        colour = _bear_body_colour(point, r)
-        if colour is not None:
-            scene.place(*point, colour)
+    coloured_points = (
+        (*point, colour)
+        for point in _voxel_range(span, (2, 14 * r), span)
+        if (colour := _bear_body_colour(point, r)) is not None
+    )
+    for voxel in coloured_points:
+        scene.place(*voxel)
 
 
 def _place_bear_ear(

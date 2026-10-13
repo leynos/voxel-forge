@@ -20,10 +20,6 @@ desktop = [
 dev = [
     "pytest>=8.4.0",
     "ruff>=0.12.0",
-    "pylint>=3.3,<5",
-    # The df12 pylint plugin needs Python 3.12+; the runtime envelope stays
-    # at 3.11, so older interpreters simply skip the plugin.
-    "df12-python-lints @ git+https://github.com/leynos/df12-python-lints ; python_version >= '3.12'",
 ]
 
 [project.scripts]
@@ -184,9 +180,8 @@ max-bool-expr = 2
 max-locals = 10
 
 [tool.pylint.main]
-# df12 house-style checkers: match-statement dispatch, assert messages,
-# audited suppressions.
-load-plugins = ["df12_python_lints"]
+# Both lint interpreters check the supported runtime grammar and semantics.
+py-version = "3.11"
 # Expand directory targets like tests even when they are not packages.
 recursive = true
 # Match the project file-size ceiling enforced during review.
@@ -209,23 +204,10 @@ max-positional-arguments = 4
 # Keep this Pylint pass focused on the explicitly selected messages.
 disable = [
     "all",
-    "syntax-error",
 ]
 enable = [
-    # df12 house-style messages from the df12_python_lints plugin. Each
-    # respects `py-version`, so 3.12+/3.14+ advice stays quiet on 3.11.
-    "prefer-structural-pattern-matching",
-    "assert-missing-message",
-    "prefer-match-over-constant-chain",
-    "trivial-attribute-wrapper",
-    "trivial-alias-wrapper",
-    "reexport-by-assignment",
-    "lint-suppression-without-explanation",
-    "typecheck-suppression-without-explanation",
-    "prefer-snapshot-assertion",
-    "prefer-snapshot-substring",
-    "prefer-type-statement",
-    "redundant-future-annotations",
+    # Parse failures must fail the gate on either lint interpreter.
+    "syntax-error",
     # Catch invalid %-style specifiers before log calls reach production.
     "logging-unsupported-format",
     # Catch truncated %-style logging templates that cannot be formatted.
@@ -423,3 +405,23 @@ enable = [
     # Keep positional call surfaces small and explicit.
     "too-many-positional-arguments",
 ]
+
+# Pokie's shared gates keep their implementation in df12-python-lints.
+[tool.df12_skylos]
+roots = ["src"]
+python = "3.14"
+
+[tool.skylos]
+exclude = [".venv", ".tools", ".git", "node_modules", "dist", "build"]
+
+[tool.skylos.gate]
+strict = true
+
+[tool.nose]
+version = "0.20.0"
+roots = ["src", "tests", "editor/src"]
+mode = "syntax,semantic,near"
+min-size = 24
+surface = "all"
+top = 0
+exclude = [".venv/**", ".tools/**", ".git/**", "node_modules/**", "dist/**", "build/**"]

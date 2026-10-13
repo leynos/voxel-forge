@@ -292,10 +292,7 @@ def start_bridge_background() -> None:
         if _bridge_thread and _bridge_thread.is_alive():
             return
 
-        def run() -> None:
-            asyncio.run(_run_servers())
-
-        _bridge_thread = threading.Thread(target=run, daemon=True)
+        _bridge_thread = threading.Thread(target=main, daemon=True)
         _bridge_thread.start()
 
 

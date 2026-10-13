@@ -28,11 +28,7 @@ def voxelforge_import_vox(file_path: str) -> str:
 def voxelforge_export_vox(scene_name: str = "", output_path: str = "") -> str:
     """Export เป็น .vox (เปิดใน Goxel / MagicaVoxel ได้)."""
     scene = server.store.get(scene_name or None)
-    path = (
-        Path(output_path)
-        if output_path
-        else server._exports_dir() / f"{scene.name}.vox"
-    )
+    path = server._export_path(scene, output_path, ".vox")
     export_vox(scene, path)
     return f"export .vox → {path} ({scene.block_count()} voxel)"
 
@@ -58,11 +54,8 @@ def voxelforge_export_obj(
 ) -> str:
     """Export เป็น Wavefront .obj — merge_boxes=true รวม voxel ติดกัน (แนะนำ)."""
     scene = server.store.get(scene_name or None)
-    if output_path:
-        path = Path(output_path)
-    else:
-        suffix = "_merged" if merge_boxes else ""
-        path = server._exports_dir() / f"{scene.name}{suffix}.obj"
+    suffix = "_merged.obj" if merge_boxes else ".obj"
+    path = server._export_path(scene, output_path, suffix)
     export_obj(scene, path, merge_boxes=merge_boxes)
     stats = merge_stats(scene) if merge_boxes else {"merged_boxes": scene.block_count()}
     parts = stats["merged_boxes"] if merge_boxes else scene.block_count()
@@ -99,11 +92,7 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
 def voxelforge_export_obj_legacy(scene_name: str = "", output_path: str = "") -> str:
     """Export เป็น Wavefront .obj (Goxel รองรับ)."""
     scene = server.store.get(scene_name or None)
-    path = (
-        Path(output_path)
-        if output_path
-        else server._exports_dir() / f"{scene.name}.obj"
-    )
+    path = server._export_path(scene, output_path, ".obj")
     export_obj(scene, path, merge_boxes=False)
     return f"export .obj (no merge) -> {path} ({scene.block_count()} voxels)"
 

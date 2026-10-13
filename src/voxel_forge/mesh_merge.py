@@ -12,7 +12,7 @@ if typ.TYPE_CHECKING:
     from .model import VoxelScene
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MergedBox:
     """An axis-aligned run of same-coloured voxels, inclusive of both corners."""
 
@@ -32,7 +32,7 @@ class MergedBox:
         )
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(slots=True)
 class _MergeState:
     """The voxel map plus the set of cells no box has claimed yet."""
 

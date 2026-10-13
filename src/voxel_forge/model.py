@@ -184,7 +184,7 @@ def _parse_layers(raw: Any, palette: Mapping[str, tuple[int, int, int]]) -> list
     return [_parse_layer(entry, palette) for entry in raw]
 
 
-@dataclass
+@dataclass(slots=True)
 class VoxelLayer:
     """One named, optionally hidden layer of voxels."""
 
@@ -205,7 +205,7 @@ class VoxelLayer:
         return len(self.blocks)
 
 
-@dataclass
+@dataclass(slots=True)
 class VoxelScene:
     """A layered voxel scene with a 24-bit RGB palette."""
 
@@ -449,7 +449,7 @@ class VoxelScene:
         int
             Sum of every layer's voxel count, including hidden layers.
         """
-        return sum(layer.block_count() for layer in self.layers)
+        return sum(map(VoxelLayer.block_count, self.layers))
 
     def bounds(self) -> dict[str, int] | None:
         """

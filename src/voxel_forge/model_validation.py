@@ -159,3 +159,17 @@ def validate_voxel_size(voxel_size: float) -> float:
         msg = "voxel_size must be a finite number between 0.05 and 2.0"
         raise ValueError(msg)
     return voxel_size
+
+
+def validate_layer_index(
+    index: int, count: int, *, field_name: str = "layer_index"
+) -> int:
+    """Return a valid layer index, e.g. ``validate_layer_index(0, 1) == 0``.
+
+    An out-of-range index raises ``ValueError`` naming ``field_name``. Reuse
+    this validator for runtime scene edits and persisted active-layer fields.
+    """
+    if not 0 <= index < count:
+        msg = f"{field_name} must be between 0 and {count - 1}"
+        raise ValueError(msg)
+    return index

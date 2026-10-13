@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
+from voxel_forge.desktop.dialogs import prompt_scene_name
 from voxel_forge.desktop.paths import exports_dir, scenes_dir
 from voxel_forge.model import VoxelScene
 from voxel_forge.vox_io import import_vox
@@ -63,10 +64,11 @@ class FileActionsMixin:
             QMessageBox.critical(self, "เปิดไม่สำเร็จ", str(exc))
 
     def _new_scene(self) -> None:
-        name, ok = QInputDialog.getText(self, "Scene ใหม่", "ชื่อ scene:", text="my_model")
-        if not ok or not name.strip():
-            return
-        self._set_scene(VoxelScene(name=name.strip()))
+        name = prompt_scene_name(
+            self, "Scene ใหม่", default="my_model", label="ชื่อ scene:"
+        )
+        if name is not None:
+            self._set_scene(VoxelScene(name=name))
 
     def _open_scene(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(

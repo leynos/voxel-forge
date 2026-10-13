@@ -7,6 +7,8 @@ exports.
 
 from __future__ import annotations
 
+import typing as typ
+
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from voxel_forge.desktop.paths import blender_exports_dir, exports_dir
@@ -15,16 +17,27 @@ from voxel_forge.export_roblox import write_luau_file
 from voxel_forge.mesh_merge import merge_stats
 from voxel_forge.vox_io import export_obj, export_vox
 
+if typ.TYPE_CHECKING:
+    from pathlib import Path
+
+    from voxel_forge.model import VoxelScene
+
 
 class ExportActionsMixin:
     """Write the current scene out in the supported interchange formats."""
+
+    @staticmethod
+    def _write_blender_obj(scene: VoxelScene, *, merge_boxes: bool) -> Path:
+        """Write the selected Blender mesh representation and return its path."""
+        suffix = "merged" if merge_boxes else "per_voxel"
+        out = blender_exports_dir() / f"{scene.name}_{suffix}.obj"
+        return export_obj(scene, out, merge_boxes=merge_boxes)
 
     def _export_blender_quick(self) -> None:
         scene = self._require_scene()
         if not scene:
             return
-        out = blender_exports_dir() / f"{scene.name}_merged.obj"
-        export_obj(scene, out, merge_boxes=True)
+        out = self._write_blender_obj(scene, merge_boxes=True)
         st = merge_stats(scene)
         QMessageBox.information(
             self,
@@ -38,11 +51,9 @@ class ExportActionsMixin:
 
     def _export_obj_raw(self) -> None:
         scene = self._require_scene()
-        if not scene:
-            return
-        out = blender_exports_dir() / f"{scene.name}_per_voxel.obj"
-        export_obj(scene, out, merge_boxes=False)
-        QMessageBox.information(self, "Export สำเร็จ", str(out))
+        if scene is not None:
+            out = self._write_blender_obj(scene, merge_boxes=False)
+            QMessageBox.information(self, "Export สำเร็จ", str(out))
 
     def _export_vox(self) -> None:
         scene = self._require_scene()
