@@ -1,5 +1,5 @@
 .PHONY: fmt check-fmt lint lint-python dead-code install-nose duplication \
-        lint-editor typecheck test markdownlint nixie
+        lint-editor typecheck test test-editor markdownlint nixie
 
 # All gates share caches and must stay sequential, including under make -j.
 .NOTPARALLEL:
@@ -72,6 +72,9 @@ typecheck:
 
 test:
 	uv run pytest -q
+
+test-editor:
+	cd editor && npm test
 
 markdownlint:
 	$(MDLINT) $(MARKDOWN_PATHS)

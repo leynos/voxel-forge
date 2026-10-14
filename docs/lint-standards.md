@@ -52,6 +52,7 @@ make lint
 make lint-editor
 make typecheck
 make test
+make test-editor
 make markdownlint
 make nixie
 ```
@@ -59,6 +60,12 @@ make nixie
 Install editor dependencies with `npm ci --prefix editor` before running its
 checks. `make` also disables parallel target execution so `make -j` cannot
 silently overlap the shared caches.
+
+`make test-editor` executes the production edit handlers through the TypeScript
+compiler and Node's test runner with fixed geometry and controlled sockets.
+Both placement and removal send only while the socket is open; absent,
+connecting, closing, and closed sockets produce no send. These tests protect
+the readiness baseline's connection guard without starting WebGL or the bridge.
 
 ## Shared application helpers
 

@@ -346,9 +346,9 @@ function placementCell(): GridCell | null {
 /** Ask the bridge to place a voxel of the active colour under the cursor. */
 function placeVoxel(): void {
   const cell = placementCell();
-  if (!cell) return;
+  if (!cell || ws?.readyState !== WebSocket.OPEN) return;
   const message = { type: "editor_place", x: cell.x, y: cell.y, z: cell.z, color: activeColor };
-  ws?.send(JSON.stringify(message));
+  ws.send(JSON.stringify(message));
 }
 
 /** Ask the bridge to remove the voxel under the cursor. */
@@ -356,8 +356,8 @@ function removeVoxel(): void {
   const voxel = pickVoxel();
   if (!voxel) return;
   const data = sceneData;
-  if (!data) return;
-  ws?.send(
+  if (!data || ws?.readyState !== WebSocket.OPEN) return;
+  ws.send(
     JSON.stringify({
       type: "editor_remove",
       x: voxel.x,

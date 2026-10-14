@@ -47,6 +47,8 @@ jobs:
         run: make lint-editor
       - name: Check editor types
         run: make typecheck
+      - name: Test editor delivery
+        run: make test-editor
       - name: Build editor
         run: npm run build --prefix editor
       - name: Audit editor dependencies
