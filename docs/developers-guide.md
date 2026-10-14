@@ -161,7 +161,7 @@ lets each benefit from what the previous one cached.
 | `make install-nose` | Install the pinned Nose detector under `.tools/` |
 | `make duplication` | Install and run the blocking Nose scan |
 | `make lint-editor` | Check editor formatting and run Biome and oxlint |
-| `make typecheck` | Run the editor's strict TypeScript check |
+| `make typecheck` | Check editor sources and positive/negative type fixtures |
 | `make test` | Run Python tests with pytest |
 | `make test-editor` | Build the editor, then run Node and Playwright tests |
 | `make markdownlint` | Lint the maintained Markdown files |

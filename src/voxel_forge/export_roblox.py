@@ -25,12 +25,28 @@ def to_luau_merged(
 
     Parameters
     ----------
-    scene
+    scene : VoxelScene
         Scene to export.
-    parent
-        Luau expression the generated ``Model`` is parented to.
-    anchor
-        Whether every generated part is anchored.
+    parent : str, optional
+        Luau expression the generated ``Model`` is parented to. Defaults to
+        ``"workspace"``.
+    anchor : bool, optional
+        Whether every generated part is anchored. Defaults to ``True``.
+
+    Returns
+    -------
+    str
+        Generated Luau source code.
+
+    Examples
+    --------
+    The default parent appears in the generated script::
+
+        >>> from voxel_forge.export_roblox import to_luau_merged
+        >>> from voxel_forge.model import VoxelScene
+        >>> scene = VoxelScene("example")
+        >>> "model.Parent = workspace" in to_luau_merged(scene)
+        True
     """
     vs = scene.voxel_size
     boxes = merge_scene(scene)
@@ -90,6 +106,40 @@ def write_luau_file(scene: VoxelScene, directory: Path | None = None) -> Path:
     """Write the merged Luau export to ``directory`` and return its path.
 
     The default destination is ``~/.voxel-forge/exports``, created on demand.
+
+    Parameters
+    ----------
+    scene : VoxelScene
+        Scene to export.
+    directory : Path | None, optional
+        Destination directory. When omitted, use ``exports_dir()``; defaults
+        to ``None``.
+
+    Returns
+    -------
+    Path
+        Path to the written ``.server.luau`` file.
+
+    Raises
+    ------
+    OSError
+        If the destination directory cannot be created or the file cannot be
+        written. Errors from the default ``exports_dir()`` destination also
+        propagate.
+
+    Examples
+    --------
+    Write into a temporary directory and check the returned filename::
+
+        >>> from pathlib import Path
+        >>> from tempfile import TemporaryDirectory
+        >>> from voxel_forge.export_roblox import write_luau_file
+        >>> from voxel_forge.model import VoxelScene
+        >>> scene = VoxelScene("example")
+        >>> with TemporaryDirectory() as temporary_directory:
+        ...     output = write_luau_file(scene, Path(temporary_directory))
+        ...     output.name
+        'example_merged.server.luau'
     """
     directory = directory or exports_dir()
     directory.mkdir(parents=True, exist_ok=True)

@@ -44,6 +44,12 @@ exceptions or raise thresholds merely to obtain a passing gate.
 
 ## Contributor gates
 
+`make typecheck` includes `editor/type-tests` through a configuration extending
+the production compiler settings. The fixtures check valid public scene types
+and guard narrowing, and require rejection of invalid tuples, scene fields,
+optional values, and unchecked index access. Each `@ts-expect-error` names the
+intended rejection; the compiler fails if that expected diagnostic disappears.
+
 Run gates one at a time:
 
 ```sh

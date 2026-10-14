@@ -13,7 +13,7 @@
     "lint": "npm run lint:biome && npm run lint:oxlint",
     "lint:biome": "biome lint .",
     "lint:oxlint": "oxlint .",
-    "check:types": "tsc --noEmit"
+    "check:types": "tsc --noEmit --project tsconfig.type-tests.json"
   },
   "dependencies": {
     "three": "^0.175.0"

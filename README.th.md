@@ -235,7 +235,7 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
 
 ## สัญญาอนุญาต
 
-MIT — โค้ด VoxelForge เป็นของเรา
+MIT — โค้ด VoxelForge เป็นของผู้สร้าง
 
 Goxel ต้นฉบับ: GPL-3.0
 ([โครงการ Goxel](https://github.com/guillaumechereau/goxel))

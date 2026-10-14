@@ -10,7 +10,15 @@
     "useIgnoreFile": false
   },
   "files": {
-    "includes": ["src/**/*", "tests/**/*", "*.ts", "*.jsonc", "package.json", "tsconfig.json"],
+    "includes": [
+      "src/**/*",
+      "tests/**/*",
+      "type-tests/**/*",
+      "*.ts",
+      "*.jsonc",
+      "package.json",
+      "tsconfig*.json"
+    ],
     "ignoreUnknown": true
   },
   "formatter": {

@@ -234,6 +234,7 @@ The long-term direction of the project is recorded in the
 
 ## License
 
-MIT — โค้ด VoxelForge เป็นของเรา  
-Goxel ต้นฉบับ: GPL-3.0
-([โครงการ Goxel](https://github.com/guillaumechereau/goxel))
+MIT — VoxelForge code belongs to its authors.
+
+Original Goxel: GPL-3.0
+([Goxel project](https://github.com/guillaumechereau/goxel))
