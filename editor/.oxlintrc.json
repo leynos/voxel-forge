@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "jsPlugins": ["df12-lints/oxlint-plugin"],
+  "ignorePatterns": ["dist/**", "node_modules/**"],
+  "categories": {
+    "correctness": "off",
+    "nursery": "off",
+    "pedantic": "off",
+    "perf": "off",
+    "restriction": "off",
+    "style": "off",
+    "suspicious": "off"
+  },
+  "rules": {
+    "complexity": [
+      "error",
+      {
+        "max": 8,
+        "variant": "classic"
+      }
+    ],
+    "max-depth": [
+      "error",
+      {
+        "max": 3
+      }
+    ],
+    "df12/complex-conditional": [
+      "error",
+      {
+        "maxLogicalOperators": 1,
+        "includeTernary": true,
+        "includeNullishCoalescing": false
+      }
+    ],
+    "df12/require-module-jsdoc": "error",
+    "df12/require-public-jsdoc": "error",
+    "df12/require-private-jsdoc": "error"
+  }
+}

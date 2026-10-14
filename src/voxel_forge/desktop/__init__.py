@@ -1,7 +1,6 @@
-"""Desktop application adapter (Goxel-style native window).
+"""Native desktop adapter for the voxel domain model.
 
-``app.py`` is the driving adapter that opens the desktop window, ``viewport``
-renders the voxel grid, ``sidebar`` builds the palette and layer controls, and
-``paths`` resolves editor asset locations. All of it is an adapter over the
-domain model in :mod:`voxel_forge.model`.
+The window, viewport, sidebar, and action mixins use the optional PySide6
+stack. The ``launch`` entry point reports an actionable installation message
+when that extra is unavailable.
 """

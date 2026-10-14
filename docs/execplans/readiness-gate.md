@@ -381,21 +381,46 @@ and its snapshot. Each repair carries a regression contract, and the
 interleaving contract was validated against a deliberately sabotaged handler to
 show it fails when the lock is not held.
 
+### Follow-up: lint standards and current module boundaries (2026-10-14)
+
+The lint-standards follow-up adds base Pylint on managed PyPy 8, the df12
+Pylint plugin on CPython 3.14, and the blocking Skylos and Nose scans while
+retaining Python 3.11 as the runtime baseline. It also adopts the editor's
+Biome, oxlint, and strict TypeScript checks. Current contributor commands and
+tool versions are maintained in `docs/lint-standards.md` and
+`docs/developers-guide.md`.
+
+The module split keeps `model.py` as the domain facade over focused model,
+validation, decoding, and registry modules; `scene_store.py` owns persistence.
+`server.py` is the MCP composition root and public re-export surface. It creates
+the shared registry before importing `server_tools` modules, which register
+against the server's `mcp` instance and deliberately use its shared registry
+and publication helpers. The desktop app composes its action mixins, and the
+editor's `scene-data.ts` owns wire types and scene-data helpers. The developer
+guide records these current boundaries; the architecture description below is
+retained as the original readiness baseline.
+
+No roadmap item was completed by this lint-standards follow-up. The roadmap
+was unchanged from its base revision, and its phase 1.1 items were already
+complete.
+
 ## Context and orientation
 
-`src/voxel_forge/server.py` declares the MCP tools and starts the bridge before
-running FastMCP over standard input/output. `src/voxel_forge/bridge.py` owns the
-loopback WebSocket and minimal HTTP servers and adopts the same in-memory
+This paragraph records the architecture assessed at the start of the
+readiness work, before the later lint-standards refactor. At that baseline,
+`src/voxel_forge/server.py` declared the MCP tools and started the bridge before
+running FastMCP over standard input/output. `src/voxel_forge/bridge.py` owned the
+loopback WebSocket and minimal HTTP servers and adopted the same in-memory
 `SceneStore` instance as the server (through `bridge.use_store`), so both
-threads read and mutate one registry under one re-entrant lock held across each
-mutation and the snapshot it broadcasts. `src/voxel_forge/model.py` defines
+threads read and mutated one registry under one re-entrant lock held across
+each mutation and the snapshot it broadcast. `src/voxel_forge/model.py` defined
 scenes, layers, palette resolution, voxel mutation, and that registry lock as
 pure domain state, with no filesystem access.
-`src/voxel_forge/scene_store.py` is the persistence adapter that owns scene
+`src/voxel_forge/scene_store.py` was the persistence adapter that owned scene
 directory resolution, directory creation, and JSON reads and writes.
-`src/voxel_forge/vox_io.py` reads and writes MagicaVoxel version 150 and
-Wavefront OBJ files. `editor/src/main.ts` renders scenes and sends browser
-edits. `run-mcp.bat`, `pyproject.toml`, and the frontend manifests define
+`src/voxel_forge/vox_io.py` read and wrote MagicaVoxel version 150 and
+Wavefront OBJ files. `editor/src/main.ts` rendered scenes and sent browser
+edits. `run-mcp.bat`, `pyproject.toml`, and the frontend manifests defined
 installation and launch behaviour.
 
 The MCP transport is a JSON-RPC byte stream on stdout; ordinary diagnostics on
@@ -406,9 +431,9 @@ A VOX version 150 single model contains a `SIZE` chunk followed by an `XYZI`
 chunk, with an optional `RGBA` palette chunk whose first entry represents
 palette index 1.
 
-The baseline has no tests or CI. Python compilation, core imports, the Vite
-bundle, and Mermaid validation pass. The documented launcher, wheel build,
-Ruff, TypeScript, Markdown lint, and npm audit fail.
+The assessed baseline had no tests or CI. Python compilation, core imports, the
+Vite bundle, and Mermaid validation passed. The documented launcher, wheel
+build, Ruff, TypeScript, Markdown lint, and npm audit failed.
 
 ## Plan of work
 

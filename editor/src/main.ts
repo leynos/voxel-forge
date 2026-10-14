@@ -1,29 +1,62 @@
+/**
+ * @file Browser voxel editor front end.
+ *
+ * Renders the scene held by the MCP bridge with three.js, keeps it in step over
+ * the bridge WebSocket, and turns mouse input into placement and removal
+ * requests. Responsibilities:
+ *
+ * - build instanced voxel meshes grouped by palette colour;
+ * - frame the camera on the scene and render the palette strip;
+ * - maintain the bridge connection, reconnecting when it drops;
+ * - translate pointer events into grid cells and send edit messages.
+ */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { asSceneData, groupBlocksByColour, resolveRgb, sceneFromJson } from "./scene-data";
+import type { Block, SceneData } from "./scene-data";
 
 const WS_URL = "ws://127.0.0.1:8765";
 const BRIDGE_HTTP = "http://127.0.0.1:8766";
+const RECONNECT_DELAY_MS = 2000;
+/** Fraction of a voxel cell filled by its cube, leaving a visible seam. */
+const VOXEL_GAP = 0.96;
+/** `userData` key under which an instanced mesh records its source blocks. */
+const USER_DATA_BLOCKS = "blocks";
+const USER_DATA_LAYER = "layer";
+const MOUSE_BUTTON = { LEFT: 0, MIDDLE: 1, RIGHT: 2 } as const;
 
-type SceneData = {
-  name: string;
-  voxel_size?: number;
-  palette: Record<string, number[]>;
-  active_layer: number;
-  layers: Array<{
-    name: string;
-    visible: boolean;
-    blocks: [number, number, number, string][];
-  }>;
+type GridCell = { x: number; y: number; z: number };
+
+type PickedVoxel = GridCell & {
+  layer: number;
+  color: string;
+  normal: THREE.Vector3 | null;
 };
+
+type Bounds = { min: THREE.Vector3; max: THREE.Vector3 };
 
 let sceneData: SceneData | null = null;
 let activeColor = "1";
 let ws: WebSocket | null = null;
 
-const canvas = document.getElementById("canvas") as HTMLCanvasElement;
-const statusEl = document.getElementById("status")!;
-const sceneInfoEl = document.getElementById("scene-info")!;
-const paletteEl = document.getElementById("palette")!;
+/** Look up an element the page is required to provide, failing loudly if absent. */
+function requireElement(id: string): HTMLElement {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`Missing required element #${id}`);
+  return el;
+}
+
+/** Look up a required element and confirm it is a canvas. */
+function requireCanvas(id: string): HTMLCanvasElement {
+  const el = requireElement(id);
+  if (!(el instanceof HTMLCanvasElement)) throw new Error(`Element #${id} is not a canvas`);
+  return el;
+}
+
+const canvas = requireCanvas("canvas");
+const statusEl = requireElement("status");
+const sceneInfoEl = requireElement("scene-info");
+const paletteEl = requireElement("palette");
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -37,10 +70,11 @@ camera.position.set(10, 10, 10);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
+// Left and right drags belong to the editor, so only the middle button orbits.
 controls.mouseButtons = {
-  LEFT: null as unknown as THREE.MOUSE,
+  LEFT: null,
   MIDDLE: THREE.MOUSE.ROTATE,
-  RIGHT: null as unknown as THREE.MOUSE,
+  RIGHT: null,
 };
 
 const ambient = new THREE.AmbientLight(0xffffff, 0.45);
@@ -63,250 +97,287 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
+/** Edge length of one voxel in world units. */
 function voxelSize(): number {
   return sceneData?.voxel_size ?? 1;
 }
 
-function resolveRgb(palette: Record<string, number[]>, key: string): THREE.Color {
-  const p = palette[key];
-  if (p) return new THREE.Color(p[0] / 255, p[1] / 255, p[2] / 255);
-  if (key.startsWith("#") && key.length === 7) {
-    return new THREE.Color(key);
-  }
-  return new THREE.Color(0xffffff);
-}
-
+/** Centre of a grid cell in world space. */
 function worldPos(gx: number, gy: number, gz: number): THREE.Vector3 {
   const vs = voxelSize();
   return new THREE.Vector3((gx + 0.5) * vs, (gy + 0.5) * vs, (gz + 0.5) * vs);
 }
 
-function rebuildVoxels() {
-  while (voxelGroup.children.length) {
-    const c = voxelGroup.children[0];
-    voxelGroup.remove(c);
-    if (c instanceof THREE.InstancedMesh) {
-      c.geometry.dispose();
-      (c.material as THREE.Material).dispose();
-    }
+/** Release the GPU resources held by a mesh material. */
+function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
+  if (!Array.isArray(material)) {
+    material.dispose();
+    return;
   }
-  if (!sceneData) return;
+  for (const entry of material) entry.dispose();
+}
+
+/** Empty the voxel group, disposing the geometry and materials it held. */
+function disposeVoxelMeshes(): void {
+  for (const child of voxelGroup.children) {
+    if (!(child instanceof THREE.InstancedMesh)) continue;
+    child.geometry.dispose();
+    disposeMaterial(child.material);
+  }
+  voxelGroup.clear();
+}
+
+/** Build one instanced mesh holding every block of a single colour. */
+function buildColourMesh(
+  geometry: THREE.BoxGeometry,
+  palette: Record<string, number[]>,
+  colour: string,
+  blocks: Block[],
+): THREE.InstancedMesh {
+  const material = new THREE.MeshStandardMaterial({
+    color: resolveRgb(palette, colour),
+    roughness: 0.85,
+    metalness: 0.05,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, blocks.length);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  const dummy = new THREE.Object3D();
+  blocks.forEach(([x, y, z, c], i) => {
+    dummy.position.copy(worldPos(x, y, z));
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+    mesh.userData[`v_${i}`] = { x, y, z, color: c };
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.userData[USER_DATA_BLOCKS] = blocks;
+  return mesh;
+}
+
+/** Refresh the status line describing the scene, its size and active layer. */
+function updateSceneInfo(data: SceneData, vs: number): void {
+  const detail = vs < 1 ? `${Math.round(1 / vs)}x` : "1x";
+  const layerName = data.layers[data.active_layer]?.name ?? "?";
+  const count = countBlocks();
+  const summary = `${data.name} · ${count} voxels · detail ${detail} · layer ${layerName}`;
+  sceneInfoEl.textContent = `Scene: ${summary}`;
+}
+
+/** Rebuild every voxel mesh from the current scene and refresh the chrome. */
+function rebuildVoxels(): void {
+  disposeVoxelMeshes();
+  const data = sceneData;
+  if (!data) return;
 
   const vs = voxelSize();
-  const gap = 0.96;
-  const box = vs * gap;
+  const box = vs * VOXEL_GAP;
   const baseGeo = new THREE.BoxGeometry(box, box, box);
-
-  // Layers stay separate so each rendered voxel remembers the layer it came
-  // from. Merging them by colour loses that identity, which made an editor
-  // removal target the active layer instead of the layer actually clicked.
-  const visibleLayers: Array<[number, [number, number, number, string][]]> = [];
-  sceneData.layers.forEach((layer, layerIndex) => {
-    if (layer.visible) {
-      visibleLayers.push([layerIndex, layer.blocks]);
+  data.layers.forEach((layer, layerIndex) => {
+    if (!layer.visible) return;
+    for (const [colour, blocks] of groupBlocksByColour(layer.blocks)) {
+      const mesh = buildColourMesh(baseGeo, data.palette, colour, blocks);
+      mesh.userData[USER_DATA_LAYER] = layerIndex;
+      voxelGroup.add(mesh);
     }
   });
 
-  const dummy = new THREE.Object3D();
-  for (const layerEntry of visibleLayers) {
-    const layerIndex = layerEntry[0];
-    const blocks = layerEntry[1];
-    const byColor = new Map<string, Array<[number, number, number, string]>>();
-    for (const block of blocks) {
-      const [x, y, z, color] = block;
-      if (!byColor.has(color)) byColor.set(color, []);
-      byColor.get(color)!.push([x, y, z, color]);
-    }
-
-    for (const colourEntry of Array.from(byColor.entries())) {
-      const color = colourEntry[0];
-      const colourBlocks = colourEntry[1];
-      const mat = new THREE.MeshStandardMaterial({
-        color: resolveRgb(sceneData.palette, color),
-        roughness: 0.85,
-        metalness: 0.05,
-      });
-      const mesh = new THREE.InstancedMesh(baseGeo, mat, colourBlocks.length);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-
-      colourBlocks.forEach(([x, y, z, c], i) => {
-        const p = worldPos(x, y, z);
-        dummy.position.copy(p);
-        dummy.updateMatrix();
-        mesh.setMatrixAt(i, dummy.matrix);
-        mesh.userData[`v_${i}`] = { x, y, z, color: c, layer: layerIndex };
-      });
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.userData.blocks = colourBlocks;
-      mesh.userData.layer = layerIndex;
-      voxelGroup.add(mesh);
-    }
-  }
-
   frameCamera();
-  const res = vs < 1 ? `${Math.round(1 / vs)}x` : "1x";
-  sceneInfoEl.textContent =
-    `Scene: ${sceneData.name} · ${countBlocks()} voxels · detail ${res} · layer ${sceneData.layers[sceneData.active_layer]?.name ?? "?"}`;
+  updateSceneInfo(data, vs);
   renderPalette();
 }
 
-function frameCamera() {
-  if (!sceneData || countBlocks() === 0) return;
-  const vs = voxelSize();
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-  for (const layer of sceneData.layers) {
+/** Grid-space bounding box of every block in the scene, visible or not. */
+function sceneBounds(data: SceneData): Bounds {
+  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+  const point = new THREE.Vector3();
+  for (const layer of data.layers) {
     for (const [x, y, z] of layer.blocks) {
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      minZ = Math.min(minZ, z);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-      maxZ = Math.max(maxZ, z);
+      point.set(x, y, z);
+      min.min(point);
+      max.max(point);
     }
   }
-  const cx = ((minX + maxX + 1) / 2) * vs;
-  const cy = ((minY + maxY + 1) / 2) * vs;
-  const cz = ((minZ + maxZ + 1) / 2) * vs;
-  const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 4) * vs;
+  return { min, max };
+}
+
+/** Point the camera at the centre of the scene from a comfortable distance. */
+function frameCamera(): void {
+  const data = sceneData;
+  if (!data) return;
+  if (countBlocks() === 0) return;
+  const vs = voxelSize();
+  const { min, max } = sceneBounds(data);
+  const cx = ((min.x + max.x + 1) / 2) * vs;
+  const cy = ((min.y + max.y + 1) / 2) * vs;
+  const cz = ((min.z + max.z + 1) / 2) * vs;
+  const span = Math.max(max.x - min.x, max.y - min.y, max.z - min.z, 4) * vs;
   controls.target.set(cx, cy, cz);
   camera.position.set(cx + span * 1.4, cy + span * 1.1, cz + span * 1.4);
   controls.update();
 }
 
+/** Total number of blocks across the visible layers. */
 function countBlocks(): number {
   if (!sceneData) return 0;
   return sceneData.layers.reduce((n, l) => n + (l.visible ? l.blocks.length : 0), 0);
 }
 
-function renderPalette() {
+/** Build one palette swatch that selects its colour when clicked. */
+function createSwatch(key: string, rgb: number[]): HTMLDivElement {
+  const sw = document.createElement("div");
+  sw.className = key === activeColor ? "swatch active" : "swatch";
+  sw.style.background = `rgb(${rgb.join(",")})`;
+  sw.title = key;
+  sw.onclick = () => {
+    activeColor = key;
+    renderPalette();
+  };
+  return sw;
+}
+
+/** Redraw the palette strip, highlighting the active colour. */
+function renderPalette(): void {
   paletteEl.innerHTML = "";
-  if (!sceneData) return;
-  for (const [key, rgb] of Object.entries(sceneData.palette)) {
-    const sw = document.createElement("div");
-    sw.className = "swatch" + (key === activeColor ? " active" : "");
-    sw.style.background = `rgb(${rgb.join(",")})`;
-    sw.title = key;
-    sw.onclick = () => {
-      activeColor = key;
-      renderPalette();
-    };
-    paletteEl.appendChild(sw);
+  const data = sceneData;
+  if (!data) return;
+  for (const [key, rgb] of Object.entries(data.palette)) {
+    paletteEl.appendChild(createSwatch(key, rgb));
   }
 }
 
-function connectWs() {
-  ws = new WebSocket(WS_URL);
-  ws.onopen = () => {
+/** Open the bridge WebSocket, retrying whenever the connection drops. */
+function connectWs(): void {
+  const socket = new WebSocket(WS_URL);
+  ws = socket;
+  socket.onopen = () => {
     statusEl.textContent = "Bridge connected";
-    ws!.send(JSON.stringify({ type: "get_scene" }));
+    socket.send(JSON.stringify({ type: "get_scene" }));
   };
-  ws.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === "scene_update" && msg.scene) {
-      sceneData = msg.scene as SceneData;
-      rebuildVoxels();
-    }
+  socket.onmessage = (ev: MessageEvent<string>) => {
+    const scene = sceneFromJson(ev.data);
+    if (!scene) return;
+    sceneData = scene;
+    rebuildVoxels();
   };
-  ws.onclose = () => {
+  socket.onclose = () => {
     statusEl.textContent = "Bridge disconnected — retry in 2s";
-    setTimeout(connectWs, 2000);
+    setTimeout(connectWs, RECONNECT_DELAY_MS);
   };
-  ws.onerror = () => {
+  socket.onerror = () => {
     statusEl.textContent = "Bridge error — start MCP server first";
   };
 }
 
-async function fetchInitialScene() {
+/** Seed the view from the bridge's HTTP snapshot, ignoring a bridge that is down. */
+async function fetchInitialScene(): Promise<void> {
   try {
     const res = await fetch(`${BRIDGE_HTTP}/scene`);
-    const data = await res.json();
-    if (data.name) {
-      sceneData = data as SceneData;
-      rebuildVoxels();
-    }
+    const payload: unknown = await res.json();
+    const data = asSceneData(payload);
+    if (!data) return;
+    sceneData = data;
+    rebuildVoxels();
   } catch {
     /* bridge not up yet */
   }
 }
 
-function screenToRay(e: MouseEvent) {
+/** Aim the shared raycaster at the pointer position of a mouse event. */
+function screenToRay(e: MouseEvent): void {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
 }
 
-function pickVoxel(): { x: number; y: number; z: number; color: string; layer: number } | null {
-  const hits = raycaster.intersectObjects(voxelGroup.children, false);
-  if (!hits.length) return null;
-  const hit = hits[0];
-  const mesh = hit.object as THREE.InstancedMesh;
-  const idx = hit.instanceId ?? 0;
-  const blocks = mesh.userData.blocks as [number, number, number, string][];
-  const layer = (mesh.userData.layer as number | undefined) ?? 0;
-  if (blocks && blocks[idx]) {
-    const [x, y, z, color] = blocks[idx];
-    return { x, y, z, color, layer };
-  }
-  return null;
+/** Block recorded at an instance index of a voxel mesh. */
+function blockAt(mesh: THREE.InstancedMesh, index: number): Block | undefined {
+  const blocks = mesh.userData[USER_DATA_BLOCKS] as Block[] | undefined;
+  return blocks?.[index];
 }
 
-function pickGround(): THREE.Vector3 | null {
+/** Voxel under the current ray, along with the normal of the face that was hit. */
+function pickVoxel(): PickedVoxel | null {
+  const hit = raycaster.intersectObjects(voxelGroup.children, false)[0];
+  if (!hit) return null;
+  const mesh = hit.object;
+  if (!(mesh instanceof THREE.InstancedMesh)) return null;
+  const block = blockAt(mesh, hit.instanceId ?? 0);
+  if (!block) return null;
+  const [x, y, z, color] = block;
+  return {
+    x,
+    y,
+    z,
+    color,
+    layer: Number(mesh.userData[USER_DATA_LAYER]),
+    normal: hit.face?.normal ?? null,
+  };
+}
+
+/** Grid cell on the ground plane under the current ray. */
+function groundCell(): GridCell | null {
   const target = new THREE.Vector3();
-  if (raycaster.ray.intersectPlane(plane, target)) {
-    return target;
-  }
-  return null;
+  if (!raycaster.ray.intersectPlane(plane, target)) return null;
+  const vs = voxelSize();
+  return { x: Math.floor(target.x / vs), y: 0, z: Math.floor(target.z / vs) };
 }
 
-// Sending on a CONNECTING socket throws, which would surface as a silent lost
-// edit rather than the offline state the status bar already reports.
-function sendToBridge(message: unknown) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message));
-  }
+/** Grid cell sitting against the hit face of a picked voxel. */
+function adjacentCell(voxel: PickedVoxel): GridCell | null {
+  const normal = voxel.normal;
+  if (!normal) return null;
+  const vs = voxelSize();
+  const wx = (voxel.x + 0.5) * vs + Math.round(normal.x) * vs;
+  const wy = (voxel.y + 0.5) * vs + Math.round(normal.y) * vs;
+  const wz = (voxel.z + 0.5) * vs + Math.round(normal.z) * vs;
+  return { x: Math.floor(wx / vs), y: Math.floor(wy / vs), z: Math.floor(wz / vs) };
+}
+
+/** Grid cell that a new voxel should occupy for the current ray. */
+function placementCell(): GridCell | null {
+  const voxel = pickVoxel();
+  if (!voxel) return groundCell();
+  return adjacentCell(voxel);
+}
+
+/** Ask the bridge to place a voxel of the active colour under the cursor. */
+function placeVoxel(): void {
+  const cell = placementCell();
+  if (!cell || ws?.readyState !== WebSocket.OPEN) return;
+  const message = { type: "editor_place", x: cell.x, y: cell.y, z: cell.z, color: activeColor };
+  ws.send(JSON.stringify(message));
+}
+
+/** Ask the bridge to remove the voxel under the cursor. */
+function removeVoxel(): void {
+  const voxel = pickVoxel();
+  if (!voxel) return;
+  const data = sceneData;
+  if (!data || ws?.readyState !== WebSocket.OPEN) return;
+  ws.send(
+    JSON.stringify({
+      type: "editor_remove",
+      x: voxel.x,
+      y: voxel.y,
+      z: voxel.z,
+      scene_name: data.name,
+      layer_index: voxel.layer,
+    }),
+  );
 }
 
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 canvas.addEventListener("mousedown", (e) => {
-  if (e.button === 1) return;
+  if (e.button === MOUSE_BUTTON.MIDDLE) return;
   screenToRay(e);
-  const vs = voxelSize();
-
-  if (e.button === 0) {
-    const hit = pickVoxel();
-    let x: number, y: number, z: number;
-    if (hit) {
-      const n = raycaster.intersectObjects(voxelGroup.children, false)[0].face!.normal;
-      const wx = (hit.x + 0.5) * vs + Math.round(n.x) * vs;
-      const wy = (hit.y + 0.5) * vs + Math.round(n.y) * vs;
-      const wz = (hit.z + 0.5) * vs + Math.round(n.z) * vs;
-      x = Math.floor(wx / vs);
-      y = Math.floor(wy / vs);
-      z = Math.floor(wz / vs);
-    } else {
-      const g = pickGround();
-      if (!g) return;
-      x = Math.floor(g.x / vs);
-      y = 0;
-      z = Math.floor(g.z / vs);
-    }
-    sendToBridge({ type: "editor_place", x, y, z, color: activeColor });
-  } else if (e.button === 2) {
-    const hit = pickVoxel();
-    if (hit && sceneData) {
-      sendToBridge({
-        type: "editor_remove",
-        x: hit.x,
-        y: hit.y,
-        z: hit.z,
-        scene_name: sceneData.name,
-        layer_index: hit.layer,
-      });
-    }
+  if (e.button === MOUSE_BUTTON.LEFT) {
+    placeVoxel();
+    return;
   }
+  if (e.button === MOUSE_BUTTON.RIGHT) removeVoxel();
 });
 
 window.addEventListener("resize", () => {
@@ -315,7 +386,8 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-function animate() {
+/** Drive the render loop. */
+function animate(): void {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);

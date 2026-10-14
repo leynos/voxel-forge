@@ -13,8 +13,8 @@ import json
 from pathlib import Path
 
 from .model import VoxelScene, validate_scene_name
+from .paths import APPLICATION_DIRECTORY_NAME as SCENE_DIRECTORY_NAME
 
-SCENE_DIRECTORY_NAME = ".voxel-forge"
 SCENE_SUBDIRECTORY_NAME = "scenes"
 SCENE_FILE_SUFFIX = ".json"
 
@@ -97,7 +97,9 @@ def save_scene(scene: VoxelScene) -> Path:
         If the scenes directory or the scene file cannot be written.
     """
     path = scene_path(scene.name)
-    path.write_text(json.dumps(scene.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(scene.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return path
 
 
@@ -127,7 +129,8 @@ def load_scene(name: str) -> VoxelScene:
     """
     path = scenes_dir() / f"{validate_scene_name(name)}{SCENE_FILE_SUFFIX}"
     if not path.is_file():
-        raise FileNotFoundError(f"ไม่พบ scene '{name}' ที่ {path}")
+        msg = f"ไม่พบ scene '{name}' ที่ {path}"
+        raise FileNotFoundError(msg)
     return VoxelScene.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 

@@ -1,23 +1,9 @@
-"""โฟลเดอร์มาตรฐานของ VoxelForge Desktop."""
+"""Desktop import surface for the application's shared storage directories.
 
-from __future__ import annotations
+For example, ``scenes_dir()`` returns the scene directory used by the MCP
+server and scene persistence too.
+"""
 
-from pathlib import Path
+from voxel_forge.paths import blender_exports_dir, exports_dir, scenes_dir
 
-
-def scenes_dir() -> Path:
-    p = Path.home() / ".voxel-forge" / "scenes"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-def exports_dir() -> Path:
-    p = Path.home() / ".voxel-forge" / "exports"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-def blender_exports_dir() -> Path:
-    p = exports_dir() / "blender"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+__all__ = ["blender_exports_dir", "exports_dir", "scenes_dir"]

@@ -11,3 +11,5 @@ test_out.obj
 *.spec.bak
 .DS_Store
 Thumbs.db
+
+.tools/

@@ -12,8 +12,7 @@ jobs:
   readiness:
     runs-on: ubuntu-latest
     steps:
-      # Actions are pinned to full commit SHAs so a moved tag cannot change what
-      # runs in this workflow.
+      # Pin action identities, retaining the readiness baseline security policy.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
@@ -25,31 +24,33 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: editor/package-lock.json
+      - name: Install Python interpreters
+        run: uv python install 3.11 3.14 pypy@3.12
       - name: Install Python dependencies
-        run: uv sync --locked --all-extras
-      - name: Check Python lint
-        run: uv run ruff check src tests
+        run: uv sync --locked --python 3.11 --all-extras
+      - name: Cache Nose detector
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .tools/nose
+          key: nose-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pyproject.toml') }}
       - name: Check Python formatting
-        run: >-
-          uv run ruff format --check
-          src/voxel_forge/bridge.py
-          src/voxel_forge/desktop/launch.py
-          src/voxel_forge/desktop/viewport.py
-          src/voxel_forge/model.py
-          src/voxel_forge/procedural.py
-          src/voxel_forge/scene_store.py
-          src/voxel_forge/server.py
-          src/voxel_forge/vox_io.py
-          tests
+        run: make check-fmt
+      - name: Check Python lint
+        run: make lint
       - name: Test Python contracts
-        run: uv run pytest -q
+        run: make test
       - name: Build Python wheel
         run: uv build --wheel
       - name: Install editor dependencies
         run: npm ci --prefix editor
+      - name: Check editor formatting and lint
+        run: make lint-editor
       - name: Check editor types
-        working-directory: editor
-        run: npm exec tsc -- --noEmit
+        run: make typecheck
+      - name: Install editor test browser
+        run: npx --prefix editor playwright install --with-deps chromium
+      - name: Test editor delivery
+        run: make test-editor
       - name: Build editor
         run: npm run build --prefix editor
       - name: Audit editor dependencies

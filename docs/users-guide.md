@@ -127,6 +127,24 @@ The desktop application opens scenes from the same directory that the MCP
 server saves them to, so a scene created through an AI client can be opened
 there afterwards.
 
+## Python export helpers
+
+Python integrations can call the OBJ and merged Roblox Luau export helpers
+directly. Given a scene and destination path, optional settings are
+keyword-only:
+
+```python
+from voxel_forge.export_roblox import to_luau_merged
+from voxel_forge.vox_io import export_obj
+
+obj_path = export_obj(scene, path, merge_boxes=False)
+luau_source = to_luau_merged(scene, parent="workspace", anchor=False)
+```
+
+The MCP tools, including `voxelforge_export_obj`, are unchanged. Integrations
+upgrading from positional optional arguments should follow the
+[0.3 migration guide](migration-0.3.md).
+
 ## Windows batch wrappers
 
 Four batch files are provided for Windows: `run-mcp.bat`, `run-desktop.bat`,
@@ -145,3 +163,6 @@ verification gates a change must pass.
 
 Upgrading an existing 0.1.x installation is covered by
 [migrating to 0.2](migration-0.2.md).
+
+The [0.3 migration guide](migration-0.3.md) records the Python export API and
+persisted-scene type changes for that release.

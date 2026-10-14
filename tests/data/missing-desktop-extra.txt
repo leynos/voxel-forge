@@ -1,0 +1,4 @@
+The VoxelForge desktop application requires the optional 'desktop' extra (missing dependency: {missing}).
+Install it with one of:
+  uv tool install 'voxel-forge[desktop] @ git+https://github.com/leynos/voxel-forge'
+  uv sync --extra desktop  (from a checkout)

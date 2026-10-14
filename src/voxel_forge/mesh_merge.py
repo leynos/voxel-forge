@@ -1,14 +1,21 @@
-"""Greedy box merging — รวม voxel สีเดียวกันที่ติดกันเป็นกล่องใหญ่ ลด mesh/part ตอน export."""
+"""Greedy box merging combines adjacent same-colour voxels into larger parts."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import dataclasses
+import operator
+import typing as typ
 
-from .model import VoxelScene
+if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
+    from .model import VoxelScene
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class MergedBox:
+    """An axis-aligned run of same-coloured voxels, inclusive of both corners."""
+
     x1: int
     y1: int
     z1: int
@@ -19,7 +26,68 @@ class MergedBox:
 
     @property
     def volume(self) -> int:
-        return (self.x2 - self.x1 + 1) * (self.y2 - self.y1 + 1) * (self.z2 - self.z1 + 1)
+        """The number of voxels the box stands in for."""
+        return (
+            (self.x2 - self.x1 + 1) * (self.y2 - self.y1 + 1) * (self.z2 - self.z1 + 1)
+        )
+
+
+@dataclasses.dataclass(slots=True)
+class _MergeState:
+    """The voxel map plus the set of cells no box has claimed yet."""
+
+    voxels: dict[tuple[int, int, int], str]
+    remaining: set[tuple[int, int, int]]
+
+    def matches(self, cell: tuple[int, int, int], colour: str) -> bool:
+        """Return whether the cell is still unclaimed and of the given colour."""
+        return cell in self.remaining and self.voxels[cell] == colour
+
+    def slab_matches(
+        self, cells: cabc.Iterable[tuple[int, int, int]], colour: str
+    ) -> bool:
+        """Return whether every cell of a candidate slab matches the colour."""
+        return all(self.matches(cell, colour) for cell in cells)
+
+    def claim(self, box: MergedBox) -> None:
+        """Remove every cell inside the box from the unclaimed set."""
+        self.remaining.difference_update(
+            (xi, yi, zi)
+            for xi in range(box.x1, box.x2 + 1)
+            for yi in range(box.y1, box.y2 + 1)
+            for zi in range(box.z1, box.z2 + 1)
+        )
+
+
+def _grow_box(state: _MergeState, seed: tuple[int, int, int]) -> MergedBox:
+    """Return the largest single-colour box anchored at the seed cell.
+
+    The box grows along X first, then Z, then Y, taking each axis as far as a
+    whole slab of unclaimed voxels shares the seed colour.
+    """
+    colour = state.voxels[seed]
+    x0, y0, z0 = seed
+    max_x, max_y, max_z = x0, y0, z0
+
+    while state.matches((max_x + 1, y0, z0), colour):
+        max_x += 1
+
+    while state.slab_matches(
+        ((xi, y0, max_z + 1) for xi in range(x0, max_x + 1)), colour
+    ):
+        max_z += 1
+
+    while state.slab_matches(
+        (
+            (xi, max_y + 1, zi)
+            for xi in range(x0, max_x + 1)
+            for zi in range(z0, max_z + 1)
+        ),
+        colour,
+    ):
+        max_y += 1
+
+    return MergedBox(x0, y0, z0, max_x, max_y, max_z, colour)
 
 
 def collect_voxels(scene: VoxelScene) -> dict[tuple[int, int, int], str]:
@@ -28,64 +96,35 @@ def collect_voxels(scene: VoxelScene) -> dict[tuple[int, int, int], str]:
     for layer in scene.layers:
         if not layer.visible:
             continue
-        for pos, color in layer.blocks.items():
-            voxels[pos] = color
+        voxels.update(dict(layer.blocks.items()))
     return voxels
 
 
 def merge_boxes(voxels: dict[tuple[int, int, int], str]) -> list[MergedBox]:
-    """
+    """Merge neighbouring same-coloured voxels into as few boxes as possible.
+
     Greedy merge: ขยายกล่องจากมุม (min Y, Z, X) ให้ใหญ่สุดเท่าที่สีเดียวกันและติดกัน
-    ลด 17k voxels เหลือหลักร้อย part ได้ในหลายโมเดล
+    ลด 17k voxels เหลือหลักร้อย part ได้ในหลายโมเดล.
     """
-    remaining = set(voxels.keys())
+    state = _MergeState(voxels=voxels, remaining=set(voxels.keys()))
     boxes: list[MergedBox] = []
 
-    while remaining:
-        seed = min(remaining, key=lambda p: (p[1], p[2], p[0]))
-        color = voxels[seed]
-        x0, y0, z0 = seed
-
-        max_x = x0
-        while (max_x + 1, y0, z0) in remaining and voxels[(max_x + 1, y0, z0)] == color:
-            max_x += 1
-
-        max_z = z0
-        while True:
-            ok = all(
-                (xi, y0, max_z + 1) in remaining and voxels[(xi, y0, max_z + 1)] == color
-                for xi in range(x0, max_x + 1)
-            )
-            if not ok:
-                break
-            max_z += 1
-
-        max_y = y0
-        while True:
-            ok = all(
-                (xi, max_y + 1, zi) in remaining and voxels[(xi, max_y + 1, zi)] == color
-                for xi in range(x0, max_x + 1)
-                for zi in range(z0, max_z + 1)
-            )
-            if not ok:
-                break
-            max_y += 1
-
-        for xi in range(x0, max_x + 1):
-            for yi in range(y0, max_y + 1):
-                for zi in range(z0, max_z + 1):
-                    remaining.discard((xi, yi, zi))
-
-        boxes.append(MergedBox(x0, y0, z0, max_x, max_y, max_z, color))
+    while state.remaining:
+        seed = min(state.remaining, key=operator.itemgetter(1, 2, 0))
+        box = _grow_box(state, seed)
+        state.claim(box)
+        boxes.append(box)
 
     return boxes
 
 
 def merge_scene(scene: VoxelScene) -> list[MergedBox]:
+    """Return the merged boxes for every visible layer of a scene."""
     return merge_boxes(collect_voxels(scene))
 
 
 def merge_stats(scene: VoxelScene) -> dict[str, int | float]:
+    """Return how much the greedy merge reduces the exported part count."""
     voxels = collect_voxels(scene)
     boxes = merge_boxes(dict(voxels))
     raw = len(voxels)

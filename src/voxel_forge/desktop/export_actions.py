@@ -1,0 +1,88 @@
+"""Export actions for the main window.
+
+The mixin in this module is only ever combined with
+:class:`voxel_forge.desktop.app.MainWindow`, whose current scene it
+exports.
+"""
+
+from __future__ import annotations
+
+import typing as typ
+
+from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+from voxel_forge.desktop.paths import blender_exports_dir, exports_dir
+from voxel_forge.desktop.shell import open_folder
+from voxel_forge.export_roblox import write_luau_file
+from voxel_forge.mesh_merge import merge_stats
+from voxel_forge.vox_io import export_obj, export_vox
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
+
+    from voxel_forge.model import VoxelScene
+
+
+class ExportActionsMixin:
+    """Write the current scene out in the supported interchange formats."""
+
+    @staticmethod
+    def _write_blender_obj(scene: VoxelScene, *, merge_boxes: bool) -> Path:
+        """Write the selected Blender mesh representation and return its path."""
+        suffix = "merged" if merge_boxes else "per_voxel"
+        out = blender_exports_dir() / f"{scene.name}_{suffix}.obj"
+        return export_obj(scene, out, merge_boxes=merge_boxes)
+
+    def _export_blender_quick(self) -> None:
+        scene = self._require_scene()
+        if not scene:
+            return
+        out = self._write_blender_obj(scene, merge_boxes=True)
+        st = merge_stats(scene)
+        QMessageBox.information(
+            self,
+            "Export Blender สำเร็จ",
+            f"ไฟล์: {out}\n\n"
+            f"{st['voxels']} voxels → {st['merged_boxes']} mesh parts\n"
+            f"ลด mesh {st['reduction_percent']}%\n\n"
+            "Blender: File → Import → Wavefront (.obj)",
+        )
+        open_folder(blender_exports_dir())
+
+    def _export_obj_raw(self) -> None:
+        scene = self._require_scene()
+        if scene is not None:
+            out = self._write_blender_obj(scene, merge_boxes=False)
+            QMessageBox.information(self, "Export สำเร็จ", str(out))
+
+    def _export_vox(self) -> None:
+        scene = self._require_scene()
+        if not scene:
+            return
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export .vox",
+            str(exports_dir() / f"{scene.name}.vox"),
+            "MagicaVoxel (*.vox)",
+        )
+        if not path_str:
+            return
+        try:
+            export_vox(scene, path_str)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Export ไม่สำเร็จ", str(exc))
+            return
+        QMessageBox.information(self, "Export สำเร็จ", path_str)
+
+    def _export_roblox(self) -> None:
+        scene = self._require_scene()
+        if not scene:
+            return
+        path = write_luau_file(scene, exports_dir())
+        st = merge_stats(scene)
+        QMessageBox.information(
+            self,
+            "Export Roblox สำเร็จ",
+            f"{st['merged_boxes']} Parts\n{path}\n\n"
+            "ใช้ Roblox Studio MCP → execute_luau",
+        )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import typing as typ
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -16,12 +17,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..mesh_merge import merge_stats
-from ..model import VoxelScene
-from .paths import blender_exports_dir, exports_dir, scenes_dir
+from voxel_forge.desktop.paths import blender_exports_dir, exports_dir, scenes_dir
+from voxel_forge.desktop.shell import open_folder
+from voxel_forge.mesh_merge import merge_stats
+
+if typ.TYPE_CHECKING:
+    from voxel_forge.model import VoxelScene
 
 
 class SidePanel(QWidget):
+    """Dock panel showing scene details, recent files and quick actions."""
+
     open_recent_requested = Signal(str)
     quick_new = Signal()
     quick_open = Signal()
@@ -47,6 +53,58 @@ class SidePanel(QWidget):
         self._info.setStyleSheet("color: #ccc; font-size: 12px; line-height: 1.4;")
         root.addWidget(self._info)
 
+        root.addWidget(self._build_quick_box())
+        root.addWidget(self._build_create_box())
+        root.addWidget(self._build_recent_box())
+        root.addWidget(self._build_folders_box())
+
+        hint = QLabel("เมาส์กลาง = หมุน | ล้อ = zoom")
+        hint.setStyleSheet("color: #888; font-size: 11px;")
+        hint.setWordWrap(True)
+        root.addWidget(hint)
+        root.addStretch()
+
+    def set_scene_info(self, scene: VoxelScene | None, path: Path | None) -> None:
+        """Show a summary of the current scene, or a prompt when there is none.
+
+        Parameters
+        ----------
+        scene
+            Scene to summarise, or ``None`` when nothing is loaded.
+        path
+            File backing the scene, or ``None`` when it is unsaved.
+        """
+        if not scene:
+            self._info.setText("ยังไม่มี scene\n\nกด เปิดไฟล์ หรือ สร้างด่วน")
+            return
+        st = merge_stats(scene)
+        loc = str(path) if path else "(ยังไม่ได้บันทึก)"
+        detail = round(1 / scene.voxel_size) if scene.voxel_size else 1
+        self._info.setText(
+            f"<b>{scene.name}</b><br>"
+            f"voxels: {st['voxels']}<br>"
+            f"merged parts: {st['merged_boxes']}<br>"
+            f"ลด mesh: {st['reduction_percent']}%<br>"
+            f"ความละเอียด: {detail}x<br>"
+            f"<span style='color:#999'>{loc}</span>"
+        )
+
+    def set_recent_files(self, paths: list[str]) -> None:
+        """Replace the recent-files list.
+
+        Parameters
+        ----------
+        paths
+            Scene paths, most recently used first.
+        """
+        self._recent.clear()
+        for p in paths:
+            item = QListWidgetItem(Path(p).stem)
+            item.setToolTip(p)
+            item.setData(Qt.ItemDataRole.UserRole, p)
+            self._recent.addItem(item)
+
+    def _build_quick_box(self) -> QGroupBox:
         quick = QGroupBox("ทางลัด")
         ql = QVBoxLayout(quick)
         for text, slot in [
@@ -58,8 +116,9 @@ class SidePanel(QWidget):
             btn = QPushButton(text)
             btn.clicked.connect(slot)
             ql.addWidget(btn)
-        root.addWidget(quick)
+        return quick
 
+    def _build_create_box(self) -> QGroupBox:
         create = QGroupBox("สร้างด่วน")
         cl = QVBoxLayout(create)
         btn_tree = QPushButton("ต้นไม้")
@@ -68,15 +127,18 @@ class SidePanel(QWidget):
         btn_bear.clicked.connect(self.build_bear.emit)
         cl.addWidget(btn_tree)
         cl.addWidget(btn_bear)
-        root.addWidget(create)
+        return create
 
+    def _build_recent_box(self) -> QGroupBox:
         recent_box = QGroupBox("เปิดล่าสุด")
         rl = QVBoxLayout(recent_box)
         self._recent = QListWidget()
         self._recent.itemDoubleClicked.connect(self._on_recent_double)
         rl.addWidget(self._recent)
-        root.addWidget(recent_box)
+        return recent_box
 
+    @staticmethod
+    def _build_folders_box() -> QGroupBox:
         folders = QGroupBox("โฟลเดอร์")
         fl = QVBoxLayout(folders)
         row = QHBoxLayout()
@@ -86,44 +148,13 @@ class SidePanel(QWidget):
             ("Blender", blender_exports_dir()),
         ]:
             b = QPushButton(label)
-            p = str(path)
-            b.setToolTip(p)
-            b.clicked.connect(lambda _=False, pt=p: __import__("subprocess").run(["explorer", pt], check=False))
+            b.setToolTip(str(path))
+            b.clicked.connect(lambda _=False, target=path: open_folder(target))
             row.addWidget(b)
         fl.addLayout(row)
-        root.addWidget(folders)
-
-        hint = QLabel("เมาส์กลาง = หมุน | ล้อ = zoom")
-        hint.setStyleSheet("color: #888; font-size: 11px;")
-        hint.setWordWrap(True)
-        root.addWidget(hint)
-        root.addStretch()
+        return folders
 
     def _on_recent_double(self, item: QListWidgetItem) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
             self.open_recent_requested.emit(str(path))
-
-    def set_scene_info(self, scene: VoxelScene | None, path: Path | None) -> None:
-        if not scene:
-            self._info.setText("ยังไม่มี scene\n\nกด เปิดไฟล์ หรือ สร้างด่วน")
-            return
-        st = merge_stats(scene)
-        loc = str(path) if path else "(ยังไม่ได้บันทึก)"
-        detail = int(round(1 / scene.voxel_size)) if scene.voxel_size else 1
-        self._info.setText(
-            f"<b>{scene.name}</b><br>"
-            f"voxels: {st['voxels']}<br>"
-            f"merged parts: {st['merged_boxes']}<br>"
-            f"ลด mesh: {st['reduction_percent']}%<br>"
-            f"ความละเอียด: {detail}x<br>"
-            f"<span style='color:#999'>{loc}</span>"
-        )
-
-    def set_recent_files(self, paths: list[str]) -> None:
-        self._recent.clear()
-        for p in paths:
-            item = QListWidgetItem(Path(p).stem)
-            item.setToolTip(p)
-            item.setData(Qt.ItemDataRole.UserRole, p)
-            self._recent.addItem(item)

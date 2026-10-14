@@ -9,15 +9,38 @@ it.
 
 ## Repository layout
 
-- `src/voxel_forge/` — the Python package, including the MCP server
-  (`server.py`), the editor bridge (`bridge.py`), the scene model
-  (`model.py`), persistence (`scene_store.py`), and the MagicaVoxel reader
-  and writer (`vox_io.py`).
+- `src/voxel_forge/` — the Python package, including the MCP composition
+  root (`server.py`), editor bridge (`bridge.py`), scene model, persistence,
+  and MagicaVoxel reader and writer.
 - `src/voxel_forge/desktop/` — the PySide6 desktop application.
 - `editor/` — the Three.js/Vite web editor.
 - `tests/` — the pytest suite.
 - `docs/` — this guide, the users guide, the roadmap, and the execution
   plans under `docs/execplans/`.
+
+## Module boundaries
+
+`model.py` is the public domain-model facade. `model_layer.py`,
+`model_scene.py`, `model_decode.py`, and `model_validation.py` hold the
+focused scene types and operations; `scene_registry.py` owns the in-memory
+`SceneStore`, and `scene_store.py` owns JSON persistence. Import model types
+from `voxel_forge.model` unless a change is specifically within one of those
+implementation modules.
+
+`server.py` is the MCP composition root. It creates the `FastMCP` instance
+and shared `SceneStore`, then imports `server_tools` modules to register their
+tools. The `build.py`, `edit.py`, `io.py`, and `scene.py` modules deliberately
+use the `server` facade's registry, publisher, and operation helpers. Those
+globals are the internal integration points that keep MCP edits and bridge
+updates on the same store; preserve their names and the registration order
+when moving tools. The `server` facade also re-exports the established tool
+callables and file-format functions.
+
+The desktop `app.py` composes the main window from menu, file, export, create,
+and help mixins, with the sidebar and viewport as separate components. In the
+web editor, `scene-data.ts` owns the scene wire types, bridge-payload
+selection, palette colour lookup, and per-layer colour grouping. `main.ts`
+owns browser state, rendering, picking, and input.
 
 ## Console scripts
 
@@ -99,11 +122,20 @@ to the MCP protocol on the server path.
 ## Toolchain and dependency requirements
 
 - Python 3.11 or newer; `requires-python` is `">=3.11"`.
+- Base Pylint runs under managed PyPy 8; df12 Pylint, Skylos, and Nose run
+  under managed CPython 3.14. Both Pylint passes check Python 3.11 syntax.
 - Node.js for the web editor. Continuous integration builds it with Node 22.
+- The editor uses TypeScript with strict compiler options, Biome for
+  formatting and lint, and oxlint with `df12-lints`.
+- Editor tests use `fast-check` (`^4.10.2`) for grouping properties and
+  Playwright (`^1.64.1`) with Chromium for the built-page bridge workflow.
 - Runtime dependencies are bounded below the next breaking major:
   `mcp>=1.9.0,<2`, `websockets>=14.0,<17`, and `httpx>=0.28.0,<1`.
 - The `desktop` extra adds `PySide6>=6.6.0` and `pyinstaller>=6.0`.
-- Ruff with `select = ["E", "F", "I", "UP"]` is the lint rule set.
+- Ruff, base Pylint, and the df12 Pylint plugin check the supported Python
+  baseline. Skylos and Nose add blocking dead-code and duplication checks.
+  Their interpreter split, versions, roots, and policy are recorded in the
+  [lint standards](lint-standards.md).
 
 Those bounds are load-bearing rather than decorative. `uv tool install`
 performs a fresh dependency resolution and does not read `uv.lock`, so the
@@ -121,12 +153,38 @@ lets each benefit from what the previous one cached.
 
 | Target | What it runs |
 | --- | --- |
-| `make check-fmt` | `uv run ruff format --check` over maintained Python paths |
-| `make lint` | `uv run ruff check src tests` |
-| `make typecheck` | `cd editor && npm exec tsc -- --noEmit` |
-| `make test` | `uv run pytest -q` |
-| `make markdownlint` | Markdown lint over the maintained Markdown files |
-| `make nixie` | Mermaid diagram validation |
+| `make fmt` | Format Python and editor files and fix Python import order |
+| `make check-fmt` | Check Python formatting with Ruff |
+| `make lint` | Run Python lint, dead-code, and duplication gates |
+| `make lint-python` | Run Ruff and both Pylint passes |
+| `make dead-code` | Run the blocking Skylos scan |
+| `make install-nose` | Install the pinned Nose detector under `.tools/` |
+| `make duplication` | Install and run the blocking Nose scan |
+| `make lint-editor` | Check editor formatting and run Biome and oxlint |
+| `make typecheck` | Check editor sources and positive/negative type fixtures |
+| `make test` | Run Python tests with pytest |
+| `make test-editor` | Build the editor, then run Node and Playwright tests |
+| `make markdownlint` | Lint the maintained Markdown files |
+| `make nixie` | Validate Mermaid diagrams |
+
+`make test-editor` first builds the production page, then runs three editor
+test layers. The Node handler tests exercise the production placement and
+removal functions with controlled WebSocket states; the fast-check property
+test verifies per-colour grouping and input order. The Playwright test loads
+the built page against a temporary bridge with real HTTP and WebSocket
+endpoints, then removes a voxel from layer 0 while layer 1 is active and
+places a voxel through mouse input. These browser assertions complement the
+focused handler tests rather than replacing them.
+
+The hosted workflow installs editor packages with `npm ci --prefix editor`,
+then installs Chromium using Playwright before `make test-editor`. The editor
+build is also run as its own CI step after the test target.
+For a local run, install the browser once with
+`npx --prefix editor playwright install chromium`.
+
+See the [lint standards](lint-standards.md) for the detailed contributor
+sequence and scanner configuration. Make disables parallel target execution
+so shared caches are used sequentially.
 
 `make markdownlint` takes its linter from the `MDLINT` variable, which
 defaults to `markdownlint-cli2`. The hosted workflow overrides it with
@@ -136,15 +194,11 @@ it covers are enumerated in the `Makefile` rather than globbed, because a glob
 would descend into `node_modules`.
 
 The hosted workflow, `.github/workflows/readiness.yml`, runs on every pull
-request and on pushes to `main`. It runs the lint, format, and test gates,
-and adds work the local gates do not cover:
-
-- `uv build --wheel`, which proves the distribution still builds;
-- `npm ci --prefix editor` to install the editor dependencies from the
-  lockfile;
-- a build of the editor;
-- `npm audit --prefix editor --audit-level=high`, which fails the build on a
-  high-severity advisory in the editor's dependency tree.
+request and on pushes to `main`. It runs the checks sequentially: Python
+formatting, Python lint, Python tests, wheel build, editor dependency install,
+editor format and lint, TypeScript check, Chromium installation, editor build
+and tests, a separate editor build, dependency audit, and Markdown lint. It
+does not currently run the local `make nixie` target.
 
 ## Decisions
 
