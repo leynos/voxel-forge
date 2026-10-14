@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import typing as typ
-from pathlib import Path
 
 from .mesh_merge import merge_scene
+from .paths import exports_dir
 
 if typ.TYPE_CHECKING:
+    from pathlib import Path
+
     from .model import VoxelScene
 
 
@@ -19,7 +21,7 @@ def to_luau_merged(
 ) -> str:
     """Return a Luau script that rebuilds the scene from merged parts.
 
-    สร้าง Luau ที่ใช้ Part ใหญ่แทน 1 voxel = 1 Part (ลดแลag).
+    สร้าง Luau ที่ใช้ Part ใหญ่แทน 1 voxel = 1 Part (ลด lag).
 
     Parameters
     ----------
@@ -85,11 +87,11 @@ return model
 
 
 def write_luau_file(scene: VoxelScene, directory: Path | None = None) -> Path:
-    """Write the merged Luau export beside the scene and return its path.
+    """Write the merged Luau export to ``directory`` and return its path.
 
     The default destination is ``~/.voxel-forge/exports``, created on demand.
     """
-    directory = directory or (Path.home() / ".voxel-forge" / "exports")
+    directory = directory or exports_dir()
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{scene.name}_merged.server.luau"
     path.write_text(to_luau_merged(scene), encoding="utf-8")

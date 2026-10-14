@@ -13,8 +13,8 @@ import json
 from pathlib import Path
 
 from .model import VoxelScene, validate_scene_name
+from .paths import APPLICATION_DIRECTORY_NAME as SCENE_DIRECTORY_NAME
 
-SCENE_DIRECTORY_NAME = ".voxel-forge"
 SCENE_SUBDIRECTORY_NAME = "scenes"
 SCENE_FILE_SUFFIX = ".json"
 

@@ -8,10 +8,12 @@ explicit user-selected file paths remain the caller's responsibility.
 import functools
 from pathlib import Path
 
+APPLICATION_DIRECTORY_NAME = ".voxel-forge"
+
 
 def _application_directory(*parts: str) -> Path:
     """Create and return one directory below the application's home root."""
-    directory = Path.home().joinpath(".voxel-forge", *parts)
+    directory = Path.home().joinpath(APPLICATION_DIRECTORY_NAME, *parts)
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 

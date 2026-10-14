@@ -111,10 +111,7 @@ def _reject_reserved_scene_name(name: str) -> None:
 def _validate_rgb(
     rgb: tuple[int, int, int] | list[int], *, field_name: str = "palette"
 ) -> tuple[int, int, int]:
-    """Return three integer RGB channels in 0..255, rejecting booleans and other.
-
-    non-integers.
-    """
+    """Return three RGB bytes, rejecting booleans and non-integers."""
     if not isinstance(rgb, (list, tuple)) or len(rgb) != RGB_CHANNEL_COUNT:
         msg = f"{field_name} colours require three channels in the range 0..255"
         raise ValueError(msg)
@@ -181,6 +178,14 @@ def _validate_voxel_size(value: object) -> float:
         )
         raise ValueError(msg)
     return voxel_size
+
+
+def _require_int(value: object, field_name: str) -> int:
+    """Require an integer JSON field, excluding booleans and coercible values."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        msg = f"{field_name} must be an integer"
+        raise InvalidSceneDataError(msg)
+    return value
 
 
 def _require_text(value: object, field_name: str) -> str:

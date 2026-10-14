@@ -1,14 +1,9 @@
-"""Executable contract for the readiness gates.
+"""Shared helpers for the Python readiness contract tests.
 
-Each test here pins one behaviour that "basic agent-driven voxel scene creation"
-depends on: the MCP launcher, bridge scheduling and origin checks, editor
-removal round-trips, scene-name and payload validation, resource bounds,
-persistence, and the raw structure of exported MagicaVoxel files.
-
-Run the whole module with ``uv run pytest -q``. Tests that touch persistence
-request the ``scene_directory`` fixture from ``conftest.py`` so no real
-``~/.voxel-forge`` directory is read or written. Assertions carry messages
-because a readiness failure should name the broken contract directly.
+This module provides temporary HTTP exchange, VOX chunk parsing, a finite
+editor WebSocket, and a bounded non-blocking lock probe. Readiness test modules
+import these helpers to exercise bridge and file-format contracts without
+starting production services.
 """
 
 from __future__ import annotations

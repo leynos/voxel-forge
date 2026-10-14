@@ -14,6 +14,8 @@ from .model_validation import (
     DEFAULT_PALETTE,
     RGB_CHANNEL_COUNT,
     InvalidSceneDataError,
+    _require_int,
+    _require_text,
     _validate_rgb,
     resolve_palette_colour,
 )
@@ -42,9 +44,14 @@ def _parse_block(
     if not isinstance(row, (list, tuple)) or len(row) != BLOCK_ROW_LENGTH:
         msg = "each block must be [x, y, z, colour]"
         raise InvalidSceneDataError(msg)
-    colour = str(row[3])
+    colour = _require_text(row[3], "block colour")
     resolve_palette_colour(palette, colour)
-    return (int(row[0]), int(row[1]), int(row[2])), colour
+    coordinate = (
+        _require_int(row[0], "block coordinate x"),
+        _require_int(row[1], "block coordinate y"),
+        _require_int(row[2], "block coordinate z"),
+    )
+    return coordinate, colour
 
 
 def _parse_layer(
@@ -54,9 +61,13 @@ def _parse_layer(
     if not isinstance(raw, dict):
         msg = "each layer must be a JSON object"
         raise InvalidSceneDataError(msg)
+    visible = raw.get("visible", True)
+    if not isinstance(visible, bool):
+        msg = "layer visible must be a boolean"
+        raise InvalidSceneDataError(msg)
     layer = VoxelLayer(
-        name=str(raw.get("name", "Layer")),
-        visible=bool(raw.get("visible", True)),
+        name=_require_text(raw.get("name", "Layer"), "layer name"),
+        visible=visible,
     )
     blocks = raw.get("blocks", [])
     if not isinstance(blocks, list):

@@ -47,6 +47,8 @@ jobs:
         run: make lint-editor
       - name: Check editor types
         run: make typecheck
+      - name: Install editor test browser
+        run: npx --prefix editor playwright install --with-deps chromium
       - name: Test editor delivery
         run: make test-editor
       - name: Build editor

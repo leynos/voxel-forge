@@ -17,7 +17,7 @@ def _render_slice(occupancy: dict[tuple[int, int], str], header: str) -> str:
     xs = [x for x, _ in occupancy]
     zs = [z for _, z in occupancy]
     min_x, max_x = min(0, min(xs) - 1), max(xs) + 1
-    min_z, max_z = max(0, min(zs) - 1), max(zs) + 1
+    min_z, max_z = min(0, min(zs) - 1), max(zs) + 1
 
     lines = [header, "    " + "".join(f"{x:2}" for x in range(min_x, max_x + 1))]
     for z in range(min_z, max_z + 1):

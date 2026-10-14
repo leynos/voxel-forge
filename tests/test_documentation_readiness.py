@@ -37,7 +37,9 @@ def test_installed_entry_points_target_the_launchers() -> None:
     """
     import tomllib
 
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads(
+        (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
 
     assert pyproject["project"]["scripts"] == {
         "voxel-forge": "voxel_forge.desktop.launch:main",
@@ -109,7 +111,7 @@ def test_migration_document_matches_the_declared_version() -> None:
 
 def test_readme_documents_cross_platform_installation() -> None:
     """The README must be followable on Linux without translation."""
-    readme = Path("README.md").read_text(encoding="utf-8")
+    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "uv tool install" in readme, "README must explain portable installation"
     assert "voxel-forge-mcp" in readme, "README must identify the installed MCP command"

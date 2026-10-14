@@ -73,7 +73,9 @@ def test_lint_stops_when_any_gate_fails(tmp_path: Path, failed_stage: str) -> No
     returncode, output = _run_make(["lint"], env=env)
 
     assert returncode != 0, f"a failed lint stage must fail Make: {output}"
+    assert log.is_file(), "Make must invoke the fake uv before failing"
     calls = log.read_text(encoding="utf-8").splitlines()
+    assert calls, "the fake uv must record at least one invocation"
     assert failed_stage in calls[-1], "no tool may execute after the failed stage"
     assert sum(failed_stage in call for call in calls) == 1, (
         "the failing tool must be invoked exactly once"

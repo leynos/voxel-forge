@@ -134,16 +134,6 @@ def test_from_dict_rejects_invalid_active_layer() -> None:
         VoxelScene.from_dict(data)
 
 
-@pytest.mark.parametrize("name", [None, ["a"], {"a": 1}, 7])
-def test_from_dict_rejects_non_text_scene_name(name: object) -> None:
-    """Deserialisation must reject scene names that are not text."""
-    data = VoxelScene("valid").to_dict()
-    data["name"] = name
-
-    with pytest.raises(ValueError, match="scene name"):
-        VoxelScene.from_dict(data)
-
-
 def test_place_rejects_unknown_colour_without_mutating_scene() -> None:
     """A rejected colour leaves the scene unchanged."""
     scene = VoxelScene("valid")

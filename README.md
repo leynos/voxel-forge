@@ -226,6 +226,8 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
   verification gates.
 - [Migrating to 0.2](docs/migration-0.2.md) — the installed-command changes in
   this release and what an existing setup has to update.
+- [Migrating to 0.3](docs/migration-0.3.md) — Python export arguments and
+  persisted-scene type changes planned for that release.
 
 The long-term direction of the project is recorded in the
 [roadmap](docs/roadmap.md).

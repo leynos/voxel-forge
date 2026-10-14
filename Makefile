@@ -31,8 +31,10 @@ DUPLICATION_GATE = uv tool run --managed-python --python $(DF12_PYTHON) \
 
 MARKDOWN_PATHS := \
 	README.md \
+	README.th.md \
 	docs/developers-guide.md \
 	docs/migration-0.2.md \
+	docs/migration-0.3.md \
 	docs/users-guide.md \
 	AGENTS.md \
 	docs/roadmap.md \
@@ -74,6 +76,7 @@ test:
 	uv run pytest -q
 
 test-editor:
+	cd editor && npm run build
 	cd editor && npm test
 
 markdownlint:

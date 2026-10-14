@@ -176,7 +176,14 @@ async def _ws_handler(
                 case "get_scene":
                     await _send_scene(websocket, msg.get("name"))
                 case "editor_place" | "editor_remove":
-                    await _apply_editor_edit(msg)
+                    try:
+                        await _apply_editor_edit(msg)
+                    except (KeyError, TypeError, ValueError) as exc:
+                        print(
+                            "VoxelForge bridge: invalid editor edit: "
+                            f"{type(exc).__name__}",
+                            file=sys.stderr,
+                        )
     finally:
         _clients.discard(websocket)
 

@@ -67,7 +67,11 @@ class ExportActionsMixin:
         )
         if not path_str:
             return
-        export_vox(scene, path_str)
+        try:
+            export_vox(scene, path_str)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Export ไม่สำเร็จ", str(exc))
+            return
         QMessageBox.information(self, "Export สำเร็จ", path_str)
 
     def _export_roblox(self) -> None:

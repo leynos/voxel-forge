@@ -111,7 +111,7 @@ def voxelforge_fill_box(  # ruff: ignore[too-many-arguments, too-many-positional
     scene_name: str = "",
 ) -> str:
     """
-    เติ่มกล่อง 3D (เหมาะสร้างฐาน/ตัวบ้าน/กำแพง).
+    เติมกล่อง 3D (เหมาะสร้างฐาน/ตัวบ้าน/กำแพง).
 
     Parameters
     ----------

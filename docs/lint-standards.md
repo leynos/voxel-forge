@@ -61,11 +61,15 @@ Install editor dependencies with `npm ci --prefix editor` before running its
 checks. `make` also disables parallel target execution so `make -j` cannot
 silently overlap the shared caches.
 
-`make test-editor` executes the production edit handlers through the TypeScript
-compiler and Node's test runner with fixed geometry and controlled sockets.
-Both placement and removal send only while the socket is open; absent,
-connecting, closing, and closed sockets produce no send. These tests protect
-the readiness baseline's connection guard without starting WebGL or the bridge.
+`make test-editor` builds the editor, then runs three focused checks. The Node
+handler tests execute the production placement and removal functions with
+controlled sockets; they verify edits are sent only when the socket is open.
+The scene-data tests check HTTP and WebSocket payload validation and use
+fast-check to verify colour grouping preserves every block and its order.
+Finally, a Playwright test loads the built page and exercises layer-aware
+removal and placement through a temporary HTTP/WebSocket bridge. It needs
+Chromium: install it from `editor/` with `npx playwright install chromium`.
+CI installs it with `npx --prefix editor playwright install --with-deps chromium`.
 
 ## Shared application helpers
 

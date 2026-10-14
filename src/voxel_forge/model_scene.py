@@ -10,6 +10,7 @@ from .model_layer import VoxelLayer
 from .model_validation import (
     DEFAULT_PALETTE,
     InvalidSceneDataError,
+    _require_int,
     _require_text,
     _validate_rgb,
     _validate_voxel_size,
@@ -357,7 +358,7 @@ class VoxelScene:
         name = validate_scene_name(
             _require_text(data.get("name", "Unnamed"), "scene name")
         )
-        active_layer = int(data.get("active_layer", 0))
+        active_layer = _require_int(data.get("active_layer", 0), "active_layer")
         voxel_size = _validate_voxel_size(data.get("voxel_size", 1.0))
         palette = _parse_palette(data.get("palette"))
         layers = _parse_layers(data.get("layers", []), palette)

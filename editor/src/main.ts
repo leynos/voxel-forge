@@ -12,7 +12,7 @@
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { asSceneData, groupBlocksByColour, resolveRgb, sceneFromMessage } from "./scene-data";
+import { asSceneData, groupBlocksByColour, resolveRgb, sceneFromJson } from "./scene-data";
 import type { Block, SceneData } from "./scene-data";
 
 const WS_URL = "ws://127.0.0.1:8765";
@@ -256,8 +256,7 @@ function connectWs(): void {
     socket.send(JSON.stringify({ type: "get_scene" }));
   };
   socket.onmessage = (ev: MessageEvent<string>) => {
-    const payload: unknown = JSON.parse(ev.data);
-    const scene = sceneFromMessage(payload);
+    const scene = sceneFromJson(ev.data);
     if (!scene) return;
     sceneData = scene;
     rebuildVoxels();

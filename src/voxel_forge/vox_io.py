@@ -17,6 +17,8 @@ _CHUNK_HEADER_SIZE = 12  # identifier + content size + children size
 _PALETTE_ENTRIES = 256
 _MAX_PALETTE_COLOURS = 255
 _RGBA_CHUNK_BYTES = _PALETTE_ENTRIES * 4
+_XYZI_COUNT_BYTES = 4
+_XYZI_RECORD_BYTES = 4
 _CHANNEL_MAX = 255
 _MAX_AXIS_EXTENT = 256
 _BOX_VERTEX_COUNT = 8
@@ -58,10 +60,23 @@ def _read_rgba_chunk(content: bytes, contents: _VoxContents) -> None:
 
 
 def _read_xyzi_chunk(content: bytes, contents: _VoxContents) -> None:
-    """Read a voxel chunk into ``contents``."""
+    """Read a complete voxel chunk into ``contents``.
+
+    Raises
+    ------
+    ValueError
+        If the count header or a declared voxel record is truncated.
+
+    """
+    msg = "XYZI chunk is truncated"
+    if len(content) < _XYZI_COUNT_BYTES:
+        raise ValueError(msg)
     count = struct.unpack_from("<I", content, 0)[0]
+    if len(content) < _XYZI_COUNT_BYTES + count * _XYZI_RECORD_BYTES:
+        raise ValueError(msg)
     for index in range(count):
-        x, y, z, colour_index = struct.unpack_from("<4B", content, 4 + index * 4)
+        offset = _XYZI_COUNT_BYTES + index * _XYZI_RECORD_BYTES
+        x, y, z, colour_index = struct.unpack_from("<4B", content, offset)
         contents.voxels.append((x, y, z, colour_index))
 
 
