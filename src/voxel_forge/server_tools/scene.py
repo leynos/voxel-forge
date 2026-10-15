@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from voxel_forge import server
 
@@ -310,30 +309,3 @@ def voxelforge_default_palette() -> str:
         JSON ของพาเลตเริ่มต้น (คีย์ → [r, g, b])
     """
     return json.dumps({k: list(v) for k, v in server.DEFAULT_PALETTE.items()}, indent=2)
-
-
-@server.mcp.tool()
-def voxelforge_launch_editor() -> str:
-    """
-    เปิด VoxelForge Web Editor ในเบราว์เซอร์ (Three.js 3D view).
-
-    Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่
-    """
-    server._ensure_bridge()
-    editor_dir = Path(server.__file__).resolve().parents[2] / "editor"
-    index = editor_dir / "index.html"
-    if not index.exists():
-        return (
-            f"Bridge ทำงานที่ ws://127.0.0.1:8765 และ http://127.0.0.1:{server.BRIDGE_HTTP_PORT}\n"
-            "รัน editor: cd editor && npm install && npm run dev\n"
-            "แล้วเปิด http://localhost:5173"
-        )
-
-    import webbrowser
-
-    webbrowser.open("http://localhost:5173")
-    return (
-        "เปิด http://localhost:5173 แล้ว (ถ้ายังไม่รัน editor ให้รัน "
-        "`cd editor && npm run dev` ก่อน)\n"
-        f"Bridge: ws://127.0.0.1:8765 | HTTP scene: http://127.0.0.1:{server.BRIDGE_HTTP_PORT}/scene"
-    )

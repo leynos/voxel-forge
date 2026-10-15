@@ -1,0 +1,57 @@
+/**
+ * @file Bun entry point for the VoxelForge web editor.
+ *
+ * Serves the Three.js editor as a bundled single-page application and
+ * reports the port it actually bound as a structured JSON event on
+ * stdout, so a supervising process can discover it. Bridge endpoints
+ * are passed in through environment variables and republished to the
+ * page at `/bridge.json`.
+ */
+import indexHtml from "./index.html";
+
+/** Read a port number from the environment, falling back when unset. */
+function envPort(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  if (raw.length === 0 || /[^0-9]/.test(raw)) return fallback;
+  const parsed = Number(raw);
+  return parsed <= 65535 ? parsed : fallback;
+}
+
+const requestedPort = envPort("VOXELFORGE_EDITOR_PORT", 5173);
+const bridgeWsPort = envPort("VOXELFORGE_BRIDGE_WS_PORT", 8765);
+const bridgeHttpPort = envPort("VOXELFORGE_BRIDGE_HTTP_PORT", 8766);
+
+const server = Bun.serve({
+  hostname: "127.0.0.1",
+  port: requestedPort,
+  routes: {
+    "/": indexHtml,
+    "/bridge.json": () =>
+      Response.json({
+        wsUrl: `ws://127.0.0.1:${bridgeWsPort}`,
+        httpUrl: `http://127.0.0.1:${bridgeHttpPort}`,
+      }),
+  },
+});
+
+console.log(JSON.stringify({ event: "listening", port: server.port }));
+
+/** Close the editor server after supervisor EOF, such as when Python is killed. */
+async function stopWhenSupervisorExits(): Promise<void> {
+  const reader = Bun.stdin.stream().getReader();
+  try {
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+  } finally {
+    reader.releaseLock();
+    await server.stop(true);
+  }
+}
+
+if (process.env["VOXELFORGE_EDITOR_SUPERVISED"] === "1") {
+  // A private stdin pipe closes even when the Python parent is killed.
+  void stopWhenSupervisorExits();
+}

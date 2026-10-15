@@ -1,10 +1,9 @@
-/** @file Render the built editor against real, isolated HTTP and WebSocket bridge handlers. */
+/** @file Render the Bun-served editor against real, isolated bridge handlers. */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { dirname, extname, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -12,30 +11,19 @@ import { chromium } from "playwright";
 
 const EDITOR_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPOSITORY_ROOT = resolve(EDITOR_ROOT, "..");
-const DIST_ROOT = resolve(EDITOR_ROOT, "dist");
-const MIME_TYPES = new Map([
-  [".html", "text/html"],
-  [".js", "text/javascript"],
-  [".css", "text/css"],
-]);
 
-/** Serve only the built editor, keeping test transport ports independent of local development. */
-async function serveAsset(request, response) {
-  const pathname = new URL(request.url, "http://localhost").pathname;
-  const target = resolve(DIST_ROOT, `.${pathname === "/" ? "/index.html" : pathname}`);
-  if (!target.startsWith(`${DIST_ROOT}${sep}`)) {
-    response.writeHead(403).end();
-    return;
-  }
-  try {
-    const body = await readFile(target);
-    response.writeHead(200, {
-      "Content-Type": MIME_TYPES.get(extname(target)) ?? "application/octet-stream",
-    });
-    response.end(body);
-  } catch {
-    response.writeHead(404).end();
-  }
+/** Reserve and release a loopback port for the editor process. */
+async function allocatePort() {
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const { port } = address;
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  return port;
 }
 
 /** Start the real Python bridge fixture and read its ephemeral listener ports. */
@@ -54,37 +42,53 @@ async function startBridge(origin) {
     const [line] = await once(lines, "line", { signal: AbortSignal.timeout(15000) });
     return { child, ports: JSON.parse(line) };
   } catch (cause) {
-    await stopBridge(child);
+    await stopChild(child);
     throw new Error(`Bridge fixture failed to publish ports: ${diagnostics}`, { cause });
   } finally {
     lines.close();
   }
 }
 
-/** Stop and reap only the fixture process owned by this test. */
-async function stopBridge(child) {
+/** Stop and reap only a child process owned by this test. */
+async function stopChild(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child, "exit");
   child.kill("SIGTERM");
   await exited;
 }
 
-/** Rewrite only the app's fixed bridge addresses; requests still use real browser networking. */
-async function configureTransport(page, ports) {
-  await page.addInitScript(({ http, ws }) => {
-    const NativeWebSocket = window.WebSocket;
-    window.WebSocket = class extends NativeWebSocket {
-      constructor(url, protocols) {
-        super(String(url).replace("127.0.0.1:8765", `127.0.0.1:${ws}`), protocols);
-      }
-    };
-    const nativeFetch = window.fetch.bind(window);
-    window.fetch = (input, options) => {
-      const redirected =
-        typeof input === "string" ? input.replace("127.0.0.1:8766", `127.0.0.1:${http}`) : input;
-      return nativeFetch(redirected, options);
-    };
-  }, ports);
+/** Start the real editor server with the bridge fixture's discovered ports. */
+async function startEditor(editorPort, bridgePorts) {
+  const child = spawn("bun", ["run", "serve.ts"], {
+    cwd: EDITOR_ROOT,
+    env: {
+      ...process.env,
+      VOXELFORGE_EDITOR_PORT: String(editorPort),
+      VOXELFORGE_BRIDGE_WS_PORT: String(bridgePorts.ws),
+      VOXELFORGE_BRIDGE_HTTP_PORT: String(bridgePorts.http),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let diagnostics = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    diagnostics += chunk;
+  });
+  const lines = createInterface({ input: child.stdout });
+  try {
+    const [line] = await once(lines, "line", { signal: AbortSignal.timeout(15000) });
+    const event = JSON.parse(line);
+    assert.equal(event.event, "listening");
+    if (editorPort !== 0) assert.equal(event.port, editorPort);
+    assert.ok(event.port > 0 && event.port <= 65535);
+    child.editorPort = event.port;
+    return child;
+  } catch (cause) {
+    await stopChild(child);
+    throw new Error(`Bun editor failed to publish its port: ${diagnostics}`, { cause });
+  } finally {
+    lines.close();
+  }
 }
 
 /** Wait for the visible count produced by a received scene snapshot. */
@@ -137,23 +141,30 @@ async function exerciseEditing(page, ports) {
 test("rendered editor loads and publishes layer-aware edits through the real bridge", {
   timeout: 40000,
 }, async () => {
-  const staticServer = createServer(serveAsset);
-  staticServer.listen(0, "127.0.0.1");
-  await once(staticServer, "listening");
-  const origin = `http://127.0.0.1:${staticServer.address().port}`;
+  const editorPort = await allocatePort();
+  const origin = `http://127.0.0.1:${editorPort}`;
   let fixture;
+  let editor;
   let browser;
   try {
     fixture = await startBridge(origin);
+    editor = await startEditor(editorPort, fixture.ports);
+    const configResponse = await fetch(`${origin}/bridge.json`);
+    assert.equal(configResponse.status, 200);
+    assert.deepEqual(await configResponse.json(), {
+      wsUrl: `ws://127.0.0.1:${fixture.ports.ws}`,
+      httpUrl: `http://127.0.0.1:${fixture.ports.http}`,
+    });
     browser = await chromium.launch({ headless: true, args: ["--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
     const errors = [];
     const updates = [];
+    const bridgeOrigin = new URL(`ws://127.0.0.1:${fixture.ports.ws}`).origin;
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("websocket", (socket) => {
+      if (new URL(socket.url()).origin !== bridgeOrigin) return;
       socket.on("framereceived", ({ payload }) => updates.push(JSON.parse(String(payload))));
     });
-    await configureTransport(page, fixture.ports);
     const initialResponse = page.waitForResponse(`http://127.0.0.1:${fixture.ports.http}/scene`);
     await page.goto(origin);
     assert.equal((await (await initialResponse).json()).name, "browser-regression");
@@ -166,9 +177,180 @@ test("rendered editor loads and publishes layer-aware edits through the real bri
     assert.deepEqual(errors, []);
   } finally {
     if (browser) await browser.close();
-    if (fixture) await stopBridge(fixture.child);
-    await new Promise((done, reject) =>
-      staticServer.close((error) => (error ? reject(error) : done())),
-    );
+    if (editor) await stopChild(editor);
+    if (fixture) await stopChild(fixture.child);
   }
 });
+
+for (const invalidPort of ["8765junk", "-1", "65536", "1.5", "", " 8765", "8765\n"]) {
+  test(`Bun rejects invalid bridge ports ${JSON.stringify(invalidPort)} and preserves ephemeral editor binding`, async () => {
+    const child = await startEditor(0, { ws: invalidPort, http: invalidPort });
+    try {
+      const response = await fetch(`http://127.0.0.1:${child.editorPort}/bridge.json`);
+      assert.deepEqual(await response.json(), {
+        wsUrl: "ws://127.0.0.1:8765",
+        httpUrl: "http://127.0.0.1:8766",
+      });
+    } finally {
+      await stopChild(child);
+    }
+  });
+}
+
+for (const validPort of ["0", "65535"]) {
+  test(`Bun preserves valid bridge port boundary ${validPort}`, async () => {
+    const child = await startEditor(0, { ws: validPort, http: validPort });
+    try {
+      const response = await fetch(`http://127.0.0.1:${child.editorPort}/bridge.json`);
+      assert.deepEqual(await response.json(), {
+        wsUrl: `ws://127.0.0.1:${validPort}`,
+        httpUrl: `http://127.0.0.1:${validPort}`,
+      });
+    } finally {
+      await stopChild(child);
+    }
+  });
+}
+
+for (const configResponse of [
+  { status: 404, body: "not found" },
+  { status: 200, contentType: "application/json", body: JSON.stringify({ wsUrl: 123 }) },
+  { body: "network failure", abort: true },
+]) {
+  test(`editor starts with default bridge endpoints after discovery returns ${configResponse.body}`, {
+    timeout: 40000,
+  }, async () => {
+    let editor;
+    let browser;
+    try {
+      editor = await startEditor(0, { ws: 12345, http: 12346 });
+      browser = await chromium.launch({ headless: true, args: ["--use-angle=swiftshader"] });
+      const page = await browser.newPage();
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.route("**/bridge.json", (route) =>
+        configResponse.abort ? route.abort() : route.fulfill(configResponse),
+      );
+      await page.route("http://127.0.0.1:8766/scene", (route) =>
+        route.fulfill({
+          status: 200,
+          headers: { "access-control-allow-origin": "*" },
+          contentType: "application/json",
+          body: JSON.stringify({
+            name: "fallback-scene",
+            voxel_size: 1,
+            active_layer: 0,
+            palette: { 1: [255, 255, 255] },
+            layers: [{ name: "base", visible: true, blocks: [[0, 0, 0, "1"]] }],
+          }),
+        }),
+      );
+      const websocket = page.waitForEvent("websocket", {
+        predicate: (socket) => socket.url() === "ws://127.0.0.1:8765/",
+      });
+      await page.goto(`http://127.0.0.1:${editor.editorPort}`);
+      await websocket;
+      await waitForCount(page, 1);
+      await page.waitForFunction(() =>
+        document.querySelector("#status")?.textContent?.includes("Bridge discovery unavailable"),
+      );
+      assert.deepEqual(errors, []);
+    } finally {
+      if (browser) await browser.close();
+      if (editor) await stopChild(editor);
+    }
+  });
+}
+
+test("editor rediscovers ephemeral bridge ports after a restart", { timeout: 40000 }, async () => {
+  const editorPort = await allocatePort();
+  const origin = `http://127.0.0.1:${editorPort}`;
+  let fixture;
+  let editor;
+  let browser;
+  try {
+    fixture = await startBridge(origin);
+    editor = await startEditor(editorPort, fixture.ports);
+    browser = await chromium.launch({ headless: true, args: ["--use-angle=swiftshader"] });
+    const page = await browser.newPage();
+    await page.route("**/bridge.json", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          wsUrl: `ws://127.0.0.1:${fixture.ports.ws}`,
+          httpUrl: `http://127.0.0.1:${fixture.ports.http}`,
+        }),
+      }),
+    );
+    await page.goto(origin);
+    await page.waitForFunction(
+      () => document.querySelector("#status")?.textContent === "Bridge connected",
+    );
+    const oldFixture = fixture;
+    fixture = await startBridge(origin);
+    assert.notEqual(fixture.ports.ws, oldFixture.ports.ws);
+    const websocket = page.waitForEvent("websocket", {
+      predicate: (socket) => socket.url() === `ws://127.0.0.1:${fixture.ports.ws}/`,
+    });
+    const snapshotResponse = page.waitForResponse(`http://127.0.0.1:${fixture.ports.http}/scene`);
+    await stopChild(oldFixture.child);
+    await websocket;
+    assert.equal((await snapshotResponse).status(), 200);
+    await page.waitForFunction(
+      () => document.querySelector("#status")?.textContent === "Bridge connected",
+    );
+  } finally {
+    if (browser) await browser.close();
+    if (editor) await stopChild(editor);
+    if (fixture) await stopChild(fixture.child);
+  }
+});
+
+for (const snapshotFailure of ["http", "payload", "network"]) {
+  test(`editor reports initial scene snapshot ${snapshotFailure} failure while connecting`, {
+    timeout: 40000,
+  }, async () => {
+    const editorPort = await allocatePort();
+    const origin = `http://127.0.0.1:${editorPort}`;
+    let fixture;
+    let editor;
+    let browser;
+    try {
+      fixture = await startBridge(origin);
+      editor = await startEditor(editorPort, fixture.ports);
+      browser = await chromium.launch({ headless: true, args: ["--use-angle=swiftshader"] });
+      const page = await browser.newPage();
+      await page.addInitScript(() => {
+        window.bridgeStatusHistory = [];
+        new MutationObserver(() => {
+          const status = document.querySelector("#status")?.textContent;
+          if (status) window.bridgeStatusHistory.push(status);
+        }).observe(document, { childList: true, subtree: true, characterData: true });
+      });
+      await page.route(`http://127.0.0.1:${fixture.ports.http}/scene`, (route) => {
+        if (snapshotFailure === "network") return route.abort();
+        return route.fulfill({
+          status: snapshotFailure === "http" ? 503 : 200,
+          headers: { "access-control-allow-origin": "*" },
+          contentType: "application/json",
+          body: "{}",
+        });
+      });
+      await page.goto(origin);
+      await page.waitForFunction(() =>
+        window.bridgeStatusHistory.some((status) =>
+          status.includes("Initial scene snapshot unavailable"),
+        ),
+      );
+      await waitForCount(page, 1);
+      await page.waitForFunction(
+        () => document.querySelector("#status")?.textContent === "Bridge connected",
+      );
+    } finally {
+      if (browser) await browser.close();
+      if (editor) await stopChild(editor);
+      if (fixture) await stopChild(fixture.child);
+    }
+  });
+}

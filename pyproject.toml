@@ -18,6 +18,7 @@ desktop = [
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.0.0,<7.0.0",
     "pytest>=8.4.0",
     "ruff>=0.12.0",
 ]
@@ -33,6 +34,16 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/voxel_forge"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Bundle the Bun-served web editor inside the wheel so an installed tool
+# can host it without a checkout (see simulacat for the pattern).
+"editor/index.html" = "voxel_forge/editor/index.html"
+"editor/src" = "voxel_forge/editor/src"
+"editor/serve.ts" = "voxel_forge/editor/serve.ts"
+"editor/package.json" = "voxel_forge/editor/package.json"
+"editor/bun.lock" = "voxel_forge/editor/bun.lock"
+"editor/tsconfig.json" = "voxel_forge/editor/tsconfig.json"
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

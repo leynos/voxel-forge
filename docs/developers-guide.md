@@ -13,7 +13,7 @@ it.
   root (`server.py`), editor bridge (`bridge.py`), scene model, persistence,
   and MagicaVoxel reader and writer.
 - `src/voxel_forge/desktop/` — the PySide6 desktop application.
-- `editor/` — the Three.js/Vite web editor.
+- `editor/` — the Three.js application served by Bun.
 - `tests/` — the pytest suite.
 - `docs/` — this guide, the users guide, the roadmap, and the execution
   plans under `docs/execplans/`.
@@ -114,21 +114,32 @@ server is reached only once parsing returns normally.
 With no arguments, the server starts on stdio and blocks. That blocking
 behaviour is the contract an MCP client depends on.
 
-`src/voxel_forge/bridge.py` binds `127.0.0.1:8765` for WebSocket and
-`127.0.0.1:8766` for the HTTP scene endpoint, so both are loopback-only. The
-bridge announces its ports on standard error, because standard output belongs
-to the MCP protocol on the server path.
+The standalone `voxel-forge-bridge` command defaults to WebSocket port 8765 and
+HTTP port 8766. The MCP server instead binds ephemeral loopback ports and
+passes the discovered values to the editor. The bridge announces its ports on
+standard error, because standard output belongs to the MCP protocol on the
+server path.
+
+The WebSocket bridge checks a supplied `Origin` against the registered editor
+origins. It accepts connections with no `Origin` header for non-browser
+clients. Both services bind to loopback, which limits network reachability but
+does not authenticate local users or processes; treat these checks as browser
+cross-origin protection, not as an authentication boundary.
 
 ## Toolchain and dependency requirements
 
 - Python 3.11 or newer; `requires-python` is `">=3.11"`.
 - Base Pylint runs under managed PyPy 8; df12 Pylint, Skylos, and Nose run
   under managed CPython 3.14. Both Pylint passes check Python 3.11 syntax.
-- Node.js for the web editor. Continuous integration builds it with Node 22.
+- Bun for the web editor server, dependencies, and tests. Continuous
+  integration installs Bun with `oven-sh/setup-bun`.
 - The editor uses TypeScript with strict compiler options, Biome for
   formatting and lint, and oxlint with `df12-lints`.
-- Editor tests use `fast-check` (`^4.10.2`) for grouping properties and
-  Playwright (`^1.64.1`) with Chromium for the built-page bridge workflow.
+- Editor tests use `fast-check` (`^4.10.2`) for grouping and bridge-endpoint
+  properties, plus Playwright (`^1.64.1`) with Chromium for the built-page
+  bridge workflow.
+- Python boundary tests use Hypothesis to generate editor-origin ports,
+  HTTP content lengths, and process-supervision state sequences.
 - Runtime dependencies are bounded below the next breaking major:
   `mcp>=1.9.0,<2`, `websockets>=14.0,<17`, and `httpx>=0.28.0,<1`.
 - The `desktop` extra adds `PySide6>=6.6.0` and `pyinstaller>=6.0`.
@@ -163,24 +174,43 @@ lets each benefit from what the previous one cached.
 | `make lint-editor` | Check editor formatting and run Biome and oxlint |
 | `make typecheck` | Check editor sources and positive/negative type fixtures |
 | `make test` | Run Python tests with pytest |
-| `make test-editor` | Build the editor, then run Node and Playwright tests |
+| `make test-editor` | Run the Bun editor tests |
 | `make markdownlint` | Lint the maintained Markdown files |
 | `make nixie` | Validate Mermaid diagrams |
 
-`make test-editor` first builds the production page, then runs three editor
-test layers. The Node handler tests exercise the production placement and
-removal functions with controlled WebSocket states; the fast-check property
-test verifies per-colour grouping and input order. The Playwright test loads
-the built page against a temporary bridge with real HTTP and WebSocket
-endpoints, then removes a voxel from layer 0 while layer 1 is active and
+`make test-editor` runs the Bun editor tests. The Bun handler tests exercise
+the production placement and removal functions with controlled WebSocket
+states; the fast-check property test verifies per-colour grouping and input
+order. The Playwright browser test starts the real Bun server through
+`serve.ts` against a temporary Python bridge with real HTTP and WebSocket
+endpoints. It removes a voxel from layer 0 while layer 1 is active, then
 places a voxel through mouse input. These browser assertions complement the
 focused handler tests rather than replacing them.
 
-The hosted workflow installs editor packages with `npm ci --prefix editor`,
-then installs Chromium using Playwright before `make test-editor`. The editor
-build is also run as its own CI step after the test target.
+The hosted workflow installs editor packages with
+`bun install --frozen-lockfile --cwd editor`, then installs Chromium using
+Playwright before `make test-editor`. Serving and testing the editor does not
+run a production editor build. The separate `uv build --wheel` step packages
+the Python distribution and its editor assets into the wheel.
 For a local run, install the browser once with
-`npx --prefix editor playwright install chromium`.
+`cd editor && bunx playwright install chromium`.
+
+The installed package includes the editor, but contributor scripts and CI may
+need its package directory without a source checkout. Resolve that directory
+with:
+
+```sh
+python -m voxel_forge.js_root
+```
+
+This prints the absolute editor package root containing `package.json`. To
+install the editor dependencies from the installed package, run:
+
+```sh
+python -m voxel_forge.install_editor_deps
+```
+
+This resolves the same package root and runs `bun install` there.
 
 See the [lint standards](lint-standards.md) for the detailed contributor
 sequence and scanner configuration. Make disables parallel target execution
@@ -195,10 +225,12 @@ would descend into `node_modules`.
 
 The hosted workflow, `.github/workflows/readiness.yml`, runs on every pull
 request and on pushes to `main`. It runs the checks sequentially: Python
-formatting, Python lint, Python tests, wheel build, editor dependency install,
-editor format and lint, TypeScript check, Chromium installation, editor build
-and tests, a separate editor build, dependency audit, and Markdown lint. It
-does not currently run the local `make nixie` target.
+formatting and lint, editor dependency installation, Python tests, Python
+wheel build, editor format and lint, TypeScript check, Chromium installation,
+editor delivery tests, dependency audit, and Markdown lint. The delivery
+tests serve the editor through Bun; the wheel build packages the Python
+distribution and editor assets. The workflow does not currently run the
+local `make nixie` target.
 
 ## Decisions
 
@@ -216,8 +248,30 @@ they are not relitigated by accident.
 - The bridge announces its ports on standard error and keeps standard output
   for protocol data, so a client reading stdout never has to filter
   diagnostics.
+- The Three.js editor ships in the wheel and runs as a supervised Bun process.
+  The MCP server discovers its bridge and editor ports at startup. Bun closes
+  its server when the supervisor's private stdin pipe reaches EOF, so forced
+  Python termination cannot leave the editor listening as an orphan.
 - The Windows batch wrappers stay Windows-only and stay secondary to the
   cross-platform invocation, rather than becoming the documented route.
+
+## Editor hosting architecture
+
+`editor_runtime.editor_entrypoint()` resolves `voxel_forge/editor/serve.ts`
+from the installed package first, then falls back to `editor/serve.ts` in a
+repository checkout. `editor_package_root()` returns the corresponding
+directory for dependency installation. The installed package must be
+filesystem-backed: Bun needs a durable script path and a writable
+`node_modules` directory, so archive-only resources fail with an actionable
+error.
+
+`server_tools/io.py` composes the MCP launch operation: it ensures the bridge,
+passes the discovered bridge ports to Bun, supervises the child through
+`orchestration.py`, registers its discovered editor origin, and reports the
+browser URL. The editor reports its bound port as a structured stdout event
+and serves the bridge endpoints through `/bridge.json`. The private stdin pipe
+lets Bun close its listener when the Python supervisor exits, even if Python's
+`atexit` handlers do not run.
 
 ## Windows batch wrappers
 
@@ -228,8 +282,12 @@ reader on Linux who follows them verbatim is misled. `run-mcp.bat` calls the
 installed entry point through `uv run voxel-forge-mcp`; it does not run the
 files under `src/` directly.
 
-The web editor launch path is portable and is what the
-`voxelforge_launch_editor` MCP tool directs the caller to on every platform:
-`cd editor && npm install && npm run dev`, then open
-`http://localhost:5173`. The tool previously named a Windows-only `.bat`
-wrapper, which was a defect for every other platform.
+The `voxelforge_launch_editor` MCP tool starts the bundled editor under the
+MCP server, opens it in the browser, and reports its URL. Bun must be installed
+on the host. For manual development from a checkout, run
+`cd editor && bun install && bun run dev`, then open
+`http://127.0.0.1:5173`.
+
+The packaged editor must be filesystem-backed or extracted to a directory (a
+checkout also works): Bun needs a real directory for `serve.ts` and
+`node_modules`, so archive-only resources are unsupported.

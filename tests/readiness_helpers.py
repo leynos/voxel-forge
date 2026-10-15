@@ -19,7 +19,7 @@ if typ.TYPE_CHECKING:
 
 from pathlib import Path
 
-from voxel_forge import bridge
+from voxel_forge import bridge_http
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,7 +29,9 @@ def exchange_http(request: bytes) -> bytes:
 
     async def exchange() -> bytes:
         """Send the request through a temporary localhost bridge server."""
-        http_server = await asyncio.start_server(bridge._http_handler, "127.0.0.1", 0)
+        http_server = await asyncio.start_server(
+            bridge_http._http_handler, "127.0.0.1", 0
+        )
         port = http_server.sockets[0].getsockname()[1]
         async with http_server:
             reader, writer = await asyncio.open_connection("127.0.0.1", port)

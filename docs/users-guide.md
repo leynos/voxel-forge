@@ -39,8 +39,8 @@ bounds declared in `pyproject.toml`, not by the pins in `uv.lock`.
 
 ### Working from a checkout
 
-Holding the source is an alternative to installing the tool, and it is the
-only way to run the web editor:
+Holding the source is an alternative to installing the tool. The installed
+wheel also includes the web editor runtime.
 
 ```bash
 git clone https://github.com/leynos/voxel-forge
@@ -90,27 +90,31 @@ VoxelForge shows as connected.
 
 ## The web editor
 
-The web editor is a Three.js application in the `editor` directory of a
-checkout. It requires Node.js; continuous integration builds it with Node 22.
-From the checkout root:
+The Three.js editor is bundled in the installed wheel and served by Bun. Bun
+must be installed on the host. Call `voxelforge_launch_editor` from the MCP
+client to start the supervised editor and open it in the browser.
+
+For manual development from a checkout, run:
 
 ```bash
 cd editor
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
-Then open `http://localhost:5173`. The MCP tool `voxelforge_launch_editor`
-directs callers to this portable invocation on every platform, rather than to
-a platform-specific wrapper.
+Then open `http://127.0.0.1:5173`. This standalone command uses port 5173.
+The supervised MCP launch chooses an available editor port, opens the page,
+and reports the actual URL. The standalone bridge defaults to WebSocket port
+8765 and HTTP port 8766; the MCP server chooses available bridge ports and
+passes their values to the editor.
 
-The editor talks to the bridge over WebSocket at `ws://127.0.0.1:8765`, and
-the bridge serves the current scene as JSON at
-`http://127.0.0.1:8766/scene`. Both ports are bound to the loopback address
-`127.0.0.1`, so they are reachable only from the same machine.
-
-The editor is a source-checkout component. It is not yet packaged into the
-installed tool.
+Both the editor and bridge bind to loopback (`127.0.0.1`), so they are
+reachable only from the same machine. Loopback binding limits network access;
+it is not authentication. The bridge checks browser WebSocket `Origin`
+headers against the editor origins it has registered. Connections without an
+`Origin` header are allowed for non-browser clients, so local access should
+not be treated as a security boundary between users or processes on the same
+machine.
 
 ## Where scenes and exports live
 

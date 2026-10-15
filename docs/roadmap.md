@@ -139,7 +139,7 @@ fails outright. And `ALLOWED_EDITOR_ORIGINS` hard-codes `:5173`, which couples
 the origin check to the fixed port and would reject any dynamically allocated
 one.
 
-- [ ] 1.2.1. Move the editor to Bun and bundle it into the wheel.
+- [x] 1.2.1. Move the editor to Bun and bundle it into the wheel.
   - Replace the `editor/` npm and Vite project with a Bun-served application,
     and include its entry point, `package.json`, and lockfile in the built
     distribution through `[tool.hatch.build]` include and force-include rules.
@@ -147,14 +147,15 @@ one.
     path works from a checkout and from an installed wheel.
   - Success: `uv tool install` followed by the editor command opens a working
     editor on a machine with no checkout.
-- [ ] 1.2.2. Spawn and supervise the editor process from Python.
+- [x] 1.2.2. Spawn and supervise the editor process from Python.
   - Requires 1.2.1.
   - Launch Bun with explicit arguments and `shell=False`, read its stdout on a
     reader thread so the pipe cannot deadlock, and stop it with a bounded
-    timeout that escalates from terminate to kill.
-  - Success: the editor process is reaped when the server exits, including on
-    an abnormal exit, verified by asserting no orphan remains.
-- [ ] 1.2.3. Discover ports from the child process instead of fixing them.
+    timeout that escalates from terminate to kill. Give Bun a private stdin
+    pipe so it can detect a forced Python exit that skips `atexit` cleanup.
+  - Success: the editor stops on normal and abnormal server exit, including
+    forced parent termination, verified by checking that its listener closes.
+- [x] 1.2.3. Discover ports from the child process instead of fixing them.
   - Requires 1.2.2.
   - Have the Bun process bind an ephemeral port and report it as a structured
     event on stdout; have Python parse that event and wait for it with a
@@ -162,7 +163,7 @@ one.
     rather than from a constant.
   - Success: two VoxelForge instances run concurrently without collision, and
     an instance starts successfully when 8765, 8766, and 5173 are all occupied.
-- [ ] 1.2.4. Provide dependency-installation and root-resolution commands.
+- [x] 1.2.4. Provide dependency-installation and root-resolution commands.
   - Requires 1.2.1.
   - Mirror `python -m simulacat.js_root` and
     `python -m simulacat.install_simulator_deps`: one command prints the

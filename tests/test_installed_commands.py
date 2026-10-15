@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import os
 import sys
 from pathlib import Path
@@ -215,4 +216,57 @@ def test_installed_desktop_command_degrades_without_the_extra(
     )
     assert completed.stderr == desktop_extra_hint.format(missing="PySide6"), (
         "the installed command must give the complete portable extra-install guidance"
+    )
+
+
+def test_installed_js_root_resolves_wheel_assets(installed_commands: Path) -> None:
+    """The module command must resolve the installed package rather than checkout."""
+    completed = run_installed(
+        installed_commands / VENV_PYTHON.name, "-m", "voxel_forge.js_root"
+    )
+    assert completed.returncode == 0, completed.stderr
+    root = Path(completed.stdout.strip())
+    assert root.is_relative_to(installed_commands.parent), (
+        "the command must locate assets inside the installed virtual environment"
+    )
+    assert (root / "serve.ts").is_file(), "the wheel must include the Bun entrypoint"
+    assert (root / "package.json").is_file(), (
+        "the installed root must contain its manifest"
+    )
+
+
+@pytest.mark.skipif(IS_WINDOWS, reason="PATH-scoped POSIX executable Bun stub")
+def test_installed_dependency_helper_invokes_bun_without_network(
+    installed_commands: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The installed helper must invoke Bun against packaged assets without fetching."""
+    python = installed_commands / VENV_PYTHON.name
+    recorder = tmp_path / "bun-arguments.json"
+    stub = tmp_path / "bun"
+    stub.write_text(
+        f"#!{python}\n"
+        "import json, os, pathlib, sys\n"
+        "pathlib.Path(os.environ['VOXELFORGE_TEST_INSTALL_ARGS']).write_text("
+        "json.dumps(sys.argv[1:]), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("VOXELFORGE_TEST_INSTALL_ARGS", str(recorder))
+    monkeypatch.delenv("BUN", raising=False)
+
+    completed = run_installed(python, "-m", "voxel_forge.install_editor_deps")
+    assert completed.returncode == 0, completed.stderr
+    args = json.loads(recorder.read_text(encoding="utf-8"))
+    assert args[:2] == ["install", "--cwd"], (
+        "invoke Bun's dependency installation command"
+    )
+    root = Path(args[2])
+    assert root.is_relative_to(installed_commands.parent), (
+        "install dependencies into the installed package, never the checkout"
+    )
+    assert (root / "package.json").is_file(), (
+        "the target must contain the wheel manifest"
     )

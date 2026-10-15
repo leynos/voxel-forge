@@ -3,9 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
+import threading
+import typing as typ
 from pathlib import Path
 
-from voxel_forge import server
+if typ.TYPE_CHECKING:
+    import subprocess
+
+from voxel_forge import bridge, server
+from voxel_forge.editor_runtime import EditorRuntimeError, editor_package_root
+from voxel_forge.orchestration import (
+    EditorPorts,
+    install_editor_dependencies,
+    start_editor_process,
+    stop_editor_process,
+    supervise,
+)
+
+_LOG = logging.getLogger(__name__)
+
+# The supervised editor for this server process, keyed for mutability
+# without a global statement.
+_editor_state: dict[str, tuple[subprocess.Popen[str], int, tuple[int, int]]] = {}
+_editor_lock = threading.Lock()
 
 
 @server.mcp.tool()
@@ -258,3 +279,84 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
             f"(ลด {stats['reduction_percent']}%)\n"
             f"  รันใน Studio ด้วย execute_luau"
         )
+
+
+def _running_editor() -> tuple[subprocess.Popen[str], int] | None:
+    """Return the current editor, retiring stale processes and origin allowances."""
+    editor = _editor_state.get("editor")
+    if editor is None:
+        return None
+    process, port, configured_ports = editor
+    status = process.poll()
+    if status is None and configured_ports == bridge.current_ports():
+        return process, port
+    bridge.unregister_editor_origin(port)
+    if status is None:
+        _LOG.info("Restarting editor pid=%d after bridge endpoint change", process.pid)
+        stop_editor_process(process)
+    else:
+        _LOG.warning(
+            "Editor exited unexpectedly pid=%d status=%d; restarting",
+            process.pid,
+            status,
+        )
+    _editor_state.pop("editor", None)
+    return None
+
+
+def _start_supervised_editor(
+    bridge_ports: tuple[int, int],
+) -> tuple[subprocess.Popen[str], int]:
+    """Start the bundled editor under supervision and remember it.
+
+    The editor's discovered port is registered as an allowed bridge
+    origin, so the origin check follows the dynamically allocated port
+    rather than a constant.
+    """
+    root = editor_package_root()
+    if not (root / "node_modules").is_dir():
+        install_editor_dependencies()
+    ws_port, http_port = bridge_ports
+    ports = EditorPorts(bridge_ws=ws_port, bridge_http=http_port)
+    process, port = start_editor_process(ports)
+    supervise(process)
+    bridge.register_editor_origin(port)
+    editor = (process, port)
+    _editor_state["editor"] = (process, port, bridge_ports)
+    return editor
+
+
+@server.mcp.tool()
+def voxelforge_launch_editor() -> str:
+    """
+    เปิด VoxelForge Web Editor ในเบราว์เซอร์ (Three.js 3D view).
+
+    Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่.
+    """
+    with _editor_lock:
+        server._ensure_bridge()
+        bridge_ports = bridge.current_ports()
+        if bridge_ports is None:
+            return "Bridge ยังไม่พร้อม — ลองเรียก voxelforge_launch_editor อีกครั้ง"
+        editor = _running_editor()
+        if editor is None:
+            try:
+                editor = _start_supervised_editor(bridge_ports)
+            except EditorRuntimeError as exc:
+                return (
+                    f"ไม่สามารถเปิด editor ได้: {exc}\n"
+                    "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor "
+                    "อีกครั้ง"
+                )
+    _, port = editor
+    ws_port, http_port = bridge_ports
+    url = f"http://127.0.0.1:{port}"
+
+    import webbrowser
+
+    webbrowser.open(url)
+    return (
+        f"เปิด {url} แล้ว (Bun editor ภายใต้การดูแลของ server)\n"
+        f"Bridge: ws://127.0.0.1:{ws_port} | "
+        f"HTTP scene: http://127.0.0.1:{http_port}/scene"
+    )
