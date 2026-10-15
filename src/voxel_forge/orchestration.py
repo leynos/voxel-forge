@@ -68,9 +68,12 @@ def _spawn_editor(bun_executable: str, ports: EditorPorts) -> subprocess.Popen[s
     env["VOXELFORGE_EDITOR_PORT"] = str(ports.requested)
     env["VOXELFORGE_BRIDGE_WS_PORT"] = str(ports.bridge_ws)
     env["VOXELFORGE_BRIDGE_HTTP_PORT"] = str(ports.bridge_http)
+    env["VOXELFORGE_EDITOR_SUPERVISED"] = "1"
     try:
         return subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # validated executable and script path; shell=False
             [bun_executable, str(editor_entrypoint())],
+            # EOF gives Bun a parent-death signal, including on Windows.
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

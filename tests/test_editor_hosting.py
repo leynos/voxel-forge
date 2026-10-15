@@ -7,10 +7,15 @@ on a discoverable port.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import shutil
+import signal
 import socket
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # tests spawn Bun with validated arguments and shell=False
+import sys
+import time
 import tomllib
 import typing as typ
 import urllib.request
@@ -81,6 +86,35 @@ def _read_listening_port(process: subprocess.Popen[str]) -> int:
     return int(event["port"])
 
 
+def _editor_accepts_connections(port: int) -> bool:
+    """Return whether the editor still accepts loopback connections."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+            return True
+    except OSError:
+        return False
+
+
+def _wait_for_editor_to_stop(port: int, timeout: float = 5.0) -> bool:
+    """Wait for a stopped editor to release its listening port."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _editor_accepts_connections(port):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _stop_editor_if_still_serving(pid: int | None, port: int | None) -> None:
+    """Stop a leaked test editor if its known port is still open."""
+    if pid is None or port is None:
+        return
+    if not _editor_accepts_connections(port):
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(pid, signal.SIGTERM)
+
+
 def _start_bun_editor(editor_port: int | None) -> subprocess.Popen[str]:
     """Start Bun with an optional editor port and deterministic bridge endpoints."""
     env = {
@@ -140,6 +174,42 @@ def test_bun_serves_the_editor_on_an_ephemeral_port() -> None:
             )
         finally:
             stop_editor_process(process)
+
+
+@pytest.mark.skipif(BUN is None, reason="bun is not installed")
+def test_editor_stops_when_supervising_python_process_is_killed() -> None:
+    """The editor must stop after forced parent termination closes its pipe."""
+    fixture = Path(__file__).with_name("editor_supervisor_fixture.py")
+    editor_pid: int | None = None
+    editor_port: int | None = None
+    with subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # fixed Python and fixture paths; shell=False
+        [sys.executable, str(fixture)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        cwd=Path.cwd(),
+    ) as parent:
+        try:
+            stdout = parent.stdout
+            assert stdout is not None, "supervisor fixture stdout must be captured"
+            event = json.loads(stdout.readline())
+            editor_pid = int(event["pid"])
+            editor_port = int(event["port"])
+            assert _editor_accepts_connections(editor_port), (
+                "the supervised editor must accept connections before parent exit"
+            )
+
+            parent.kill()
+            parent.wait(timeout=5)
+
+            assert _wait_for_editor_to_stop(editor_port), (
+                "the editor must close its port after the supervising process is killed"
+            )
+        finally:
+            if parent.poll() is None:
+                parent.kill()
+            parent.wait(timeout=5)
+            _stop_editor_if_still_serving(editor_pid, editor_port)
 
 
 FAKE_EDITOR_PORT = 43210

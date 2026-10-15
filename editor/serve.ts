@@ -35,3 +35,22 @@ const server = Bun.serve({
 });
 
 console.log(JSON.stringify({ event: "listening", port: server.port }));
+
+/** Close the editor server after supervisor EOF, such as when Python is killed. */
+async function stopWhenSupervisorExits(): Promise<void> {
+  const reader = Bun.stdin.stream().getReader();
+  try {
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+  } finally {
+    reader.releaseLock();
+    await server.stop(true);
+  }
+}
+
+if (process.env.VOXELFORGE_EDITOR_SUPERVISED === "1") {
+  // A private stdin pipe closes even when the Python parent is killed.
+  void stopWhenSupervisorExits();
+}
