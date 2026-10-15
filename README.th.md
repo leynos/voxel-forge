@@ -94,6 +94,14 @@ voxel-forge-mcp
 หลังแก้การตั้งค่า ให้เริ่ม client ใหม่และตรวจว่า MCP panel แสดงว่าเชื่อมต่อ
 กับ `VoxelForge` แล้ว
 
+### การทำงานแบบ headless
+
+โดยค่าเริ่มต้น server จะไม่ผูกพอร์ตใด ๆ bridge ของ editor จะเริ่มทำงานเมื่อมี
+การเรียก `voxelforge_launch_editor` เท่านั้น หากต้องการให้ตัว listener ของ
+bridge เริ่มทำงานทันที ให้รัน `voxel-forge-mcp --bridge` หรือตั้งค่า
+`VOXELFORGE_BRIDGE=1` ด้วยเหตุนี้ server จึงปลอดภัยสำหรับสภาพแวดล้อมแบบ
+headless และ sandbox อย่างเช่น continuous integration
+
 ## Desktop App (ไม่ใช้เบราว์เซอร์)
 
 ### เปิดใช้งาน

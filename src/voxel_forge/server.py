@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP
 
 from . import bridge as bridge_module
 from .bridge import BRIDGE_HTTP_PORT as BRIDGE_HTTP_PORT
-from .bridge import notify_scene_update, start_bridge_background
+from .bridge import current_ports, notify_scene_update, start_bridge_background
 from .export_roblox import to_luau_merged as to_luau_merged
 from .export_roblox import write_luau_file as write_luau_file
 from .mesh_merge import merge_stats as merge_stats
@@ -61,8 +61,20 @@ def _ensure_bridge() -> None:
 
 
 def _sync_bridge(scene: VoxelScene) -> None:
-    """Broadcast one scene update; callers hold the registry lock for the mutation."""
-    _ensure_bridge()
+    """Notify bridge subscribers when a bridge is running.
+
+    Scene mutations must not start the bridge: a headless or sandboxed run
+    should never bind a port. The bridge starts only when an editor is
+    requested (`voxelforge_launch_editor`) or when the server is run with
+    `--bridge`.
+
+    Parameters
+    ----------
+    scene : VoxelScene
+        The scene whose contents changed.
+    """
+    if current_ports() is None:
+        return
     notify_scene_update(scene)
 
 
@@ -120,6 +132,11 @@ def _export_path(scene: VoxelScene, output_path: str, suffix: str) -> Path:
 def main() -> None:
     """Run the MCP server on stdio, or print usage and exit for ``--help``.
 
+    The editor bridge is opt-in: pass ``--bridge`` or set
+    ``VOXELFORGE_BRIDGE=1`` to start its listener eagerly. Without either, no
+    socket is bound until ``voxelforge_launch_editor`` asks for one, so a
+    headless run stays headless.
+
     Notes
     -----
     Argument parsing happens before the bridge starts so that ``--help``
@@ -128,13 +145,25 @@ def main() -> None:
     parsing returns.
     """
     import argparse
+    import os
 
     parser = argparse.ArgumentParser(
         prog="voxel-forge-mcp",
         description=("VoxelForge MCP server (stdio transport) with an editor bridge."),
     )
-    parser.parse_args()
-    _ensure_bridge()
+    parser.add_argument(
+        "--bridge",
+        action="store_true",
+        default=os.environ.get("VOXELFORGE_BRIDGE", "") == "1",
+        help=(
+            "start the editor bridge listener eagerly "
+            "(default: only when the editor is launched; "
+            "VOXELFORGE_BRIDGE=1 also enables it)"
+        ),
+    )
+    args = parser.parse_args()
+    if args.bridge:
+        _ensure_bridge()
     mcp.run(transport="stdio")
 
 

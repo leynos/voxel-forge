@@ -13,7 +13,6 @@ because a readiness failure should name the broken contract directly.
 
 from __future__ import annotations
 
-import contextlib
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -183,26 +182,72 @@ def test_desktop_entry_point_runs_the_application_on_the_happy_path(
     assert exit_code == 0, "a successful desktop launch must report success"
 
 
-@pytest.mark.parametrize("arguments", [["--help"], []], ids=["help", "startup"])
-def test_mcp_entry_point_obeys_its_arguments(
+def _launch_mcp(
+    monkeypatch: pytest.MonkeyPatch, *arguments: str, bridge_env: str | None = None
+) -> None:
+    """Run the MCP entry point exactly as a client would launch it.
+
+    ``VOXELFORGE_BRIDGE`` is cleared first, so only an explicit ``bridge_env``
+    can enable it; a caller that omits the argument cannot pass by inheriting
+    the variable from the environment running the tests.
+    """
+    monkeypatch.delenv("VOXELFORGE_BRIDGE", raising=False)
+    if bridge_env is not None:
+        monkeypatch.setenv("VOXELFORGE_BRIDGE", bridge_env)
+    monkeypatch.setattr(sys, "argv", ["voxel-forge-mcp", *arguments])
+    server.main()
+
+
+def test_mcp_help_exits_before_binding(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     mcp_invocations: tuple[list[str], list[str]],
-    arguments: list[str],
 ) -> None:
-    """Help exits before binding; ordinary startup launches the bridge then stdio."""
-    monkeypatch.setattr(sys, "argv", ["voxel-forge-mcp", *arguments])
+    """``--help`` must answer and exit without starting the bridge or stdio."""
+    calls, _ = mcp_invocations
+
+    with pytest.raises(SystemExit) as exit_info:
+        _launch_mcp(monkeypatch, "--help")
+
+    assert exit_info.value.code == 0, "MCP help must exit successfully"
+    assert "VoxelForge" in capsys.readouterr().out, "help must identify the application"
+    assert not calls, "help must not start the bridge or server"
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_calls"),
+    [([], ["run"]), (["--bridge"], ["bridge", "run"])],
+    ids=["startup", "bridge"],
+)
+def test_mcp_entry_point_obeys_its_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+    mcp_invocations: tuple[list[str], list[str]],
+    arguments: list[str],
+    expected_calls: list[str],
+) -> None:
+    """The bridge is opt-in, so only ``--bridge`` may bind a socket before stdio.
+
+    Roadmap task 1.3.1 makes the bridge opt-in: a headless run reaches stdio
+    without binding a port, and the listener starts eagerly only when asked.
+    """
     calls, transports = mcp_invocations
-    expectation = pytest.raises(SystemExit) if arguments else contextlib.nullcontext()
-    with expectation as exit_info:
-        server.main()
-    if arguments:
-        assert exit_info is not None, "help must terminate through argument parsing"
-        assert exit_info.value.code == 0, "MCP help must exit successfully"
-        assert "VoxelForge" in capsys.readouterr().out, (
-            "help must identify the application"
-        )
-        assert not calls, "help must not start the bridge or server"
-    else:
-        assert calls == ["bridge", "run"], "startup must launch the bridge before stdio"
-        assert transports == ["stdio"], "the MCP server must use its protocol transport"
+
+    _launch_mcp(monkeypatch, *arguments)
+
+    assert calls == expected_calls, "only --bridge may start the bridge before stdio"
+    assert transports == ["stdio"], "the MCP server must use its protocol transport"
+
+
+def test_mcp_entry_point_honours_the_bridge_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+    mcp_invocations: tuple[list[str], list[str]],
+) -> None:
+    """``VOXELFORGE_BRIDGE=1`` must be equivalent to passing ``--bridge``."""
+    calls, transports = mcp_invocations
+
+    _launch_mcp(monkeypatch, bridge_env="1")
+
+    assert calls == ["bridge", "run"], (
+        "VOXELFORGE_BRIDGE=1 must enable the bridge without a flag"
+    )
+    assert transports == ["stdio"], "the MCP server must use its protocol transport"

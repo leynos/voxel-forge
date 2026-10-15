@@ -93,6 +93,14 @@ exercises the project environment instead.
 
 Restart the client and check its MCP panel shows `VoxelForge` as connected.
 
+### Headless operation
+
+By default the server binds no socket: the editor bridge starts only when
+`voxelforge_launch_editor` is called. To start the bridge listener eagerly,
+run `voxel-forge-mcp --bridge` or set `VOXELFORGE_BRIDGE=1`. This makes the
+server safe for headless and sandboxed environments such as continuous
+integration.
+
 ## Desktop App (ไม่ใช้เบราว์เซอร์)
 
 ### Running
