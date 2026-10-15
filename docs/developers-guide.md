@@ -13,7 +13,7 @@ it.
   root (`server.py`), editor bridge (`bridge.py`), scene model, persistence,
   and MagicaVoxel reader and writer.
 - `src/voxel_forge/desktop/` — the PySide6 desktop application.
-- `editor/` — the Three.js/Vite web editor.
+- `editor/` — the Three.js application served by Bun.
 - `tests/` — the pytest suite.
 - `docs/` — this guide, the users guide, the roadmap, and the execution
   plans under `docs/execplans/`.
@@ -114,17 +114,19 @@ server is reached only once parsing returns normally.
 With no arguments, the server starts on stdio and blocks. That blocking
 behaviour is the contract an MCP client depends on.
 
-`src/voxel_forge/bridge.py` binds `127.0.0.1:8765` for WebSocket and
-`127.0.0.1:8766` for the HTTP scene endpoint, so both are loopback-only. The
-bridge announces its ports on standard error, because standard output belongs
-to the MCP protocol on the server path.
+The standalone `voxel-forge-bridge` command defaults to WebSocket port 8765 and
+HTTP port 8766. The MCP server instead binds ephemeral loopback ports and
+passes the discovered values to the editor. The bridge announces its ports on
+standard error, because standard output belongs to the MCP protocol on the
+server path.
 
 ## Toolchain and dependency requirements
 
 - Python 3.11 or newer; `requires-python` is `">=3.11"`.
 - Base Pylint runs under managed PyPy 8; df12 Pylint, Skylos, and Nose run
   under managed CPython 3.14. Both Pylint passes check Python 3.11 syntax.
-- Node.js for the web editor. Continuous integration builds it with Node 22.
+- Bun for the web editor server, dependencies, and tests. Continuous
+  integration installs Bun with `oven-sh/setup-bun`.
 - The editor uses TypeScript with strict compiler options, Biome for
   formatting and lint, and oxlint with `df12-lints`.
 - Editor tests use `fast-check` (`^4.10.2`) for grouping properties and
@@ -168,7 +170,7 @@ lets each benefit from what the previous one cached.
 | `make nixie` | Validate Mermaid diagrams |
 
 `make test-editor` first builds the production page, then runs three editor
-test layers. The Node handler tests exercise the production placement and
+test layers. The Bun handler tests exercise the production placement and
 removal functions with controlled WebSocket states; the fast-check property
 test verifies per-colour grouping and input order. The Playwright test loads
 the built page against a temporary bridge with real HTTP and WebSocket
@@ -176,9 +178,10 @@ endpoints, then removes a voxel from layer 0 while layer 1 is active and
 places a voxel through mouse input. These browser assertions complement the
 focused handler tests rather than replacing them.
 
-The hosted workflow installs editor packages with `npm ci --prefix editor`,
-then installs Chromium using Playwright before `make test-editor`. The editor
-build is also run as its own CI step after the test target.
+The hosted workflow installs editor packages with
+`bun install --frozen-lockfile --cwd editor`, then installs Chromium using
+Playwright before `make test-editor`. The editor build is also run as its own
+CI step after the test target.
 For a local run, install the browser once with
 `npx --prefix editor playwright install chromium`.
 
@@ -216,6 +219,9 @@ they are not relitigated by accident.
 - The bridge announces its ports on standard error and keeps standard output
   for protocol data, so a client reading stdout never has to filter
   diagnostics.
+- The MCP editor launcher owns the Bun process and gives it a private stdin
+  pipe. Bun closes its server when that pipe reaches EOF, so forced Python
+  termination cannot leave the editor listening as an orphan.
 - The Windows batch wrappers stay Windows-only and stay secondary to the
   cross-platform invocation, rather than becoming the documented route.
 
@@ -228,8 +234,8 @@ reader on Linux who follows them verbatim is misled. `run-mcp.bat` calls the
 installed entry point through `uv run voxel-forge-mcp`; it does not run the
 files under `src/` directly.
 
-The web editor launch path is portable and is what the
-`voxelforge_launch_editor` MCP tool directs the caller to on every platform:
-`cd editor && npm install && npm run dev`, then open
-`http://localhost:5173`. The tool previously named a Windows-only `.bat`
-wrapper, which was a defect for every other platform.
+The `voxelforge_launch_editor` MCP tool starts the bundled editor under the
+MCP server, opens it in the browser, and reports its URL. Bun must be installed
+on the host. For manual development from a checkout, run
+`cd editor && bun install && bun run dev`, then open
+`http://127.0.0.1:5173`.

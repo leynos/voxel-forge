@@ -151,9 +151,10 @@ one.
   - Requires 1.2.1.
   - Launch Bun with explicit arguments and `shell=False`, read its stdout on a
     reader thread so the pipe cannot deadlock, and stop it with a bounded
-    timeout that escalates from terminate to kill.
-  - Success: the editor process is reaped when the server exits, including on
-    an abnormal exit, verified by asserting no orphan remains.
+    timeout that escalates from terminate to kill. Give Bun a private stdin
+    pipe so it can detect a forced Python exit that skips `atexit` cleanup.
+  - Success: the editor stops on normal and abnormal server exit, including
+    forced parent termination, verified by checking that its listener closes.
 - [x] 1.2.3. Discover ports from the child process instead of fixing them.
   - Requires 1.2.2.
   - Have the Bun process bind an ephemeral port and report it as a structured
