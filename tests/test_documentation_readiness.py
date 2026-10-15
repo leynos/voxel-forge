@@ -16,6 +16,8 @@ from __future__ import annotations
 import typing as typ
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
     import pytest
 
 from pathlib import Path
@@ -24,6 +26,25 @@ import voxel_forge
 from voxel_forge import server
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _prepare_editor_tool(
+    monkeypatch: pytest.MonkeyPatch,
+    start_editor: cabc.Callable[[tuple[int, int]], tuple[object, int]],
+) -> list[str]:
+    """Replace bridge, process, and browser effects for launcher tests."""
+    import webbrowser
+
+    from voxel_forge import bridge
+    from voxel_forge.server_tools import io
+
+    monkeypatch.setattr(server, "_ensure_bridge", lambda: None)
+    monkeypatch.setattr(bridge, "current_ports", lambda: (43001, 43002))
+    monkeypatch.setattr(io, "_running_editor", lambda: None)
+    monkeypatch.setattr(io, "_start_supervised_editor", start_editor)
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    return opened
 
 
 def test_installed_entry_points_target_the_launchers() -> None:
@@ -192,10 +213,9 @@ def test_no_launcher_is_named_outside_windows_context() -> None:
     establish Windows context keeps the wrappers documented as conveniences
     rather than as the general command.
 
-    The scan covers emitted source strings as well as the README, because the
-    same defect hides in a tool result: `voxelforge_launch_editor` told every
-    user to run `run-editor.bat`, which a Linux caller cannot follow, while the
-    sibling branch of that same function already gave the portable command.
+    The scan covers emitted source strings as well as the README, because a
+    Windows-only wrapper must not be presented to Linux callers as the general
+    launcher command.
     """
     offenders = _windows_launcher_offenders(REPOSITORY_ROOT)
 
@@ -205,55 +225,50 @@ def test_no_launcher_is_named_outside_windows_context() -> None:
     )
 
 
-def test_launch_editor_tool_returns_a_command_linux_can_run(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_launch_editor_tool_opens_supervised_editor_on_discovered_port(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The editor tool must answer with a portable command, not a Windows wrapper.
+    """The MCP tool should start the supervised editor and open its bound URL."""
 
-    The sibling branch of the same function already returned the portable
-    ``cd editor && npm run dev``; this pins both branches to it. Checking the
-    returned string is what makes the guarantee real: a source-text scan can
-    only show a ``.bat`` was not written down, not that the value handed to the
-    caller is runnable on the platform reading it.
-    """
-    import webbrowser
+    def start_editor(ports: tuple[int, int]) -> tuple[object, int]:
+        assert ports == (43001, 43002), (
+            "the editor must receive the bridge's dynamically bound ports"
+        )
+        return object(), 43003
 
-    monkeypatch.setattr(server, "_ensure_bridge", lambda: None)
-    opened: list[str] = []
-    # ``webbrowser`` is imported inside the function body, so the patch has to
-    # land on the standard-library module the import statement resolves.
-    monkeypatch.setattr(webbrowser, "open", opened.append)
+    opened = _prepare_editor_tool(monkeypatch, start_editor)
 
-    running_editor = server.voxelforge_launch_editor()
+    response = server.voxelforge_launch_editor()
 
-    assert "cd editor && npm run dev" in running_editor, (
-        "the running-editor response must explain how to start the editor"
-    )
-    assert ".bat" not in running_editor, (
-        "a Windows-only launcher must not reach Linux callers"
-    )
-    assert opened == ["http://localhost:5173"], (
-        "the editor is already served, so it must be opened"
+    assert response == (
+        "เปิด http://127.0.0.1:43003 แล้ว (Bun editor ภายใต้การดูแลของ server)\n"
+        "Bridge: ws://127.0.0.1:43001 | HTTP scene: "
+        "http://127.0.0.1:43002/scene"
+    ), "the tool response must report the editor and both bridge endpoints"
+    assert opened == ["http://127.0.0.1:43003"], (
+        "the browser must open the editor's discovered port"
     )
 
-    # The absent-index branch is reached by pointing the module at a directory
-    # whose sibling ``editor`` is missing, which selects the guidance branch
-    # rather than the open one. The layout mirrors the real one, since the
-    # function locates the editor relative to the module file.
-    laid_out = tmp_path / "src" / "voxel_forge" / "server.py"
-    laid_out.parent.mkdir(parents=True)
-    monkeypatch.setattr(server, "__file__", str(laid_out))
-    opened.clear()
 
-    missing_editor = server.voxelforge_launch_editor()
+def test_launch_editor_tool_reports_supervision_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed Bun startup should tell callers how to recover."""
+    from voxel_forge.editor_runtime import EditorRuntimeError
 
-    assert "cd editor && npm install && npm run dev" in missing_editor, (
-        "a missing editor must include dependency installation in its recovery command"
-    )
-    assert ".bat" not in missing_editor, (
-        "a Windows-only launcher must not reach Linux callers"
-    )
-    assert not opened, "the editor is not running, so nothing should be opened"
+    def fail_start(_ports: tuple[int, int]) -> tuple[object, int]:
+        msg = "Bun executable not found"
+        raise EditorRuntimeError(msg)
+
+    opened = _prepare_editor_tool(monkeypatch, fail_start)
+
+    response = server.voxelforge_launch_editor()
+
+    assert response == (
+        "ไม่สามารถเปิด editor ได้: Bun executable not found\n"
+        "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor อีกครั้ง"
+    ), "a Bun startup failure must include the recovery instruction"
+    assert not opened, "a failed startup must not launch the browser"
 
 
 def test_windows_mcp_launcher_uses_installed_entrypoint() -> None:

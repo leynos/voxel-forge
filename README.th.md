@@ -138,10 +138,12 @@ MCP สำหรับ AI ยังทำงานแยกผ่าน `voxel-f
 
 ```bash
 cd editor
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
+Web Editor ให้บริการผ่าน [Bun](https://bun.sh) และถูกรวมอยู่ใน wheel ที่ติดตั้ง
+แล้ว ทำให้ `voxelforge_launch_editor` ใช้งานได้โดยไม่ต้องมี checkout
 บน Windows ใช้ `run-editor.bat` เพื่อเรียกคำสั่งเดียวกันได้
 
 เปิด `http://127.0.0.1:5173` บนเครื่องเดียวกัน โดย editor จะ sync สองทางกับ

@@ -7,10 +7,11 @@ and terminates only this child when finished. No scene files are created.
 import asyncio
 import json
 import sys
+from urllib.parse import urlsplit
 
 from websockets.asyncio.server import serve
 
-from voxel_forge import bridge
+from voxel_forge import bridge, bridge_http
 from voxel_forge.model import SceneStore
 
 
@@ -20,7 +21,7 @@ async def main(editor_origin: str) -> None:
     Parameters
     ----------
     editor_origin : str
-        Origin of the test-owned static server, allowed for HTTP and WebSocket.
+        Origin of the test-owned Bun editor, allowed for HTTP and WebSocket.
 
     Examples
     --------
@@ -33,9 +34,13 @@ async def main(editor_origin: str) -> None:
     scene.add_layer("Active upper")
     scene.active_layer = 1
     bridge.use_store(shared)
-    bridge.ALLOWED_EDITOR_ORIGINS = frozenset({editor_origin})
+    editor_port = urlsplit(editor_origin).port
+    if editor_port is None:
+        msg = "the test editor origin must include its allocated port"
+        raise ValueError(msg)
+    bridge.register_editor_origin(editor_port)
     bridge._bridge_loop = asyncio.get_running_loop()
-    http = await asyncio.start_server(bridge._http_handler, "127.0.0.1", 0)
+    http = await asyncio.start_server(bridge_http._http_handler, "127.0.0.1", 0)
     async with (
         http,
         serve(

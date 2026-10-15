@@ -76,8 +76,7 @@ test:
 	uv run pytest -q
 
 test-editor:
-	cd editor && npm run build
-	cd editor && npm test
+	cd editor && bun run test
 
 markdownlint:
 	$(MDLINT) $(MARKDOWN_PATHS)

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
-import subprocess  # ruff: ignore[suspicious-subprocess-import]  # typing only; processes are spawned in orchestration
+import typing as typ
 from pathlib import Path
+
+if typ.TYPE_CHECKING:
+    import subprocess
 
 from voxel_forge import bridge, server
 from voxel_forge.editor_runtime import EditorRuntimeError, editor_package_root

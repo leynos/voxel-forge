@@ -49,7 +49,7 @@ DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
 _POLL_JOIN_TIMEOUT_SECONDS = 0.1
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class EditorPorts:
     """Ports the editor needs to know about when it starts.
 

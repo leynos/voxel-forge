@@ -43,6 +43,7 @@ def allowed_origins() -> frozenset[str]:
         for origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
     )
 
+
 store = SceneStore()
 _clients: set[ServerConnection] = set()
 _lock = threading.Lock()
@@ -243,8 +244,12 @@ async def _run_servers(ws_port: int = 0, http_port: int = 0) -> None:
 
     import websockets
 
+    from voxel_forge import bridge_http
+
     ws_server = await websockets.serve(_ws_handler, BRIDGE_HOST, ws_port)
-    http_server = await asyncio.start_server(_http_handler, BRIDGE_HOST, http_port)
+    http_server = await asyncio.start_server(
+        bridge_http._http_handler, BRIDGE_HOST, http_port
+    )
     bound_ws = _bound_port(ws_server, ws_port)
     bound_http = _bound_port(http_server, http_port)
     _bridge_loop = asyncio.get_running_loop()
@@ -323,10 +328,6 @@ def main() -> None:
     args = parser.parse_args()
     asyncio.run(_run_servers(args.ws_port, args.http_port))
 
-
-from voxel_forge.bridge_http import (  # ruff: ignore[module-import-not-at-top-of-file]  # HTTP handlers need initialized bridge state
-    _http_handler,
-)
 
 if __name__ == "__main__":
     main()

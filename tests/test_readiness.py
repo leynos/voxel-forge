@@ -31,6 +31,9 @@ def test_desktop_entry_point_degrades_without_pyside6(
     desktop_extra_hint: str,
 ) -> None:
     """Without the `desktop` extra, `voxel-forge` must explain, not traceback."""
+    from voxel_forge import desktop
+
+    monkeypatch.delattr(desktop, "app", raising=False)
     monkeypatch.setitem(sys.modules, "PySide6", None)
     monkeypatch.setitem(sys.modules, "PySide6.QtCore", None)
     monkeypatch.delitem(sys.modules, "voxel_forge.desktop.app", raising=False)
@@ -50,10 +53,13 @@ def test_desktop_entry_point_propagates_unrelated_import_errors(
 ) -> None:
     """An app.py import that fails for another reason must surface, not be misreported.
 
-    Halting the module forces the failure before any PySide6 import could run,
-    so the guard must decline it in every environment, whether or not the
-    ``desktop`` extra is installed.
+    Clearing the package attribute as well as the module cache forces the
+    failure before any PySide6 import could run, regardless of whether the
+    desktop application was imported earlier in the test process.
     """
+    from voxel_forge import desktop
+
+    monkeypatch.delattr(desktop, "app", raising=False)
     monkeypatch.setitem(sys.modules, "voxel_forge.desktop.app", None)
     from voxel_forge.desktop import launch
 

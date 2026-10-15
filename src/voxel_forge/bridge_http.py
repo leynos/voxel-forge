@@ -99,6 +99,7 @@ async def _handle_scene_post(payload: str) -> tuple[bytes, bytes]:
         return _STATUS_BAD_REQUEST, json.dumps({"error": str(exc)}).encode()
     return _STATUS_OK, body
 
+
 def _current_scene_body() -> bytes:
     """Serialize the current scene under its registry lock."""
     with bridge.store.lock:
@@ -107,6 +108,7 @@ def _current_scene_body() -> bytes:
     if snapshot is None:
         return json.dumps({"error": "no active scene"}).encode()
     return json.dumps(snapshot, ensure_ascii=False).encode()
+
 
 async def _route_request(request: _HttpRequest, payload: str) -> tuple[bytes, bytes]:
     """Dispatch one request, returning its status line and response body."""
