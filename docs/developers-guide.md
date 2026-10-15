@@ -252,6 +252,24 @@ they are not relitigated by accident.
 - The Windows batch wrappers stay Windows-only and stay secondary to the
   cross-platform invocation, rather than becoming the documented route.
 
+## Editor hosting architecture
+
+`editor_runtime.editor_entrypoint()` resolves `voxel_forge/editor/serve.ts`
+from the installed package first, then falls back to `editor/serve.ts` in a
+repository checkout. `editor_package_root()` returns the corresponding
+directory for dependency installation. The installed package must be
+filesystem-backed: Bun needs a durable script path and a writable
+`node_modules` directory, so archive-only resources fail with an actionable
+error.
+
+`server_tools/io.py` composes the MCP launch operation: it ensures the bridge,
+passes the discovered bridge ports to Bun, supervises the child through
+`orchestration.py`, registers its discovered editor origin, and reports the
+browser URL. The editor reports its bound port as a structured stdout event
+and serves the bridge endpoints through `/bridge.json`. The private stdin pipe
+lets Bun close its listener when the Python supervisor exits, even if Python's
+`atexit` handlers do not run.
+
 ## Windows batch wrappers
 
 `run-mcp.bat`, `run-desktop.bat`, `run-editor.bat`, and `build-desktop.bat`
