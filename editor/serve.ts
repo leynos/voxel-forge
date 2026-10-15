@@ -17,7 +17,7 @@ function envPort(name: string, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-const requestedPort = envPort("VOXELFORGE_EDITOR_PORT", 0);
+const requestedPort = envPort("VOXELFORGE_EDITOR_PORT", 5173);
 const bridgeWsPort = envPort("VOXELFORGE_BRIDGE_WS_PORT", 8765);
 const bridgeHttpPort = envPort("VOXELFORGE_BRIDGE_HTTP_PORT", 8766);
 

@@ -81,23 +81,42 @@ def _read_listening_port(process: subprocess.Popen[str]) -> int:
     return int(event["port"])
 
 
-@pytest.mark.skipif(BUN is None, reason="bun is not installed")
-def test_bun_serves_the_editor_on_an_ephemeral_port() -> None:
-    """Bun must bind an ephemeral port, report it, and serve the editor."""
+def _start_bun_editor(editor_port: int | None) -> subprocess.Popen[str]:
+    """Start Bun with an optional editor port and deterministic bridge endpoints."""
     env = {
         "PATH": "/usr/bin:/bin",
-        "VOXELFORGE_EDITOR_PORT": "0",
         "VOXELFORGE_BRIDGE_WS_PORT": "18765",
         "VOXELFORGE_BRIDGE_HTTP_PORT": "18766",
     }
-    with subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # fixed executable and script path; shell=False
+    if editor_port is not None:
+        env["VOXELFORGE_EDITOR_PORT"] = str(editor_port)
+    return subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]  # fixed executable and script path; shell=False
         [typ.cast("str", BUN), str(editor_entrypoint())],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         env=env,
         cwd=editor_package_root(),
-    ) as process:
+    )
+
+
+@pytest.mark.skipif(BUN is None, reason="bun is not installed")
+def test_bun_uses_the_standalone_port_when_none_is_requested() -> None:
+    """The documented standalone Bun command must bind port 5173 by default."""
+    with _start_bun_editor(editor_port=None) as process:
+        try:
+            port = _read_listening_port(process)
+            assert port == 5173, "standalone Bun startup must use the documented port"
+            with socket.create_connection(("127.0.0.1", port), timeout=5):
+                pass
+        finally:
+            stop_editor_process(process)
+
+
+@pytest.mark.skipif(BUN is None, reason="bun is not installed")
+def test_bun_serves_the_editor_on_an_ephemeral_port() -> None:
+    """Bun must bind an ephemeral port, report it, and serve the editor."""
+    with _start_bun_editor(editor_port=0) as process:
         try:
             port = _read_listening_port(process)
 
@@ -120,12 +139,7 @@ def test_bun_serves_the_editor_on_an_ephemeral_port() -> None:
                 "bridge.json must republish the HTTP port from the environment"
             )
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            stop_editor_process(process)
 
 
 FAKE_EDITOR_PORT = 43210
