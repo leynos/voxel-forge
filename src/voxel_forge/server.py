@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import sys
 import typing as typ
 
 if typ.TYPE_CHECKING:
@@ -52,6 +53,24 @@ MAX_TOOL_VOXELS: int = 100_000
 # well-formed payload is about 2.5 million characters, so this leaves room for
 # formatting while still refusing a payload that could exhaust memory.
 MAX_BLOCKS_JSON_CHARS: int = 8_000_000
+
+
+def _announce_startup(bridge_mode: str, bridge_state: str) -> None:
+    """Report the startup mode on stderr, keeping stdout protocol-only.
+
+    A headless run and a run whose bridge failed to start otherwise look
+    identical to an operator: the process blocks on stdio either way, and the
+    endpoint line is printed only once the listener is up. These fields name
+    the mode that was *requested* and the state that was *reached*, so the two
+    cases are distinguishable. ``main`` only reaches the "eager" mode once
+    ``_ensure_bridge`` has returned, so an eager start that fails raises before
+    this runs rather than reporting a state it never held.
+    """
+    print(
+        f"VoxelForge server: operation=server_start bridge_mode={bridge_mode} "
+        f"bridge_state={bridge_state}",
+        file=sys.stderr,
+    )
 
 
 def _ensure_bridge() -> None:
@@ -164,6 +183,12 @@ def main() -> None:
     args = parser.parse_args()
     if args.bridge:
         _ensure_bridge()
+    # Report the state the bridge actually reached, not the one requested: an
+    # eager start that failed would already have raised out of _ensure_bridge.
+    _announce_startup(
+        "eager" if args.bridge else "headless",
+        "running" if current_ports() is not None else "down",
+    )
     mcp.run(transport="stdio")
 
 

@@ -62,27 +62,26 @@ jobs:
   install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      # Pin action identities, matching the readiness job's policy.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Install as a uv tool from a clean checkout
         run: uv tool install .
       - name: Verify the MCP entry point
         run: voxel-forge-mcp --help
-      - name: Export a scene headless
+      - name: Confirm the installed command is on the PATH
         run: |
-          uv run --no-project --with . python - << 'EOF'
-          import pathlib
-          import tempfile
-
-          from voxel_forge import bridge, server
-
-          server.voxelforge_create_scene("ci_smoke")
-          server.voxelforge_fill_box(0, 3, 0, 1, 0, 2, "2")
-          out = pathlib.Path(tempfile.mkdtemp()) / "ci_smoke.vox"
-          server.voxelforge_export_vox(output_path=str(out))
-          assert out.stat().st_size > 0, "the export must produce bytes"
-          assert bridge.current_ports() is None, (
-              "a headless run must not bind a port"
-          )
-          print("headless scene export OK")
-          EOF
+          # `uv tool install` places the command in ~/.local/bin, which the
+          # runner has on PATH. Fail loudly if that ever stops being true,
+          # rather than letting the next step report that it found nothing.
+          test -x "$(command -v voxel-forge-mcp)"
+      - name: Run a headless MCP session against the installed command
+        run: |
+          # The driver launches `voxel-forge-mcp` from the PATH, completes the
+          # MCP handshake over stdio, exports a scene, and asserts the process
+          # never held a listening socket. It is stdlib-only and deliberately
+          # does not import voxel_forge, so it can only exercise the installed
+          # distribution and not the checkout.
+          python3 tests/installed_smoke.py

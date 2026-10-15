@@ -235,6 +235,34 @@ def test_installed_js_root_resolves_wheel_assets(installed_commands: Path) -> No
     )
 
 
+def test_installed_mcp_command_runs_a_headless_session(
+    installed_commands: Path,
+    tmp_path: Path,
+) -> None:
+    """The installed command must serve MCP headless without binding a socket.
+
+    This is the roadmap 1.3.2 contract, asserted end to end: the console script
+    on the ``PATH`` is driven through the MCP ``initialize`` handshake and a
+    real scene export, and is checked for listening sockets throughout. The
+    ``--help`` check above cannot cover this — it returns inside ``argparse``
+    and never reaches the server loop — so a regression that bound a port on
+    startup, or that broke tool dispatch in the installed wheel, would pass
+    that test and fail this one.
+    """
+    from installed_smoke import SmokeError, run_smoke
+
+    command = installed_command(installed_commands, "voxel-forge-mcp")
+    try:
+        summary = run_smoke(tmp_path / "ci_smoke.vox", command_path=str(command))
+    except SmokeError as failure:
+        pytest.fail(f"the installed command failed its headless contract: {failure}")
+
+    assert "no listening socket" in summary, "the session must report its socket check"
+    assert (tmp_path / "ci_smoke.vox").stat().st_size > 0, (
+        "the session must have exported a non-empty scene"
+    )
+
+
 @pytest.mark.skipif(IS_WINDOWS, reason="PATH-scoped POSIX executable Bun stub")
 def test_installed_dependency_helper_invokes_bun_without_network(
     installed_commands: Path,

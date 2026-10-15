@@ -71,6 +71,31 @@ that the command is on the `PATH`.
 client. It announces the ports it has bound on standard error, because
 standard output is reserved for MCP protocol data.
 
+### Headless operation
+
+The server binds no socket unless a bridge is requested, so it is safe to run
+headless, in a sandbox, or in continuous integration, where there is no
+display, browser, or editor.
+
+The bridge starts only when something wants it:
+
+- Eagerly, with `voxel-forge-mcp --bridge` or `VOXELFORGE_BRIDGE=1`. The
+  listener starts before the server serves stdio.
+- On demand, when an MCP client calls the `voxelforge_launch_editor` tool.
+
+Editing a scene notifies a bridge that is already running, but never starts
+one, so an edit-only session stays headless however many edits it makes.
+
+```bash
+# Start the server with the bridge already listening.
+voxel-forge-mcp --bridge
+```
+
+The server reports the mode it started in on standard error, with the fields
+`operation=server_start`, `bridge_mode=headless` or `bridge_mode=eager`, and
+`bridge_state=down` or `bridge_state=running`. Standard output stays reserved
+for MCP protocol data.
+
 ## Connecting an MCP client
 
 Point the client at the installed `voxel-forge-mcp` command with an empty
