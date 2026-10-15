@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 import threading
 import typing as typ
@@ -15,17 +16,36 @@ if typ.TYPE_CHECKING:
 
 from .model import SceneStore, VoxelScene
 
+_LOG = logging.getLogger(__name__)
+
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8765
 BRIDGE_HTTP_PORT = 8766
 # 5173 remains available for the standalone `bun run dev` flow.
 _DEFAULT_EDITOR_ORIGIN_PORT = 5173
 _editor_origin_ports: set[int] = {_DEFAULT_EDITOR_ORIGIN_PORT}
+_editor_origin_lock = threading.Lock()
 
 
 def register_editor_origin(port: int) -> None:
     """Allow the editor served on loopback ``port`` to reach the bridge."""
-    _editor_origin_ports.add(int(port))
+    with _editor_origin_lock:
+        _editor_origin_ports.add(int(port))
+
+
+def unregister_editor_origin(port: int) -> None:
+    """Revoke a supervised editor port while retaining the standalone default.
+
+    Examples
+    --------
+    >>> register_editor_origin(45678)
+    >>> unregister_editor_origin(45678)
+    >>> "http://127.0.0.1:45678" in allowed_origins()
+    False
+    """
+    if port != _DEFAULT_EDITOR_ORIGIN_PORT:
+        with _editor_origin_lock:
+            _editor_origin_ports.discard(port)
 
 
 def allowed_origins() -> frozenset[str]:
@@ -37,9 +57,11 @@ def allowed_origins() -> frozenset[str]:
         One ``127.0.0.1`` and one ``localhost`` origin per registered
         editor port.
     """
+    with _editor_origin_lock:
+        ports = tuple(_editor_origin_ports)
     return frozenset(
         origin
-        for port in _editor_origin_ports
+        for port in ports
         for origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
     )
 
@@ -255,6 +277,7 @@ async def _run_servers(ws_port: int = 0, http_port: int = 0) -> None:
     _bridge_loop = asyncio.get_running_loop()
     _current_ports = (bound_ws, bound_http)
     _ready.set()
+    _startup_finished.set()
     print(
         f"VoxelForge bridge: ws://{BRIDGE_HOST}:{bound_ws}"
         f"  http://{BRIDGE_HOST}:{bound_http}",
@@ -270,6 +293,8 @@ async def _run_servers(ws_port: int = 0, http_port: int = 0) -> None:
 
 
 _bridge_thread: threading.Thread | None = None
+_startup_finished = threading.Event()
+_startup_error: BaseException | None = None
 _STARTUP_TIMEOUT_SECONDS = 10.0
 
 
@@ -286,18 +311,38 @@ def start_bridge_background() -> tuple[int, int]:
     RuntimeError
         If the bridge does not report readiness within its startup timeout.
     """
-    global _bridge_thread
+    global _bridge_thread, _startup_error
     with _lock:
         if not (_bridge_thread and _bridge_thread.is_alive()):
+            _startup_error = None
+            _startup_finished.clear()
+            _ready.clear()
+
+            async def capture_failure() -> None:
+                """Transport server-task failures to the waiting caller."""
+                global _startup_error
+                try:
+                    (result,) = await asyncio.gather(
+                        _run_servers(), return_exceptions=True
+                    )
+                    if isinstance(result, BaseException):
+                        _startup_error = result
+                        _LOG.error("Bridge startup failed (%s)", type(result).__name__)
+                finally:
+                    _startup_finished.set()
 
             def run() -> None:
-                asyncio.run(_run_servers())
+                """Run bridge listeners on their dedicated event loop."""
+                asyncio.run(capture_failure())
 
             _bridge_thread = threading.Thread(target=run, daemon=True)
             _bridge_thread.start()
-    if not _ready.wait(_STARTUP_TIMEOUT_SECONDS):
+    if not _startup_finished.wait(_STARTUP_TIMEOUT_SECONDS):
         msg = "the bridge did not report readiness in time"
         raise RuntimeError(msg)
+    if _startup_error is not None:
+        msg = "the bridge failed to start"
+        raise RuntimeError(msg) from _startup_error
     ports = _current_ports
     if ports is None:
         msg = "the bridge started but published no ports"

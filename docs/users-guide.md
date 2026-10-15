@@ -102,13 +102,19 @@ bun install
 bun run dev
 ```
 
-Then open `http://127.0.0.1:5173`. This standalone command uses port 5173;
-the supervised MCP launch chooses an available editor port and reports the
-URL. The standalone bridge defaults to WebSocket port 8765 and HTTP port 8766;
-the MCP server passes its discovered bridge ports to the editor.
+Then open `http://127.0.0.1:5173`. This standalone command uses port 5173.
+The supervised MCP launch chooses an available editor port, opens the page,
+and reports the actual URL. The standalone bridge defaults to WebSocket port
+8765 and HTTP port 8766; the MCP server chooses available bridge ports and
+passes their values to the editor.
 
 Both the editor and bridge bind to loopback (`127.0.0.1`), so they are
-reachable only from the same machine.
+reachable only from the same machine. Loopback binding limits network access;
+it is not authentication. The bridge checks browser WebSocket `Origin`
+headers against the editor origins it has registered. Connections without an
+`Origin` header are allowed for non-browser clients, so local access should
+not be treated as a security boundary between users or processes on the same
+machine.
 
 ## Where scenes and exports live
 

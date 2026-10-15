@@ -8,13 +8,14 @@ from the discovered editor port rather than from a constant.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import json
-import socket
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # tests spawn python instances with fixed args; shell=False
 import sys
+import threading
 import typing as typ
-import urllib.request
+from pathlib import Path
 
 if typ.TYPE_CHECKING:
     import pytest
@@ -24,34 +25,25 @@ from voxel_forge import bridge
 _FIXED_PORTS = (8765, 8766, 5173)
 
 
-def _occupy(port: int) -> socket.socket | None:
-    """Bind a loopback port to simulate another service holding it."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.bind(("127.0.0.1", port))
-    except OSError:
-        sock.close()
-        return None
-    sock.listen(1)
-    return sock
-
-
 def test_bridge_starts_with_all_fixed_ports_occupied() -> None:
-    """The bridge must start even when 8765, 8766 and 5173 are taken."""
-    occupied = [sock for port in _FIXED_PORTS if (sock := _occupy(port))]
-    try:
-        ws_port, http_port = bridge.start_bridge_background()
-
-        assert ws_port not in _FIXED_PORTS, "the WebSocket port must be ephemeral"
-        assert http_port not in _FIXED_PORTS, "the HTTP port must be ephemeral"
-        with urllib.request.urlopen(  # fixed loopback URL scheme
-            f"http://127.0.0.1:{http_port}/health", timeout=10
-        ) as response:
-            health = json.loads(response.read())
-        assert health["ok"] is True, "the bridge health endpoint must answer"
-    finally:
-        for sock in occupied:
-            sock.close()
+    """A fresh bridge must start even when 8765, 8766 and 5173 are taken."""
+    fixture = Path(__file__).with_name("bridge_occupied_fixture.py")
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]  # fixed interpreter and fixture path; shell=False
+        [sys.executable, str(fixture)],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    observed = json.loads(result.stdout)
+    assert observed["occupied"] > 0, "the fixture must actually occupy fixed ports"
+    assert observed["ws_port"] not in _FIXED_PORTS, (
+        "WebSocket must bind an ephemeral port"
+    )
+    assert observed["http_port"] not in _FIXED_PORTS, "HTTP must bind an ephemeral port"
+    assert observed["health"]["ok"] is True, (
+        "the fresh bridge must answer health checks"
+    )
 
 
 def test_two_instances_run_concurrently() -> None:
@@ -80,8 +72,11 @@ def test_two_instances_run_concurrently() -> None:
         assert port_pairs[0] != port_pairs[1], "concurrent instances must not collide"
 
 
-def test_allowed_origins_follow_registered_editor_port() -> None:
+def test_allowed_origins_follow_registered_editor_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Registering a discovered editor port must extend the allowed origins."""
+    monkeypatch.setattr(bridge, "_editor_origin_ports", set())
     probe_port = 45999
     origin = f"http://127.0.0.1:{probe_port}"
     assert origin not in bridge.allowed_origins(), "probe port must start unknown"
@@ -132,6 +127,7 @@ def test_ws_handler_rejects_unknown_origin() -> None:
 def test_ws_handler_accepts_registered_origin(monkeypatch: pytest.MonkeyPatch) -> None:
     """A websocket peer from a registered editor origin must be served."""
     monkeypatch.setattr(bridge, "store", bridge.SceneStore())
+    monkeypatch.setattr(bridge, "_editor_origin_ports", set())
     bridge.register_editor_origin(46001)
     websocket = _FakeWebSocket("http://127.0.0.1:46001")
 
@@ -139,3 +135,45 @@ def test_ws_handler_accepts_registered_origin(monkeypatch: pytest.MonkeyPatch) -
         asyncio.run(bridge._ws_handler(websocket))
 
     assert websocket.closed_with is None, "an allowed origin must not be closed"
+
+
+def test_unregister_preserves_standalone_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Revoking a dynamic origin must preserve the standalone editor allowance."""
+    monkeypatch.setattr(bridge, "_editor_origin_ports", {5173, 45999})
+    for port in (45999, 5173):
+        bridge.unregister_editor_origin(port)
+    assert bridge.allowed_origins() == frozenset({
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    }), "keep only the standalone origin after revocation"
+
+
+def test_origin_registration_and_snapshots_can_run_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tool-thread registration must not invalidate event-loop origin snapshots."""
+    monkeypatch.setattr(bridge, "_editor_origin_ports", set())
+    start = threading.Barrier(2)
+
+    def register() -> None:
+        """Continuously extend the registry while snapshots are being read."""
+        start.wait(timeout=5)
+        for port in range(40000, 41000):
+            bridge.register_editor_origin(port)
+
+    def snapshot() -> None:
+        """Read immutable snapshots while the writer changes the registry."""
+        start.wait(timeout=5)
+        for _ in range(1000):
+            origins = bridge.allowed_origins()
+            assert len(origins) % 2 == 0, (
+                "each registered port must have both host forms"
+            )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(register), pool.submit(snapshot)]
+        for future in futures:
+            future.result(timeout=10)
+    assert len(bridge.allowed_origins()) == 2000, "retain every concurrent registration"

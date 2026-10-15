@@ -47,6 +47,9 @@ def _parse_request_head(header_text: str) -> _HttpRequest:
     for line in lines[1:]:
         if line.lower().startswith("content-length:"):
             content_length = int(line.split(":", 1)[1].strip())
+            if content_length < 0:
+                msg = "content length must be non-negative"
+                raise ValueError(msg)
         elif line.lower().startswith("origin:"):
             origin = line.split(":", 1)[1].strip()
     return _HttpRequest(method, path, content_length, origin)
@@ -79,6 +82,14 @@ async def _write_response(
         + body
     )
     await _close_connection(writer)
+
+
+async def _write_error_response(
+    writer: asyncio.StreamWriter, status: bytes, cors: bytes, message: str
+) -> None:
+    """Write the shared bridge-handler error envelope and close its connection."""
+    body = json.dumps({"error": message}).encode()
+    await _write_response(writer, status, cors, body)
 
 
 async def _handle_scene_post(payload: str) -> tuple[bytes, bytes]:
@@ -130,17 +141,25 @@ async def _http_handler(
 ) -> None:
     """Serve the bridge's small HTTP API on one connection."""
     header_bytes = await reader.readuntil(b"\r\n\r\n")
-    request = _parse_request_head(header_bytes.decode("utf-8", errors="ignore"))
+    try:
+        request = _parse_request_head(header_bytes.decode("utf-8"))
+    except ValueError:
+        await _write_error_response(
+            writer, _STATUS_BAD_REQUEST, b"", "invalid request headers"
+        )
+        return
     cors = _cors_headers(request.origin)
 
     if request.origin is not None and request.origin not in bridge.allowed_origins():
-        body = json.dumps({"error": "origin is not allowed"}).encode()
-        await _write_response(writer, _STATUS_FORBIDDEN, b"", body)
+        await _write_error_response(
+            writer, _STATUS_FORBIDDEN, b"", "origin is not allowed"
+        )
         return
 
-    if request.content_length < 0 or request.content_length > MAX_HTTP_BODY_BYTES:
-        body = json.dumps({"error": "request body is too large"}).encode()
-        await _write_response(writer, _STATUS_TOO_LARGE, cors, body)
+    if request.content_length > MAX_HTTP_BODY_BYTES:
+        await _write_error_response(
+            writer, _STATUS_TOO_LARGE, cors, "request body is too large"
+        )
         return
 
     payload_bytes = (
@@ -148,7 +167,13 @@ async def _http_handler(
         if request.content_length
         else b""
     )
-    payload = payload_bytes.decode("utf-8")
+    try:
+        payload = payload_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        await _write_error_response(
+            writer, _STATUS_BAD_REQUEST, cors, "request body is not valid UTF-8"
+        )
+        return
 
     if request.method == "OPTIONS":
         writer.write(_STATUS_NO_CONTENT + cors + b"\r\n")

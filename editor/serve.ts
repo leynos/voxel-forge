@@ -13,8 +13,9 @@ import indexHtml from "./index.html";
 function envPort(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
+  if (raw.length === 0 || /[^0-9]/.test(raw)) return fallback;
+  const parsed = Number(raw);
+  return parsed <= 65535 ? parsed : fallback;
 }
 
 const requestedPort = envPort("VOXELFORGE_EDITOR_PORT", 5173);
@@ -50,7 +51,7 @@ async function stopWhenSupervisorExits(): Promise<void> {
   }
 }
 
-if (process.env.VOXELFORGE_EDITOR_SUPERVISED === "1") {
+if (process.env["VOXELFORGE_EDITOR_SUPERVISED"] === "1") {
   // A private stdin pipe closes even when the Python parent is killed.
   void stopWhenSupervisorExits();
 }

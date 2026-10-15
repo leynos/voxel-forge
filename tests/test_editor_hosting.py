@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import shutil
 import signal
@@ -218,19 +219,25 @@ FAKE_EDITOR_PORT = 43210
 @pytest.fixture
 def fake_bun(tmp_path: Path) -> Path:
     """Provide a stub executable that mimics the editor's startup protocol."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX shell executable fixture")
     script = tmp_path / "fake-bun"
     script.write_text(
         "#!/bin/sh\n"
         f'echo \'{{"event": "listening", "port": {FAKE_EDITOR_PORT}}}\'\n'
-        "sleep 60\n",
+        "exec sleep 60\n",
         encoding="utf-8",
     )
     script.chmod(0o755)
     return script
 
 
-def test_start_and_stop_editor_reaps_the_process(fake_bun: Path) -> None:
+def test_start_and_stop_editor_reaps_the_process(
+    fake_bun: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Stopping a started editor must leave no orphan process behind."""
+    caplog.set_level(logging.INFO, logger="voxel_forge.orchestration")
     process, port = start_editor_process(
         EditorPorts(bridge_ws=1, bridge_http=2), bun_executable=str(fake_bun)
     )
@@ -241,8 +248,17 @@ def test_start_and_stop_editor_reaps_the_process(fake_bun: Path) -> None:
     stop_editor_process(process)
 
     assert process.poll() is not None, "no orphan may remain after stop"
+    messages = [record.getMessage() for record in caplog.records]
+    assert f"Editor starting pid={process.pid}" in messages, "record editor startup"
+    assert f"Editor listening pid={process.pid} port={port}" in messages, (
+        "record the bound port"
+    )
+    assert any(message.startswith("Editor stopped") for message in messages), (
+        "record shutdown"
+    )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell executable fixture")
 def test_start_editor_raises_and_reaps_on_abnormal_exit(tmp_path: Path) -> None:
     """A child that dies without reporting a port must raise and be reaped."""
     script = tmp_path / "broken-bun"
@@ -316,6 +332,7 @@ def test_install_editor_deps_command_reports_failure(
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell executable fixture")
 def test_install_editor_dependencies_targets_the_package_root(
     tmp_path: Path,
 ) -> None:

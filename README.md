@@ -144,9 +144,12 @@ The editor is served by [Bun](https://bun.sh) and is bundled inside the
 installed wheel, so `voxelforge_launch_editor` works without a checkout.
 On Windows, `run-editor.bat` wraps the same commands.
 
-เปิด `http://127.0.0.1:5173` บนเครื่องเดียวกัน โดย editor จะ sync สองทางกับ MCP
-ผ่าน WebSocket ที่ `ws://127.0.0.1:8765` การสร้างหรือแก้ scene ผ่าน MCP จะส่งไป
-ยัง browser และการวางหรือลบ voxel ใน editor จะอัปเดต scene ฝั่ง MCP ด้วย
+เมื่อเรียก `voxelforge_launch_editor` จาก MCP client ระบบจะเปิด editor และ
+รายงาน URL ที่ใช้งานจริงให้ทราบ สำหรับการพัฒนาด้วยตนเอง คำสั่งด้านบนใช้
+editor ที่ `http://127.0.0.1:5173` และ bridge แบบ standalone ใช้ WebSocket ที่
+`ws://127.0.0.1:8765` เป็นค่าเริ่มต้น; การเรียกผ่าน MCP จะเลือกพอร์ตที่ว่างและ
+ส่งค่าพอร์ตให้ editor โดยอัตโนมัติ การสร้างหรือแก้ scene ผ่าน MCP จะส่งไปยัง
+browser และการวางหรือลบ voxel ใน editor จะอัปเดต scene ฝั่ง MCP ด้วย
 
 ทั้ง web editor และ bridge bind อยู่ที่ loopback (`127.0.0.1`) จึงเปิดจาก
 เครื่องนี้เท่านั้น ไม่เปิดให้เครื่องอื่นในเครือข่ายเข้าถึง

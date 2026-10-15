@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import threading
 import typing as typ
 from pathlib import Path
 
@@ -15,12 +17,16 @@ from voxel_forge.orchestration import (
     EditorPorts,
     install_editor_dependencies,
     start_editor_process,
+    stop_editor_process,
     supervise,
 )
 
+_LOG = logging.getLogger(__name__)
+
 # The supervised editor for this server process, keyed for mutability
 # without a global statement.
-_editor_state: dict[str, tuple[subprocess.Popen[str], int]] = {}
+_editor_state: dict[str, tuple[subprocess.Popen[str], int, tuple[int, int]]] = {}
+_editor_lock = threading.Lock()
 
 
 @server.mcp.tool()
@@ -276,10 +282,25 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
 
 
 def _running_editor() -> tuple[subprocess.Popen[str], int] | None:
-    """Return the supervised editor process and port when still alive."""
+    """Return the current editor, retiring stale processes and origin allowances."""
     editor = _editor_state.get("editor")
-    if editor is not None and editor[0].poll() is None:
-        return editor
+    if editor is None:
+        return None
+    process, port, configured_ports = editor
+    status = process.poll()
+    if status is None and configured_ports == bridge.current_ports():
+        return process, port
+    bridge.unregister_editor_origin(port)
+    if status is None:
+        _LOG.info("Restarting editor pid=%d after bridge endpoint change", process.pid)
+        stop_editor_process(process)
+    else:
+        _LOG.warning(
+            "Editor exited unexpectedly pid=%d status=%d; restarting",
+            process.pid,
+            status,
+        )
+    _editor_state.pop("editor", None)
     return None
 
 
@@ -301,7 +322,7 @@ def _start_supervised_editor(
     supervise(process)
     bridge.register_editor_origin(port)
     editor = (process, port)
-    _editor_state["editor"] = editor
+    _editor_state["editor"] = (process, port, bridge_ports)
     return editor
 
 
@@ -312,20 +333,21 @@ def voxelforge_launch_editor() -> str:
 
     Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่.
     """
-    server._ensure_bridge()
-    bridge_ports = bridge.current_ports()
-    if bridge_ports is None:
-        return "Bridge ยังไม่พร้อม — ลองเรียก voxelforge_launch_editor อีกครั้ง"
-    editor = _running_editor()
-    if editor is None:
-        try:
-            editor = _start_supervised_editor(bridge_ports)
-        except EditorRuntimeError as exc:
-            return (
-                f"ไม่สามารถเปิด editor ได้: {exc}\n"
-                "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor "
-                "อีกครั้ง"
-            )
+    with _editor_lock:
+        server._ensure_bridge()
+        bridge_ports = bridge.current_ports()
+        if bridge_ports is None:
+            return "Bridge ยังไม่พร้อม — ลองเรียก voxelforge_launch_editor อีกครั้ง"
+        editor = _running_editor()
+        if editor is None:
+            try:
+                editor = _start_supervised_editor(bridge_ports)
+            except EditorRuntimeError as exc:
+                return (
+                    f"ไม่สามารถเปิด editor ได้: {exc}\n"
+                    "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor "
+                    "อีกครั้ง"
+                )
     _, port = editor
     ws_port, http_port = bridge_ports
     url = f"http://127.0.0.1:{port}"

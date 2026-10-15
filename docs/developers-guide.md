@@ -120,6 +120,12 @@ passes the discovered values to the editor. The bridge announces its ports on
 standard error, because standard output belongs to the MCP protocol on the
 server path.
 
+The WebSocket bridge checks a supplied `Origin` against the registered editor
+origins. It accepts connections with no `Origin` header for non-browser
+clients. Both services bind to loopback, which limits network reachability but
+does not authenticate local users or processes; treat these checks as browser
+cross-origin protection, not as an authentication boundary.
+
 ## Toolchain and dependency requirements
 
 - Python 3.11 or newer; `requires-python` is `">=3.11"`.
@@ -165,7 +171,7 @@ lets each benefit from what the previous one cached.
 | `make lint-editor` | Check editor formatting and run Biome and oxlint |
 | `make typecheck` | Check editor sources and positive/negative type fixtures |
 | `make test` | Run Python tests with pytest |
-| `make test-editor` | Build the editor, then run Node and Playwright tests |
+| `make test-editor` | Run the Bun editor tests |
 | `make markdownlint` | Lint the maintained Markdown files |
 | `make nixie` | Validate Mermaid diagrams |
 
@@ -183,7 +189,24 @@ The hosted workflow installs editor packages with
 Playwright before `make test-editor`. The editor build is also run as its own
 CI step after the test target.
 For a local run, install the browser once with
-`npx --prefix editor playwright install chromium`.
+`cd editor && bunx playwright install chromium`.
+
+The installed package includes the editor, but contributor scripts and CI may
+need its package directory without a source checkout. Resolve that directory
+with:
+
+```sh
+python -m voxel_forge.js_root
+```
+
+This prints the absolute editor package root containing `package.json`. To
+install the editor dependencies from the installed package, run:
+
+```sh
+python -m voxel_forge.install_editor_deps
+```
+
+This resolves the same package root and runs `bun install` there.
 
 See the [lint standards](lint-standards.md) for the detailed contributor
 sequence and scanner configuration. Make disables parallel target execution
@@ -219,9 +242,10 @@ they are not relitigated by accident.
 - The bridge announces its ports on standard error and keeps standard output
   for protocol data, so a client reading stdout never has to filter
   diagnostics.
-- The MCP editor launcher owns the Bun process and gives it a private stdin
-  pipe. Bun closes its server when that pipe reaches EOF, so forced Python
-  termination cannot leave the editor listening as an orphan.
+- The Three.js editor ships in the wheel and runs as a supervised Bun process.
+  The MCP server discovers its bridge and editor ports at startup. Bun closes
+  its server when the supervisor's private stdin pipe reaches EOF, so forced
+  Python termination cannot leave the editor listening as an orphan.
 - The Windows batch wrappers stay Windows-only and stay secondary to the
   cross-platform invocation, rather than becoming the documented route.
 
@@ -239,3 +263,7 @@ MCP server, opens it in the browser, and reports its URL. Bun must be installed
 on the host. For manual development from a checkout, run
 `cd editor && bun install && bun run dev`, then open
 `http://127.0.0.1:5173`.
+
+The packaged editor must be filesystem-backed or extracted to a directory (a
+checkout also works): Bun needs a real directory for `serve.ts` and
+`node_modules`, so archive-only resources are unsupported.

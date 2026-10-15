@@ -25,9 +25,11 @@ Start and stop an editor::
 from __future__ import annotations
 
 import atexit
+import collections
 import contextlib
 import dataclasses as dc
 import json
+import logging
 import os
 import queue
 import subprocess  # ruff: ignore[suspicious-subprocess-import]  # spawn Bun with validated arguments; shell=False
@@ -44,9 +46,13 @@ from voxel_forge.editor_runtime import (
     editor_package_root,
 )
 
+_LOG = logging.getLogger(__name__)
+
 DEFAULT_STOP_TIMEOUT_SECONDS = 5.0
 DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
 _POLL_JOIN_TIMEOUT_SECONDS = 0.1
+_MAX_STARTUP_OUTPUT_LINES = 64
+_MAX_STDOUT_CHUNK_CHARS = 4096
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -86,25 +92,53 @@ def _spawn_editor(bun_executable: str, ports: EditorPorts) -> subprocess.Popen[s
         raise EditorRuntimeError(msg) from exc
 
 
+def _queue_startup_line(
+    line_queue: queue.Queue[str | None],
+    startup_finished: threading.Event,
+    line: str | None,
+) -> None:
+    """Publish startup output with backpressure until its consumer finishes."""
+    while not startup_finished.is_set():
+        try:
+            line_queue.put(line, timeout=_POLL_JOIN_TIMEOUT_SECONDS)
+        except queue.Full:
+            continue
+        else:
+            return
+
+
 def _start_stdout_reader(
     process: subprocess.Popen[str],
+    startup_finished: threading.Event | None = None,
 ) -> tuple[queue.Queue[str | None], threading.Thread]:
-    """Feed the child's stdout into a queue from a background thread.
+    """Queue bounded startup output, then drain subsequent output without retention.
 
-    A dedicated reader keeps the pipe drained, so the child can never
-    block on a full stdout buffer while the parent waits elsewhere.
+    The startup consumer signals completion even when it raises. That signal
+    releases queue backpressure, so the reader keeps draining Bun without
+    retaining output for a consumer that no longer exists. Diagnostics report
+    activity once and omit child content, which may contain private scene data.
     """
     stdout = process.stdout
     if stdout is None:
         msg = "Failed to capture editor stdout"
         raise EditorRuntimeError(msg)
 
-    line_queue: queue.Queue[str | None] = queue.Queue()
+    finished = startup_finished if startup_finished is not None else threading.Event()
+    line_queue: queue.Queue[str | None] = queue.Queue(maxsize=_MAX_STARTUP_OUTPUT_LINES)
 
     def _reader() -> None:
-        for line in iter(stdout.readline, ""):
-            line_queue.put(line)
-        line_queue.put(None)
+        """Drain fixed-size chunks throughout the child lifetime."""
+        has_reported_output = False
+        while line := stdout.readline(_MAX_STDOUT_CHUNK_CHARS):
+            if finished.is_set():
+                if not has_reported_output:
+                    _LOG.info(
+                        "Editor stdout drained pid=%d (content omitted)", process.pid
+                    )
+                    has_reported_output = True
+            else:
+                _queue_startup_line(line_queue, finished, line)
+        _queue_startup_line(line_queue, finished, None)
 
     thread = threading.Thread(target=_reader, name="editor-stdout-reader", daemon=True)
     thread.start()
@@ -135,9 +169,12 @@ def _next_line(line_queue: queue.Queue[str | None], deadline: float) -> str | No
 
 def _wait_for_port(process: subprocess.Popen[str], startup_timeout: float) -> int:
     """Wait for the editor to report its listening port on stdout."""
-    output_lines: list[str] = []
+    output_lines: collections.deque[str] = collections.deque(
+        maxlen=_MAX_STARTUP_OUTPUT_LINES
+    )
     deadline = time.monotonic() + startup_timeout
-    line_queue, reader = _start_stdout_reader(process)
+    startup_finished = threading.Event()
+    line_queue, reader = _start_stdout_reader(process, startup_finished)
 
     try:
         while time.monotonic() < deadline:
@@ -151,13 +188,13 @@ def _wait_for_port(process: subprocess.Popen[str], startup_timeout: float) -> in
             if port is not None:
                 return port
     finally:
+        startup_finished.set()
         reader.join(timeout=_POLL_JOIN_TIMEOUT_SECONDS)
 
-    stop_editor_process(process, timeout=1.0)
     msg = (
         "Editor did not report a listening port.\n"
         f"Exit code: {process.poll()}\n"
-        f"Output:\n{''.join(output_lines)}"
+        f"Output (last {_MAX_STARTUP_OUTPUT_LINES} chunks):\n{''.join(output_lines)}"
     )
     raise EditorRuntimeError(msg)
 
@@ -204,8 +241,18 @@ def start_editor_process(
         raise EditorRuntimeError(msg)
 
     process = _spawn_editor(executable, ports)
-    port = _wait_for_port(process, startup_timeout)
-    return process, port
+    _LOG.info("Editor starting pid=%d", process.pid)
+    is_ready = False
+    try:
+        port = _wait_for_port(process, startup_timeout)
+        is_ready = True
+        _LOG.info("Editor listening pid=%d port=%d", process.pid, port)
+        return process, port
+    finally:
+        # Cleanup also covers cancellation and malformed startup events.
+        if not is_ready:
+            _LOG.warning("Editor startup failed pid=%d", process.pid)
+            stop_editor_process(process, timeout=1.0)
 
 
 def stop_editor_process(
@@ -232,10 +279,20 @@ def stop_editor_process(
     with contextlib.suppress(subprocess.TimeoutExpired, OSError):
         process.wait(timeout=timeout)
     if process.poll() is None:
+        _LOG.warning(
+            "Editor terminate timed out; escalating to kill pid=%d", process.pid
+        )
         with contextlib.suppress(OSError):
             process.kill()
         with contextlib.suppress(subprocess.TimeoutExpired, OSError):
             process.wait(timeout=timeout)
+    if process.poll() is None:
+        _LOG.error("Editor remains alive after terminate and kill pid=%d", process.pid)
+    else:
+        _LOG.info("Editor stopped pid=%d status=%d", process.pid, process.returncode)
+    with _supervised_lock:
+        if process.poll() is not None and _supervised.get(process.pid) is process:
+            del _supervised[process.pid]
 
 
 _supervised: dict[int, subprocess.Popen[str]] = {}
@@ -243,9 +300,13 @@ _supervised_lock = threading.Lock()
 
 
 def supervise(process: subprocess.Popen[str]) -> None:
-    """Register a process for reaping when the interpreter exits."""
+    """Register a live process and release completed supervision handles."""
     with _supervised_lock:
-        _supervised[process.pid] = process
+        exited = [pid for pid, child in _supervised.items() if child.poll() is not None]
+        for pid in exited:
+            del _supervised[pid]
+        if process.poll() is None:
+            _supervised[process.pid] = process
 
 
 def reap_supervised() -> None:

@@ -215,3 +215,62 @@ def test_broadcast_delivery_lifecycle(
         )
     else:
         assert not captured.err, "ordinary publication must not report an error"
+
+
+@pytest.mark.parametrize(
+    "request_bytes",
+    [
+        b"POST /scene HTTP/1.1\r\nContent-Length: nope\r\n\r\n",
+        b"POST /scene HTTP/1.1\r\nContent-Length: -1\r\n\r\n",
+        b"POST /scene HTTP/1.1\r\nContent-Length: 1\r\n\r\n\xff",
+    ],
+)
+def test_http_bridge_returns_400_for_malformed_requests(request_bytes: bytes) -> None:
+    """Invalid body framing or encoding must produce a complete HTTP response."""
+    from voxel_forge import bridge_http
+
+    async def exchange() -> bytes:
+        """Send malformed bytes to a temporary server with a bounded response wait."""
+        listener = await asyncio.start_server(bridge_http._http_handler, "127.0.0.1", 0)
+        async with listener:
+            port = listener.sockets[0].getsockname()[1]
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            try:
+                writer.write(request_bytes)
+                await writer.drain()
+                return await asyncio.wait_for(reader.read(), timeout=1)
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+    assert asyncio.run(exchange()).startswith(b"HTTP/1.1 400 Bad Request"), (
+        "malformed client input must be answered with 400"
+    )
+
+
+def test_bridge_startup_failure_preserves_cause_without_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed listener bind must wake the starter immediately with its cause."""
+    failure = OSError("listener bind failed")
+
+    async def fail_start() -> None:
+        """Simulate an awaited listener bind failing on the bridge event loop."""
+        result: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        result.set_exception(failure)
+        await result
+
+    monkeypatch.setattr(bridge, "_bridge_thread", None)
+    monkeypatch.setattr(bridge, "_ready", threading.Event())
+    monkeypatch.setattr(bridge, "_startup_finished", threading.Event())
+    monkeypatch.setattr(bridge, "_startup_error", None)
+    monkeypatch.setattr(bridge, "_run_servers", fail_start)
+    monkeypatch.setattr(bridge, "_STARTUP_TIMEOUT_SECONDS", 0.1)
+    with pytest.raises(RuntimeError, match="bridge failed to start") as caught:
+        bridge.start_bridge_background()
+    assert caught.value.__cause__ is failure, "preserve the original bind exception"
+    assert any(
+        record.getMessage() == "Bridge startup failed (OSError)"
+        for record in caplog.records
+    ), "record the failed startup without logging client data"

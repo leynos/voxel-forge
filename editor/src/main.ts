@@ -1,48 +1,14 @@
-/**
- * @file Browser voxel editor front end.
- *
- * Renders the scene held by the MCP bridge with three.js, keeps it in step over
- * the bridge WebSocket, and turns mouse input into placement and removal
- * requests. Responsibilities:
- *
- * - build instanced voxel meshes grouped by palette colour;
- * - frame the camera on the scene and render the palette strip;
- * - maintain the bridge connection, reconnecting when it drops;
- * - translate pointer events into grid cells and send edit messages.
- */
+/** @file Render bridge scenes with Three.js, reconnect, and publish pointer edits. */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { asSceneData, groupBlocksByColour, resolveRgb, sceneFromJson } from "./scene-data";
+import { DEFAULT_BRIDGE, loadBridgeConfig, loadSceneSnapshot } from "./bridge-config";
+import { groupBlocksByColour, resolveRgb, sceneFromJson } from "./scene-data";
 import type { Block, SceneData } from "./scene-data";
 
-type BridgeConfig = { wsUrl: string; httpUrl: string };
+let bridgeConfig = DEFAULT_BRIDGE;
+let bridgeDiscoveryWarning = "";
+let initialSceneWarning = "";
 
-/** Fallback endpoints for a bridge on its standalone default ports. */
-const DEFAULT_BRIDGE: BridgeConfig = {
-  wsUrl: "ws://127.0.0.1:8765",
-  httpUrl: "http://127.0.0.1:8766",
-};
-let bridgeConfig: BridgeConfig = DEFAULT_BRIDGE;
-
-/** Report whether a decoded payload carries both bridge endpoint URLs. */
-function isBridgeConfig(payload: unknown): payload is BridgeConfig {
-  if (typeof payload !== "object" || payload === null) return false;
-  const record = payload as Record<string, unknown>;
-  if (typeof record["wsUrl"] !== "string") return false;
-  return typeof record["httpUrl"] === "string";
-}
-
-/** Discover the bridge endpoints from the serving process, keeping defaults on failure. */
-async function loadBridgeConfig(): Promise<void> {
-  try {
-    const res = await fetch("/bridge.json");
-    if (!res.ok) return;
-    const payload: unknown = await res.json();
-    if (isBridgeConfig(payload)) bridgeConfig = payload;
-  } catch {
-    /* served statically or bridge.json unavailable; keep defaults */
-  }
-}
 const RECONNECT_DELAY_MS = 2000;
 /** Fraction of a voxel cell filled by its cube, leaving a visible seam. */
 const VOXEL_GAP = 0.96;
@@ -273,41 +239,36 @@ function renderPalette(): void {
   }
 }
 
+/** Show bridge connectivity together with actionable startup warnings. */
+function setBridgeStatus(message: string): void {
+  statusEl.textContent = [message, bridgeDiscoveryWarning, initialSceneWarning]
+    .filter(Boolean)
+    .join(" — ");
+}
+
 /** Open the bridge WebSocket, retrying whenever the connection drops. */
 function connectWs(): void {
   const socket = new WebSocket(bridgeConfig.wsUrl);
   ws = socket;
   socket.onopen = () => {
-    statusEl.textContent = "Bridge connected";
+    setBridgeStatus("Bridge connected");
     socket.send(JSON.stringify({ type: "get_scene" }));
   };
   socket.onmessage = (ev: MessageEvent<string>) => {
     const scene = sceneFromJson(ev.data);
     if (!scene) return;
+    initialSceneWarning = "";
+    setBridgeStatus("Bridge connected");
     sceneData = scene;
     rebuildVoxels();
   };
   socket.onclose = () => {
-    statusEl.textContent = "Bridge disconnected — retry in 2s";
-    setTimeout(connectWs, RECONNECT_DELAY_MS);
+    setBridgeStatus("Bridge disconnected — retry in 2s");
+    setTimeout(() => void start(), RECONNECT_DELAY_MS);
   };
   socket.onerror = () => {
-    statusEl.textContent = "Bridge error — start MCP server first";
+    setBridgeStatus("Bridge error — start MCP server first");
   };
-}
-
-/** Seed the view from the bridge's HTTP snapshot, ignoring a bridge that is down. */
-async function fetchInitialScene(): Promise<void> {
-  try {
-    const res = await fetch(`${bridgeConfig.httpUrl}/scene`);
-    const payload: unknown = await res.json();
-    const data = asSceneData(payload);
-    if (!data) return;
-    sceneData = data;
-    rebuildVoxels();
-  } catch {
-    /* bridge not up yet */
-  }
 }
 
 /** Aim the shared raycaster at the pointer position of a mouse event. */
@@ -421,8 +382,16 @@ function animate(): void {
 
 /** Discover the bridge, seed the scene, and start the editor loops. */
 async function start(): Promise<void> {
-  await loadBridgeConfig();
-  await fetchInitialScene();
+  const discovery = await loadBridgeConfig(bridgeConfig);
+  bridgeConfig = discovery.config;
+  bridgeDiscoveryWarning = discovery.warning;
+  const snapshot = await loadSceneSnapshot(bridgeConfig.httpUrl);
+  initialSceneWarning = snapshot.warning;
+  if (snapshot.scene) {
+    sceneData = snapshot.scene;
+    rebuildVoxels();
+  }
+  setBridgeStatus("Connecting to bridge");
   connectWs();
 }
 

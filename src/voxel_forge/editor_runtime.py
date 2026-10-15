@@ -4,7 +4,9 @@ The editor travels inside the wheel under ``voxel_forge/editor`` (see the
 ``force-include`` rules in ``pyproject.toml``) and lives in the top-level
 ``editor/`` directory in a repository checkout. Resolution goes through
 :mod:`importlib.resources` first so the same code path works from both
-layouts, mirroring simulacat's ``js_root`` pattern.
+layouts, mirroring simulacat's ``js_root`` pattern. The installed package must
+be filesystem-backed: archive imports cannot provide the durable script tree
+and writable dependency directory that Bun requires.
 
 Examples
 --------
@@ -42,7 +44,13 @@ def editor_entrypoint() -> Path:
     'serve.ts'
     """
     package_root = resources.files("voxel_forge")
-    packaged = Path(str(package_root.joinpath("editor").joinpath("serve.ts")))
+    if not isinstance(package_root, Path):
+        msg = (
+            "The editor requires a filesystem-backed installation; "
+            "install the wheel into a directory before launching Bun"
+        )
+        raise EditorRuntimeError(msg)
+    packaged = package_root / "editor" / "serve.ts"
     checkout = Path(__file__).resolve().parents[2] / "editor" / "serve.ts"
 
     for candidate in (packaged, checkout):
