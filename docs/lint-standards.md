@@ -71,10 +71,12 @@ so `make -j` cannot silently overlap the shared caches.
 production placement and removal functions with controlled sockets; they
 verify edits are sent only when the socket is open.
 The scene-data tests check HTTP and WebSocket payload validation and use
-fast-check to verify colour grouping preserves every block and its order.
-Finally, a Playwright test loads the built page and exercises layer-aware
-removal and placement through a temporary HTTP/WebSocket bridge. It needs
-Chromium: install it with `cd editor && bunx playwright install chromium`.
+fast-check to verify colour grouping preserves every block and its order. The
+bridge-config tests use generated ports to verify endpoint selection and reject
+non-string endpoint values. Finally, a Playwright test loads the built page and
+exercises layer-aware removal and placement through a temporary HTTP/WebSocket
+bridge. It needs Chromium: install it with
+`cd editor && bunx playwright install chromium`.
 CI installs it with `bunx playwright install --with-deps chromium`.
 
 ## Shared application helpers

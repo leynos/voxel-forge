@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from voxel_forge import orchestration
 from voxel_forge.editor_runtime import (
     EditorRuntimeError,
     editor_entrypoint,
@@ -133,6 +134,46 @@ def _start_bun_editor(editor_port: int | None) -> subprocess.Popen[str]:
         env=env,
         cwd=editor_package_root(),
     )
+
+
+def test_spawn_editor_passes_requested_bridge_endpoints(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The Bun child receives the selected ports through its explicit environment."""
+    entrypoint = tmp_path / "serve.ts"
+    observed: dict[str, object] = {}
+    process = object()
+
+    def capture_spawn(arguments: list[str], **options: object) -> object:
+        """Record the command boundary without launching Bun."""
+        observed["arguments"] = arguments
+        observed.update(options)
+        return process
+
+    monkeypatch.setattr(orchestration, "editor_entrypoint", lambda: entrypoint)
+    monkeypatch.setattr(orchestration, "editor_package_root", lambda: tmp_path)
+    monkeypatch.setattr(orchestration.subprocess, "Popen", capture_spawn)
+
+    started = orchestration._spawn_editor(
+        "bun", EditorPorts(bridge_ws=18765, bridge_http=18766, requested=0)
+    )
+
+    assert started is process, "return the process from the spawn boundary"
+    assert observed["arguments"] == ["bun", str(entrypoint)], (
+        "launch Bun with its entrypoint as a separate argument"
+    )
+    environment = typ.cast("dict[str, str]", observed["env"])
+    assert environment["VOXELFORGE_EDITOR_PORT"] == "0", (
+        "request an ephemeral editor port"
+    )
+    assert environment["VOXELFORGE_BRIDGE_WS_PORT"] == "18765", (
+        "advertise the discovered WebSocket port"
+    )
+    assert environment["VOXELFORGE_BRIDGE_HTTP_PORT"] == "18766", (
+        "advertise the discovered HTTP port"
+    )
+    assert observed.get("shell", False) is False, "never invoke Bun through a shell"
 
 
 @pytest.mark.skipif(BUN is None, reason="bun is not installed")

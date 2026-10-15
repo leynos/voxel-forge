@@ -177,3 +177,26 @@ def test_origin_registration_and_snapshots_can_run_concurrently(
         for future in futures:
             future.result(timeout=10)
     assert len(bridge.allowed_origins()) == 2000, "retain every concurrent registration"
+
+
+def test_bridge_cli_passes_requested_listener_ports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The foreground command forwards explicit WebSocket and HTTP ports."""
+    observed: list[tuple[int, int]] = []
+
+    async def capture_ports(ws_port: int, http_port: int) -> None:
+        """Record listener arguments without binding real sockets."""
+        await asyncio.sleep(0)
+        observed.append((ws_port, http_port))
+
+    monkeypatch.setattr(bridge, "_run_servers", capture_ports)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["voxel-forge-bridge", "--ws-port", "0", "--http-port", "0"],
+    )
+
+    bridge.main()
+
+    assert observed == [(0, 0)], "explicit ephemeral ports must reach both listeners"

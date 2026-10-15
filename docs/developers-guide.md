@@ -135,8 +135,11 @@ cross-origin protection, not as an authentication boundary.
   integration installs Bun with `oven-sh/setup-bun`.
 - The editor uses TypeScript with strict compiler options, Biome for
   formatting and lint, and oxlint with `df12-lints`.
-- Editor tests use `fast-check` (`^4.10.2`) for grouping properties and
-  Playwright (`^1.64.1`) with Chromium for the built-page bridge workflow.
+- Editor tests use `fast-check` (`^4.10.2`) for grouping and bridge-endpoint
+  properties, plus Playwright (`^1.64.1`) with Chromium for the built-page
+  bridge workflow.
+- Python boundary tests use Hypothesis to generate editor-origin ports,
+  HTTP content lengths, and process-supervision state sequences.
 - Runtime dependencies are bounded below the next breaking major:
   `mcp>=1.9.0,<2`, `websockets>=14.0,<17`, and `httpx>=0.28.0,<1`.
 - The `desktop` extra adds `PySide6>=6.6.0` and `pyinstaller>=6.0`.

@@ -148,13 +148,12 @@ async def _http_handler(
             writer, _STATUS_BAD_REQUEST, b"", "invalid request headers"
         )
         return
-    cors = _cors_headers(request.origin)
-
     if request.origin is not None and request.origin not in bridge.allowed_origins():
         await _write_error_response(
             writer, _STATUS_FORBIDDEN, b"", "origin is not allowed"
         )
         return
+    cors = _cors_headers(request.origin)
 
     if request.content_length > MAX_HTTP_BODY_BYTES:
         await _write_error_response(
