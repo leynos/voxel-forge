@@ -35,12 +35,12 @@ jobs:
         run: make check-fmt
       - name: Check Python lint
         run: make lint
+      - name: Install editor dependencies
+        run: bun install --frozen-lockfile --cwd editor
       - name: Test Python contracts
         run: make test
       - name: Build Python wheel
         run: uv build --wheel
-      - name: Install editor dependencies
-        run: bun install --frozen-lockfile --cwd editor
       - name: Check editor formatting and lint
         run: make lint-editor
       - name: Check editor types
