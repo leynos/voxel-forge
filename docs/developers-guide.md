@@ -178,19 +178,20 @@ lets each benefit from what the previous one cached.
 | `make markdownlint` | Lint the maintained Markdown files |
 | `make nixie` | Validate Mermaid diagrams |
 
-`make test-editor` first builds the production page, then runs three editor
-test layers. The Bun handler tests exercise the production placement and
-removal functions with controlled WebSocket states; the fast-check property
-test verifies per-colour grouping and input order. The Playwright test loads
-the built page against a temporary bridge with real HTTP and WebSocket
-endpoints, then removes a voxel from layer 0 while layer 1 is active and
+`make test-editor` runs the Bun editor tests. The Bun handler tests exercise
+the production placement and removal functions with controlled WebSocket
+states; the fast-check property test verifies per-colour grouping and input
+order. The Playwright browser test starts the real Bun server through
+`serve.ts` against a temporary Python bridge with real HTTP and WebSocket
+endpoints. It removes a voxel from layer 0 while layer 1 is active, then
 places a voxel through mouse input. These browser assertions complement the
 focused handler tests rather than replacing them.
 
 The hosted workflow installs editor packages with
 `bun install --frozen-lockfile --cwd editor`, then installs Chromium using
-Playwright before `make test-editor`. The editor build is also run as its own
-CI step after the test target.
+Playwright before `make test-editor`. Serving and testing the editor does not
+run a production editor build. The separate `uv build --wheel` step packages
+the Python distribution and its editor assets into the wheel.
 For a local run, install the browser once with
 `cd editor && bunx playwright install chromium`.
 
@@ -224,10 +225,12 @@ would descend into `node_modules`.
 
 The hosted workflow, `.github/workflows/readiness.yml`, runs on every pull
 request and on pushes to `main`. It runs the checks sequentially: Python
-formatting, Python lint, Python tests, wheel build, editor dependency install,
-editor format and lint, TypeScript check, Chromium installation, editor build
-and tests, a separate editor build, dependency audit, and Markdown lint. It
-does not currently run the local `make nixie` target.
+formatting and lint, editor dependency installation, Python tests, Python
+wheel build, editor format and lint, TypeScript check, Chromium installation,
+editor delivery tests, dependency audit, and Markdown lint. The delivery
+tests serve the editor through Bun; the wheel build packages the Python
+distribution and editor assets. The workflow does not currently run the
+local `make nixie` target.
 
 ## Decisions
 
