@@ -72,8 +72,11 @@ the reason. That breadth is real but bounded — a further copy inside one of th
 listed files would also be covered — and it is the price of a fragment having no
 name to key on. A copy in any third file still blocks, because a family is
 silenced only when every reported location matches a listed key. Where the
-finding *is* unit-scoped, prefer the `::name` form: all three entries above use
-it, so a copy of the same shape in a fourth fixture or test is still reported.
+finding *is* unit-scoped, prefer the `::name` form: the two fixture families
+above use it, so a copy of the same shape in a fourth fixture or test is still
+reported. The first entry is the one that cannot be narrowed, because nose
+reports its fragment with no unit name at all; it is keyed by file alone, and
+the reason records that as the price rather than as a preference.
 
 Before recording an entry, confirm the family is genuinely irreducible rather
 than merely awkward. `nose query <path> id=<id> full` prints the proposed

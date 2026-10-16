@@ -48,7 +48,41 @@ _PROHIBITION_ANCHORS = {
 # The qualification, stated in the words the guides actually use. A document
 # that forbids the shared-library direction must also say which direction is
 # forbidden, and that importing the installed package is not it.
-_IMPORT_IS_SUPPORTED = ("import", "in-process")
+#
+# Each phrase asserts the permission rather than mentioning the act. The check
+# below is a substring search, so a phrase naming the *act* is satisfied by a
+# sentence forbidding it -- "importing the package" occurs in "Never consider
+# importing the package" verbatim -- and a bare "import" occurs in
+# "unimportable", the opposite claim. Each phrase here therefore carries the
+# word that makes it a permission, and it is the permission a negation cannot
+# repeat unaltered.
+_IMPORT_IS_SUPPORTED = (
+    "can be imported",
+    "may be imported",
+    "is allowed",
+)
+
+# The documents that state the permission in their own words. The boundary
+# contract binds every document in the set, but only these three assert the
+# permission; the migration guide reaches it by link, so it is bound by the
+# prohibition check below and not by this one. Splitting the requirement this
+# way is what keeps the check honest -- widening the phrase list to make a
+# merely-linking document pass would have meant accepting a bare mention, which
+# is the weakness this test exists to avoid.
+_DOCUMENTS_STATING_IMPORT_IS_SUPPORTED = {
+    "docs/fork-and-interface-boundary.md": (
+        "it is where the boundary contract itself is stated, so it must "
+        "disclose that the contract does not forbid the import"
+    ),
+    "docs/developers-guide.md": (
+        "it is where a contributor reads which direction the rule forbids, so "
+        "it must say that importing the package is not the forbidden one"
+    ),
+    "docs/users-guide.md": (
+        "it is where a consumer reads that the Python helpers are a supported "
+        "in-process API"
+    ),
+}
 
 # What each downstream document must keep naming, keyed by the document. The
 # users guide is where the helpers are documented, so it must name them and
@@ -90,23 +124,105 @@ def _read(relative: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("relative", _BOUNDARY_DOCUMENTS)
+def test_the_requirement_tables_cover_every_boundary_document() -> None:
+    """Every boundary document must carry a requirement, and every key a file.
+
+    The tables below are the specification, and a document missing from all of
+    them is one no test reads: adding a guide to ``_BOUNDARY_DOCUMENTS`` and
+    stopping there would look like coverage while checking nothing, which is
+    the failure mode this module exists to catch, one level up. The converse
+    matters as much -- a key naming a file that is not in the master list would
+    silently widen the set the module claims to cover.
+
+    The two directions are asserted separately so a failure says which one
+    broke rather than only that the sets differ.
+    """
+    checked = (
+        set(_DOCUMENTS_STATING_IMPORT_IS_SUPPORTED)
+        | set(_PROHIBITION_ANCHORS)
+        | set(_DOCUMENT_HELPER_CLAIMS)
+    )
+    declared = set(_BOUNDARY_DOCUMENTS)
+
+    assert not declared - checked, (
+        "these documents are declared boundary documents but no requirement "
+        f"table covers them, so nothing reads them: {sorted(declared - checked)}"
+    )
+    assert not checked - declared, (
+        "these documents are checked but missing from _BOUNDARY_DOCUMENTS, so "
+        f"the module under-reports what it covers: {sorted(checked - declared)}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("relative", "role"),
+    sorted(_DOCUMENTS_STATING_IMPORT_IS_SUPPORTED.items()),
+)
 def test_each_boundary_document_states_the_python_helpers_are_supported(
-    relative: str,
+    relative: str, role: str
 ) -> None:
-    """Every document in the set must permit importing the helpers.
+    """Every document that states the permission must state it affirmatively.
 
     Asserting this per document rather than on the set as a whole is the point:
     the defect was one document forbidding what another documented, and a
     check that concatenated all four would pass while any single one
     contradicted the rest.
-    """
-    text = _read(relative).lower()
 
-    assert any(term in text for term in _IMPORT_IS_SUPPORTED), (
+    Only the documents that state the permission are checked; the two that
+    reach it by link are covered by the prohibition check below, which is what
+    they are actually for. Widening the phrase list until a merely-linking
+    document passed is the tempting shortcut and it is the wrong one: the only
+    wording a linking document could satisfy it with is a bare mention, which
+    is precisely the weakness ``test_the_import_guard_rejects_a_negated_document``
+    exists to catch.
+
+    ``role`` says what the document is *for*, so a failure names the reader who
+    is being misled rather than only the phrase that went missing.
+    """
+    assert _states_importing_is_supported(_read(relative)), (
         f"{relative} describes the consumer boundary without saying that "
-        "importing the installed package is supported; a reader of this "
-        "document alone can conclude the Python helpers are out of bounds"
+        f"importing the installed package is supported, and {role}; a reader "
+        "of this document alone can conclude the Python helpers are out of "
+        "bounds"
+    )
+
+
+def _states_importing_is_supported(text: str) -> bool:
+    """Return whether ``text`` says the installed package may be imported.
+
+    Newlines and runs of spaces are collapsed first. These documents are
+    wrapped at 80 columns, so a phrase can straddle a line break -- and a
+    guard that silently missed one would report a document as lacking a
+    statement it makes, which is the kind of false failure that gets a check
+    loosened rather than fixed.
+    """
+    flattened = " ".join(text.lower().split())
+    return any(term in flattened for term in _IMPORT_IS_SUPPORTED)
+
+
+@pytest.mark.parametrize(
+    "negated",
+    [
+        "The consumer must never import the installed package.",
+        "Importing the package is not supported.",
+        "The contribution boundary makes the package unimportable.",
+    ],
+)
+def test_the_import_guard_rejects_a_negated_document(negated: str) -> None:
+    """A document forbidding the import must fail the check, not satisfy it.
+
+    The guard above is a substring search, so what it accepts is only as good
+    as the phrases it searches for. Each case here is wording a document could
+    plausibly use to *forbid* the import, and each must be rejected. The third
+    is the sharpest: it contains the substring ``import``, which is why the
+    guard cannot search for that word alone -- doing so would have let a
+    document forbidding the import satisfy a check meant to find one
+    permitting it, which is exactly the defect the boundary tests exist to
+    catch, reintroduced inside the test that catches it.
+    """
+    assert not _states_importing_is_supported(negated), (
+        f"the guard accepted a document that forbids the import: {negated!r}. "
+        "Reword _IMPORT_IS_SUPPORTED as clauses a negation cannot contain"
     )
 
 
@@ -131,8 +247,7 @@ def test_prohibition_and_qualification_travel_together(
         "the rule moved, this test needs to move with it rather than pass "
         "vacuously"
     )
-    lowered = text.lower()
-    assert any(term in lowered for term in _IMPORT_IS_SUPPORTED), (
+    assert _states_importing_is_supported(text), (
         f"{relative} keeps the prohibition but has lost the qualification, so "
         "it reads as forbidding the Python helpers the users guide documents"
     )

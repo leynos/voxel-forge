@@ -234,7 +234,7 @@ them by name, as above. That is a versioned dependency on a released package,
 which is a different thing from the cross-project code boundary the
 [fork and interface boundary](fork-and-interface-boundary.md) describes — that
 boundary is about not vendoring VoxelForge source and not co-owning shared
-types, not about whether the package may be imported. When the interface is a
+types, and importing the installed package is allowed. When the interface is a
 file or a command rather than a Python call, that document is the one to read.
 
 The MCP tools, including `voxelforge_export_obj`, are unchanged. Integrations

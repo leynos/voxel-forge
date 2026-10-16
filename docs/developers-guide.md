@@ -60,8 +60,8 @@ that constrains a change here is this:
   shared library in either direction. A change that would move the interface
   toward a linked library is out of scope, however convenient it looks.
 
-This rule governs the boundary **between projects**. It does not make the
-package unimportable, and it is not in tension with the Python export helpers
+This rule governs the boundary **between projects**. Importing the installed
+package is allowed, and that is not in tension with the Python export helpers
 the [users guide](users-guide.md) documents: those are a supported in-process
 API, and an integration may install `voxel-forge` and call them. The
 distinction is between a versioned dependency on a released package and code

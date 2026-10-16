@@ -26,14 +26,14 @@ not runtime. A code boundary that is never crossed is the cheapest way to keep
 that true. Changes that would turn the interface into a shared library — in
 either direction — are out of scope.
 
-What this rules out is **co-owned code**, not importing the package. The
-[users guide](users-guide.md) documents a supported in-process Python export
-API, and calling it is fine: an integration that installs `voxel-forge` and
-imports `export_obj` depends on a released version, so the two projects still
-meet at a versioned boundary that either side can revise independently. What
-would dissolve that boundary is vendoring VoxelForge source into a consumer, or
-sharing types that both projects must edit in step. Those are the changes the
-paragraph above keeps out of scope.
+What this rules out is **co-owned code**. Importing the installed package is
+allowed. The [users guide](users-guide.md) documents a supported in-process
+Python export API, and calling it is fine: an integration that installs
+`voxel-forge` and imports `export_obj` depends on a released version, so the
+two projects still meet at a versioned boundary that either side can revise
+independently. What would dissolve that boundary is vendoring VoxelForge source
+into a consumer, or sharing types that both projects must edit in step. Those
+are the changes the paragraph above keeps out of scope.
 
 ## What is in scope
 
