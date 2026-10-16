@@ -163,10 +163,11 @@ Two limits apply specifically to the path enumeration in item 3, because
   live rather than hypothetical — quoting is enabled here — but nothing in this
   history triggers it: no path contains a non-ASCII or otherwise quotable
   character, and enumerating with NUL-delimited records (`git log --all
-  --format= --name-only -z`) gives results identical to the line-based form
-  once both are split into records. The raw byte streams happen to match here
-  too, but that is incidental to this history; what matters is that the records
-  agree.
+  --format= --name-only -z`) yields the same pathname records as the line-based
+  form once both are split. The raw streams are of course not comparable
+  directly — one separates records with NUL and the other with newline, so they
+  differ by construction for any non-empty listing. The comparison is between
+  the records, not the bytes.
 
 Neither limit is discharged by argument above; both were checked against the
 actual history, and the figures are given so a reader can check them again.
