@@ -199,7 +199,7 @@ code-boundary policy where a future contributor will find it. It exists
 because the boundary is easy to erode silently once two projects share a
 format.
 
-- [ ] 1.4.1. Record the interface contract and the code boundary in this
+- [x] 1.4.1. Record the interface contract and the code boundary in this
   repository.
   - State that the interface between VoxelForge and any consuming game is a
     file format plus a command-line contract, never a library; that VoxelForge
