@@ -41,18 +41,25 @@ without leaving this checkout:
    upstream's `main`: the same commit SHA and the same tree (`bd01083`). This
    repository's history therefore begins as upstream's published history and
    adds to it; no separately authored body of code is joined in.
-3. **No compiled-language source exists anywhere in that history.** This
-   prints nothing:
+3. **No C, C++, Rust, or Go source file exists anywhere in that history.**
+   Running this returns no matches:
 
    ```sh
    git log --all --format= --name-only | sort -u | grep -Ei '\.(c|h|cpp|hpp|cc|rs|go)$'
    ```
 
-   Run it on a full (non-shallow) clone: `git log --all` reports only the
-   commits actually fetched. `git ls-files`, by contrast, sees just the current
-   index and would miss source deleted in an earlier commit, so it cannot
-   support a claim about the whole history. A fork of Goxel would have to carry
-   Goxel's C sources to be a fork; this repository never has.
+   Read the result as an empty match list, not as a success exit status: with
+   no matches `grep` exits 1, which here means the audit found nothing to
+   report, not that the audit failed. Run it on a full (non-shallow) clone,
+   because `git log --all` reports only the commits actually fetched.
+   `git ls-files` is not a substitute: it sees just the current index and would
+   miss source deleted in an earlier commit.
+
+   The command covers the extensions listed above. It is not a general sweep
+   for compiled languages, which would need a wider expression (`.cs`, `.java`,
+   `.swift`, `.zig`, and others). For the claim at hand the narrower check is
+   sufficient, because a fork of Goxel would have to carry Goxel's C sources,
+   and no `.c` or `.h` file appears in any fetched commit.
 4. **Every Goxel reference in this repository is descriptive.** "Goxel" appears
    only in format and attribution contexts — for example `vox_io.py`'s
    "Goxel-compatible format" and `__init__.py`'s "Goxel-inspired". None refers
