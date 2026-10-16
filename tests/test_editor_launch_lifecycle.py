@@ -44,7 +44,7 @@ def _prepare_launch(
     monkeypatch.setattr(orchestration, "_supervised", {})
     monkeypatch.setattr(bridge, "_editor_origin_ports", {5173})
     monkeypatch.setattr(bridge, "current_ports", lambda: (43001, 43002))
-    monkeypatch.setattr(server, "_ensure_bridge", lambda: None)
+    monkeypatch.setattr(server, "_ensure_bridge", lambda _trigger: None)
     opened: list[str] = []
     monkeypatch.setattr(webbrowser, "open", opened.append)
     return opened

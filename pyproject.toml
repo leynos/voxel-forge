@@ -436,3 +436,7 @@ min-size = 24
 surface = "all"
 top = 0
 exclude = [".venv/**", ".tools/**", ".git/**", "node_modules/**", "dist/**", "build/**"]
+
+[[tool.duplication_gate.allow]]
+members = ["src/voxel_forge/server_tools/io.py", "tests/test_headless.py"]
+reason = "The one duplicated fragment is the single-statement call server._ensure_bridge(\"launch_editor\"): the production call site in io.py, plus the two calls in one test that assert a repeat request stays silent. The repetition is deliberate and is the subject of the assertion - the test exists precisely to show that the second call, finding the bridge already up, emits nothing - so extracting it would make the test assert that a helper ran instead of what the seam does, and the production call site has no second caller to share a wrapper with. Keys are file-scoped only because this is a fragment-level finding: nose reports it with no unit name, and policy.py documents that a \"path::name\" key can never match a nameless location, so a narrower key cannot be expressed. The breadth that costs - a further copy inside one of these two files would also be covered - is the price of a fragment having no name to key on; a copy in any third file still blocks, because a family is silenced only when every reported location matches."

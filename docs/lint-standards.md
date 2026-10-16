@@ -42,6 +42,32 @@ Fix underlying issues before committing. Investigate scanner findings against
 actual runtime registration and callbacks before removing code. Do not add
 exceptions or raise thresholds merely to obtain a passing gate.
 
+Where a family genuinely should not be factored, `df12-duplication allow`
+records the exception in `pyproject.toml` as a
+`[[tool.duplication_gate.allow]]` table naming every member of the family and
+carrying a `reason`. The reason is the audit trail, so it has to stand on its
+own: it must say why the duplication is deliberate and what factoring would
+cost, not merely that the gate was failing. One family is recorded this way
+today — the repeated `server._ensure_bridge("launch_editor")` call, whose
+repetition *is* the subject of the assertion that a second request against a
+running bridge stays silent, so extracting it into a helper would make the test
+assert that a helper ran instead of what the seam does.
+
+Keys are `path` or `path::name`, and the `::name` form only matches a location
+nose attributed to a whole unit. A fragment-level finding carries no name, so a
+`::name` key can never match it and the entry would be reported as unmatched
+rather than silencing anything. Check the finding's reported span before
+choosing a key form: a bare `path` key is the only expressible choice for a
+fragment, and it is correspondingly broad, so it still has to be justified in
+the reason. That breadth is real but bounded — a further copy inside one of the
+listed files would also be covered — and it is the price of a fragment having no
+name to key on. A copy in any third file still blocks, because a family is
+silenced only when every reported location matches a listed key.
+
+The command also writes a zero-byte `.<manifest>.df12.lock` sidecar, which is a
+`flock` target the gate holds across its own manifest rewrites; it coordinates
+concurrent runs and carries no content, so it is ignored rather than committed.
+
 ## Contributor gates
 
 `make typecheck` includes `editor/type-tests` through a configuration extending
@@ -108,6 +134,14 @@ Duplication fixes keep shared operations at their owning boundary:
 - Desktop Blender exports share the format-specific writer while retaining
   separate merged/raw feedback. Static help text stays in a local topic table
   and uses one informational-dialog operation.
+- `voxel_forge.lifecycle_log.emit_lifecycle` owns the `VoxelForge <source>:
+  operation=... key=value...` grammar the server and bridge both write to
+  standard error. Three guides quote those lines verbatim and tests pin their
+  field order, so one renderer keeps the documented strings and the emitted
+  strings in step; each call site still owns which fields it reports. It also
+  owns the one-line guarantee: a value carrying any character `str.splitlines`
+  breaks on is refused rather than allowed to render as two lines, so a
+  line-oriented scraper cannot be made to read one transition as two.
 - The server's `_edit_scene` context owns successful edit publication for
   palette and single-voxel mutation tools. Failure exits without publishing.
   WebSocket edits share one variant dispatcher and one post-edit broadcast.

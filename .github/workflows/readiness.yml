@@ -54,3 +54,34 @@ jobs:
         run: bun audit
       - name: Check Markdown
         run: make markdownlint MDLINT="npx --yes markdownlint-cli2"
+
+  # Roadmap step 1.3: prove the tool installs from a clean checkout with a
+  # fresh dependency resolution (no lockfile), and that a headless run
+  # binds no socket while still exporting a scene. This job fails if the
+  # dependency bounds from task 1.1.1 regress.
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      # Pin action identities, matching the readiness job's policy.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - name: Install as a uv tool from a clean checkout
+        run: uv tool install .
+      - name: Verify the MCP entry point
+        run: voxel-forge-mcp --help
+      - name: Confirm the installed command is on the PATH
+        run: |
+          # `uv tool install` places the command in ~/.local/bin, which the
+          # runner has on PATH. Fail loudly if that ever stops being true,
+          # rather than letting the next step report that it found nothing.
+          test -x "$(command -v voxel-forge-mcp)"
+      - name: Run a headless MCP session against the installed command
+        run: |
+          # The driver launches `voxel-forge-mcp` from the PATH, completes the
+          # MCP handshake over stdio, exports a scene, and asserts the process
+          # never held a listening socket. It is stdlib-only and deliberately
+          # does not import voxel_forge, so it can only exercise the installed
+          # distribution and not the checkout.
+          python3 tests/installed_smoke.py

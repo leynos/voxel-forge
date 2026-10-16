@@ -14,6 +14,7 @@ if typ.TYPE_CHECKING:
 
     from websockets.asyncio.server import ServerConnection
 
+from .lifecycle_log import emit_lifecycle
 from .model import SceneStore, VoxelScene
 
 _LOG = logging.getLogger(__name__)
@@ -254,6 +255,23 @@ def _bound_port(server: typ.Any, requested: int) -> int:  # ruff: ignore[any-typ
     return requested
 
 
+def _announce_stop() -> None:
+    """Report the listener teardown that ``_run_servers`` performs in its finally.
+
+    Called from that one site, so it cannot report a stop that did not happen
+    or miss one that did. ``error_category`` is the class of whatever ended the
+    listeners, which is ``CancelledError`` for the ordinary shutdown and
+    ``none`` only when the task left the loop without raising; only the class
+    is printed, because an exception's message may carry bound ports or
+    editor-supplied data.
+    """
+    cause = sys.exception()
+    category = type(cause).__name__ if cause is not None else "none"
+    emit_lifecycle(
+        "bridge", "bridge_state", bridge_state="down", error_category=category
+    )
+
+
 async def _run_servers(ws_port: int = 0, http_port: int = 0) -> None:
     """Run the websocket and HTTP servers until the task is cancelled.
 
@@ -290,6 +308,7 @@ async def _run_servers(ws_port: int = 0, http_port: int = 0) -> None:
         _bridge_loop = None
         _current_ports = None
         _ready.clear()
+        _announce_stop()
 
 
 _bridge_thread: threading.Thread | None = None

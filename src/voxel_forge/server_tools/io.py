@@ -334,7 +334,7 @@ def voxelforge_launch_editor() -> str:
     Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่.
     """
     with _editor_lock:
-        server._ensure_bridge()
+        server._ensure_bridge("launch_editor")
         bridge_ports = bridge.current_ports()
         if bridge_ports is None:
             return "Bridge ยังไม่พร้อม — ลองเรียก voxelforge_launch_editor อีกครั้ง"

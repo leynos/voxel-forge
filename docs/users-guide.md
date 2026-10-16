@@ -71,6 +71,45 @@ that the command is on the `PATH`.
 client. It announces the ports it has bound on standard error, because
 standard output is reserved for MCP protocol data.
 
+### Headless operation
+
+The server binds no socket unless a bridge is requested, so it is safe to run
+headless, in a sandbox, or in continuous integration, where there is no
+display, browser, or editor.
+
+The bridge starts only when something wants it:
+
+- Eagerly, with `voxel-forge-mcp --bridge` or `VOXELFORGE_BRIDGE=1`. The
+  listener starts before the server serves stdio.
+- On demand, when an MCP client calls the `voxelforge_launch_editor` tool.
+
+Editing a scene notifies a bridge that is already running, but never starts
+one, so an edit-only session stays headless however many edits it makes.
+
+```bash
+# Start the server with the bridge already listening.
+voxel-forge-mcp --bridge
+```
+
+The server reports the mode it started in on standard error, with the fields
+`operation=server_start`, `bridge_mode=headless` or `bridge_mode=eager`, and
+`bridge_state=down` or `bridge_state=running`. Standard output stays reserved
+for MCP protocol data.
+
+When the bridge comes up it says so once, naming what asked for it
+(`trigger=server_start` for the eager path, `trigger=launch_editor` for the
+on-demand one), and when it stops it reports the transition:
+
+```text
+VoxelForge server: operation=bridge_start trigger=launch_editor
+VoxelForge bridge: operation=bridge_state bridge_state=down error_category=CancelledError
+```
+
+`error_category` names the class of whatever ended the listeners; an ordinary
+shutdown cancels the task, so it reports `CancelledError`. Calling
+`voxelforge_launch_editor` again while the bridge is already up does not report
+another start, so the line counts transitions rather than calls.
+
 ## Connecting an MCP client
 
 Point the client at the installed `voxel-forge-mcp` command with an empty

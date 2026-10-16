@@ -14,9 +14,10 @@ from mcp.server.fastmcp import FastMCP
 
 from . import bridge as bridge_module
 from .bridge import BRIDGE_HTTP_PORT as BRIDGE_HTTP_PORT
-from .bridge import notify_scene_update, start_bridge_background
+from .bridge import current_ports, notify_scene_update, start_bridge_background
 from .export_roblox import to_luau_merged as to_luau_merged
 from .export_roblox import write_luau_file as write_luau_file
+from .lifecycle_log import emit_lifecycle
 from .mesh_merge import merge_stats as merge_stats
 from .model import DEFAULT_PALETTE as DEFAULT_PALETTE
 from .model import SceneStore, VoxelScene
@@ -54,15 +55,60 @@ MAX_TOOL_VOXELS: int = 100_000
 MAX_BLOCKS_JSON_CHARS: int = 8_000_000
 
 
-def _ensure_bridge() -> None:
-    """Start the bridge if needed and hand it this module's scene registry."""
+def _announce_startup(bridge_mode: str, bridge_state: str) -> None:
+    """Report the startup mode on stderr, keeping stdout protocol-only.
+
+    A headless run and a run whose bridge failed to start otherwise look
+    identical to an operator: the process blocks on stdio either way, and the
+    endpoint line is printed only once the listener is up. These fields name
+    the mode that was *requested* and the state that was *reached*, so the two
+    cases are distinguishable. ``main`` only reaches the "eager" mode once
+    ``_ensure_bridge`` has returned, so an eager start that fails raises before
+    this runs rather than reporting a state it never held.
+    """
+    emit_lifecycle(
+        "server", "server_start", bridge_mode=bridge_mode, bridge_state=bridge_state
+    )
+
+
+def _ensure_bridge(trigger: str) -> None:
+    """Start the bridge if needed and hand it this module's scene registry.
+
+    ``trigger`` names the request that caused the start, so a log reader can
+    tell a startup-requested bridge from one an MCP client opened by calling
+    ``voxelforge_launch_editor``. Callers pass one of two fixed labels rather
+    than anything from the request itself, so the field stays a small closed
+    set that a log query can group by.
+
+    The line marks a transition, so it is emitted only when this call found the
+    bridge down. A later ``voxelforge_launch_editor`` against an already-running
+    bridge is a no-op and must not report a second start. The pre-check is a
+    plain read of the published ports; it is exact here because every caller
+    serializes its own start (``main`` is single-threaded, and the MCP tool
+    holds ``_editor_lock``).
+    """
+    was_running = current_ports() is not None
     start_bridge_background()
     bridge_module.use_store(store)
+    if not was_running:
+        emit_lifecycle("server", "bridge_start", trigger=trigger)
 
 
 def _sync_bridge(scene: VoxelScene) -> None:
-    """Broadcast one scene update; callers hold the registry lock for the mutation."""
-    _ensure_bridge()
+    """Notify bridge subscribers when a bridge is running.
+
+    Scene mutations must not start the bridge: a headless or sandboxed run
+    should never bind a port. The bridge starts only when an editor is
+    requested (`voxelforge_launch_editor`) or when the server is run with
+    `--bridge`.
+
+    Parameters
+    ----------
+    scene : VoxelScene
+        The scene whose contents changed.
+    """
+    if current_ports() is None:
+        return
     notify_scene_update(scene)
 
 
@@ -120,6 +166,11 @@ def _export_path(scene: VoxelScene, output_path: str, suffix: str) -> Path:
 def main() -> None:
     """Run the MCP server on stdio, or print usage and exit for ``--help``.
 
+    The editor bridge is opt-in: pass ``--bridge`` or set
+    ``VOXELFORGE_BRIDGE=1`` to start its listener eagerly. Without either, no
+    socket is bound until ``voxelforge_launch_editor`` asks for one, so a
+    headless run stays headless.
+
     Notes
     -----
     Argument parsing happens before the bridge starts so that ``--help``
@@ -128,13 +179,31 @@ def main() -> None:
     parsing returns.
     """
     import argparse
+    import os
 
     parser = argparse.ArgumentParser(
         prog="voxel-forge-mcp",
         description=("VoxelForge MCP server (stdio transport) with an editor bridge."),
     )
-    parser.parse_args()
-    _ensure_bridge()
+    parser.add_argument(
+        "--bridge",
+        action="store_true",
+        default=os.environ.get("VOXELFORGE_BRIDGE", "") == "1",
+        help=(
+            "start the editor bridge listener eagerly "
+            "(default: only when the editor is launched; "
+            "VOXELFORGE_BRIDGE=1 also enables it)"
+        ),
+    )
+    args = parser.parse_args()
+    if args.bridge:
+        _ensure_bridge("server_start")
+    # Report the state the bridge actually reached, not the one requested: an
+    # eager start that failed would already have raised out of _ensure_bridge.
+    _announce_startup(
+        "eager" if args.bridge else "headless",
+        "running" if current_ports() is not None else "down",
+    )
     mcp.run(transport="stdio")
 
 

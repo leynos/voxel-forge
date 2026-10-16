@@ -13,3 +13,8 @@ test_out.obj
 Thumbs.db
 
 .tools/
+
+# Advisory flock sidecar the duplication gate holds across each manifest
+# rewrite. It coordinates concurrent df12-duplication runs only and carries no
+# content, so it is per-checkout runtime state rather than something to commit.
+.pyproject.toml.df12.lock

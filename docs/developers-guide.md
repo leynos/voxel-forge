@@ -54,7 +54,9 @@ under `[project.scripts]`, which maps a command name onto a callable:
 | `voxel-forge` | `voxel_forge.desktop.launch:main` |
 
 The three are independent: the bridge can run on its own, and the MCP server
-starts its own bridge in the background.
+starts a bridge only when it is explicitly asked to, with `--bridge` or
+`VOXELFORGE_BRIDGE=1`, or on demand when an MCP client calls the
+`voxelforge_launch_editor` tool.
 
 ## The desktop extra and the launcher boundary
 
@@ -111,8 +113,58 @@ socket, and anything that bound a port first would make a help query a
 side-effecting operation. `argparse` raises `SystemExit` for `--help`, so the
 server is reached only once parsing returns normally.
 
+Starting the bridge is opt-in. `--bridge` starts the listener eagerly, before
+stdio, and `VOXELFORGE_BRIDGE=1` seeds that flag's default so a wrapper that
+cannot express the request in an argument list can still make it. Without
+either, no socket is bound at startup. `main` is one of the two places that
+start a bridge; the other is `server_tools/io.py`, reached when an MCP client
+calls `voxelforge_launch_editor`. That is the on-demand path.
+
+Scene mutations take a third route. `_sync_bridge` is notify-only: it returns
+immediately unless `bridge.current_ports()` reports a bound bridge, so an edit
+can never start a listener the run did not ask for. A headless session stays
+headless however many edits it makes, and only an editor request or an eager
+flag binds a port.
+
 With no arguments, the server starts on stdio and blocks. That blocking
 behaviour is the contract an MCP client depends on.
+
+`_announce_startup` writes one line to standard error with stable fields, so a
+headless run and a run whose bridge failed to start are distinguishable even
+though both block on stdio:
+
+```text
+VoxelForge server: operation=server_start bridge_mode=headless bridge_state=down
+```
+
+`bridge_mode` records what was requested, `headless` or `eager`, and
+`bridge_state` records what was reached, `down` or `running`. The state is
+read back through `current_ports()`, so `running` is printed only when ports
+are actually bound. An eager start that fails raises out of `_ensure_bridge`
+before the line is printed, so the announcement never claims a state the
+process did not hold. Standard output stays reserved for the MCP protocol, so
+a client reading stdout never has to filter diagnostics.
+
+Starting and stopping the listener have their own diagnostics, so the bridge
+lifecycle is legible from the log without reading the code:
+
+```text
+VoxelForge server: operation=bridge_start trigger=server_start
+VoxelForge bridge: operation=bridge_state bridge_state=down error_category=CancelledError
+```
+
+`bridge_start` is emitted once per transition from down to up, and names the
+`trigger` that caused it: `server_start` for the eager `--bridge` or
+`VOXELFORGE_BRIDGE=1` path, `launch_editor` for the on-demand path an MCP
+client reaches through `voxelforge_launch_editor`. A later launch request
+against an already-running bridge is a no-op and emits nothing, so the line
+counts starts rather than calls. `bridge_state=down` is emitted once from the
+`finally` that clears the published ports, with `error_category` naming the
+exception class that ended the listeners. The ordinary shutdown is a
+cancellation and therefore reports `CancelledError`; `none` means the task
+left the loop without raising, which is not the normal path. Only the class is
+recorded, never its message, which may carry bound ports or editor-supplied
+data.
 
 The standalone `voxel-forge-bridge` command defaults to WebSocket port 8765 and
 HTTP port 8766. The MCP server instead binds ephemeral loopback ports and
@@ -232,6 +284,29 @@ tests serve the editor through Bun; the wheel build packages the Python
 distribution and editor assets. The workflow does not currently run the
 local `make nixie` target.
 
+The workflow also runs an `install` job, which covers the installed artifact
+rather than the checkout. It runs `uv tool install .` from a clean checkout,
+so the resolution is fresh and a regression in a dependency bound fails the
+job rather than being masked by the lockfile. It then runs
+`voxel-forge-mcp --help`, and then `python3 tests/installed_smoke.py`. That
+driver launches the installed command from the `PATH` and drives a real MCP
+stdio session: the `initialize` handshake, a scene build, and a `.vox` export,
+asserting throughout that the process never held a listening socket. It is
+stdlib-only and never imports `voxel_forge`, so it can only exercise the
+installed distribution and not the checkout.
+
+That socket assertion is only worth as much as the probe behind it, so
+`tests/listener_probe.py` queries the child's own `/proc` entry and
+`tests/test_listener_probe.py` is the probe's control group: it starts a child
+that genuinely binds a loopback port and requires the probe to see it, and it
+proves the probe does not attribute one process's listener to another. The
+probe answers with a `ListenerReport` rather than a bare list, because an empty
+list is ambiguous between "no listening socket" and "the tables could not be
+read". Only `ProbeOutcome.MEASURED` with no ports certifies a headless run;
+`UNSUPPORTED` (no `/proc` on this host) and `FAILED` (the tables exist but
+could not be read) both fail the driver, so a platform where the check cannot
+run reports a failure rather than a vacuous pass.
+
 ## Decisions
 
 These are the compatibility decisions the project has settled, recorded so
@@ -248,6 +323,12 @@ they are not relitigated by accident.
 - The bridge announces its ports on standard error and keeps standard output
   for protocol data, so a client reading stdout never has to filter
   diagnostics.
+- Starting the editor bridge is opt-in. `--bridge` and `VOXELFORGE_BRIDGE=1`
+  start it eagerly, before stdio, and `voxelforge_launch_editor` starts it on
+  demand; a scene mutation only notifies a bridge that is already running. The
+  bridge is therefore a component a caller asks for rather than an assumption
+  every run makes, which is what lets a headless or sandboxed session bind no
+  port at all.
 - The Three.js editor ships in the wheel and runs as a supervised Bun process.
   The MCP server discovers its bridge and editor ports at startup. Bun closes
   its server when the supervisor's private stdin pipe reaches EOF, so forced

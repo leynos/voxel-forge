@@ -53,6 +53,50 @@ Malformed data raises `ValueError` through the scene-validation error type.
 Inspect and correct affected saved JSON files before loading them with 0.3.
 The Python runtime requirement remains Python 3.11 or newer.
 
+## The editor bridge is now opt-in
+
+In 0.2 the MCP server started the editor bridge in the background as part of
+startup. An integration could therefore assume that a bridge was available as
+soon as the server was running, and a loopback port was bound whether or not
+an editor would ever connect.
+
+The server no longer starts the bridge on its own. With no arguments it binds
+no socket and serves MCP on stdio, which is what a headless, sandboxed, or
+continuous-integration run needs. To keep a listener that the server starts,
+ask for one:
+
+```bash
+voxel-forge-mcp --bridge
+```
+
+Setting `VOXELFORGE_BRIDGE=1` has the same effect, for a client that cannot
+add an argument.
+
+Integrations that call the `voxelforge_launch_editor` MCP tool need no change:
+that tool still starts the bridge on demand and reports the editor URL.
+Editing a scene notifies a bridge that is already running but never starts
+one, so a session that only edits and exports stays headless.
+
+Clients that call only the MCP scene and export tools need no change at all.
+MCP tool names and their request schemas are unchanged; only the timing of
+bridge startup has changed.
+
+An integration that scrapes the server's standard error for the bridge
+endpoint should additionally watch the lifecycle lines. A bridge start is now
+reported once, with the request that caused it, and a stop is reported when
+the listeners end:
+
+```text
+VoxelForge server: operation=bridge_start trigger=launch_editor
+VoxelForge bridge: operation=bridge_state bridge_state=down error_category=CancelledError
+```
+
+`error_category` names the class of whatever ended the listeners; an ordinary
+shutdown cancels the task, so it reports `CancelledError`. A tool call that
+finds the bridge already running reports no start, so a counter over
+`bridge_start` measures transitions rather than calls. None of these lines are
+written to standard output, which stays reserved for MCP protocol data.
+
 ## See also
 
 - [Users guide](users-guide.md) — supported export helper calls.
