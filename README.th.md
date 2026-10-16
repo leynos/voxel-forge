@@ -13,8 +13,9 @@ AI อย่าง Cursor และ Claude Desktop สร้างและแ�
 > ของ Goxel ทั้งสองทำงานร่วมกันผ่านรูปแบบไฟล์ที่อ่านและเขียนเหมือนกัน คือ
 > `.vox` (MagicaVoxel) และ `.obj` (Wavefront)
 >
-> [`docs/provenance.md`](docs/provenance.md) บันทึกหลักฐานที่รองรับข้อกล่าวอ้าง
-> ข้างต้น และ
+> [`docs/provenance.md`](docs/provenance.md) บันทึกการตรวจสอบประวัติซอร์ส
+> ที่รองรับข้อกล่าวอ้างข้างต้น ระบุสิ่งที่การตรวจสอบนี้ยังพิสูจน์ไม่ได้ และแยก
+> หลักฐานเรื่องความสอดคล้องของรูปแบบไฟล์ออกจากข้อกล่าวอ้างเรื่องผู้เขียน
 > [`docs/fork-and-interface-boundary.md`](docs/fork-and-interface-boundary.md)
 > ระบุความหมายของขอบเขตนี้สำหรับผู้ที่นำโปรเจกต์ไปใช้
 
@@ -250,8 +251,9 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
   desktop, ข้อกำหนดเครื่องมือ และ verification gates
 - [ขอบเขต fork และ interface](docs/fork-and-interface-boundary.md) — สิ่งที่ fork
   รับประกัน และสัญญาเรื่องรูปแบบไฟล์และบรรทัดคำสั่งที่ผู้บริโภคพึ่งพาได้
-- [ที่มา](docs/provenance.md) — โปรเจกต์ต้นทาง สถานะสัญญาอนุญาต และหลักฐานว่า
-  VoxelForge ไม่มีซอร์สโค้ด C ของ Goxel
+- [ที่มา](docs/provenance.md) — โปรเจกต์ต้นทาง สถานะสัญญาอนุญาต การตรวจสอบ
+  ประวัติซอร์สว่า VoxelForge ไม่มีซอร์สโค้ด C ของ Goxel และข้อจำกัดของการ
+  ตรวจสอบนั้น
 - [ย้ายไป 0.2](docs/migration-0.2.md) — การเปลี่ยนแปลงคำสั่งติดตั้งในรุ่นนั้น
   และสิ่งที่ต้องปรับในการตั้งค่าเดิม
 - [ย้ายไป 0.3](docs/migration-0.3.md) — การเปลี่ยน arguments ของ Python export

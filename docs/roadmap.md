@@ -225,6 +225,15 @@ format.
     published format specification.
   - Success: a reader can determine the provenance of the format handling
     without reading Thai and without taking the claim on trust.
+  - Evidence route: `docs/provenance.md` carries a source-history audit the
+    reader can reproduce in the checkout — upstream's own authorship
+    statement, a root commit byte-identical to upstream's `main`, no compiled
+    C/C++/Rust/Go source in any reachable commit, and Goxel references limited
+    to format and attribution contexts. The format-conformance tests are
+    labelled as conformance evidence only, since a translated implementation
+    would pass them too. The audit's limit is stated: it cannot prove the
+    absence of an undocumented translation, so the claim is recorded as
+    well-supported and author-asserted rather than independently adjudicated.
 
 ## 2. Voxels carry meaning, not just colour
 

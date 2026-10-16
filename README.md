@@ -14,8 +14,9 @@ directly.
 > C source. The two interoperate through the file formats they both read and
 > write: `.vox` (MagicaVoxel) and `.obj` (Wavefront).
 >
-> [`docs/provenance.md`](docs/provenance.md) records the evidence behind those
-> claims, and
+> [`docs/provenance.md`](docs/provenance.md) records the source-history audit
+> behind those claims, states what that audit does not establish, and
+> separates the format-conformance tests from the authorship claim.
 > [`docs/fork-and-interface-boundary.md`](docs/fork-and-interface-boundary.md)
 > states what the boundary means for anyone consuming the project.
 
@@ -256,7 +257,8 @@ The two can be used side by side as MCP servers in the same Cursor session.
   fork guarantees, and the file-format and command-line contract consumers may
   rely on.
 - [Provenance](docs/provenance.md) — the upstream project, the licence
-  position, and the evidence that VoxelForge carries no Goxel C source.
+  position, the source-history audit showing VoxelForge carries no Goxel C
+  source, and the limits of that audit.
 - [Migrating to 0.2](docs/migration-0.2.md) — the installed-command changes in
   this release and what an existing setup has to update.
 - [Migrating to 0.3](docs/migration-0.3.md) — Python export arguments and
