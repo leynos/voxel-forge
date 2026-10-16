@@ -108,8 +108,20 @@ class SceneStore:
         """
         with self._lock:
             key = name or self._current
-            if not key or key not in self._scenes:
+            if not key:
                 msg = "no scene yet — call voxelforge_create_scene first"
+                raise KeyError(msg)
+            if key not in self._scenes:
+                # A named lookup that misses is a different failure from having
+                # no current scene, so it reports the name and the two ways to
+                # get one: load a saved scene, or name a session scene that
+                # exists. Saying "create a scene" here would send the caller to
+                # the wrong remedy when they already made one.
+                msg = (
+                    f"scene '{key}' is not loaded in this session — call "
+                    "voxelforge_load for a saved scene, or use the name of an "
+                    "existing session scene"
+                )
                 raise KeyError(msg)
             return self._scenes[key]
 

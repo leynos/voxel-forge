@@ -191,12 +191,15 @@ appear in `SIZE`, `XYZI`, `RGBA` order, and `tests/readiness_helpers.py` parses
 the `MAIN` chunk's children by identifier, so a change to the layout fails the
 suite rather than passing unnoticed.
 
-These tests demonstrate that the implementation conforms to the specification
-named above. They are **not** evidence of independent authorship: an
-implementation translated from another codebase would satisfy them equally,
-because they assert the format's observable contract and not the origin of the
-code that produces it. The authorship claim rests on the source-history audit
-above.
+These tests demonstrate that the named observable behaviours — chunk ordering,
+bounding-box and voxel-count encoding, colour round-tripping, and rejection of
+unrepresentable or overlapping input — are implemented as the specification
+requires. They are **not** evidence that the implementation conforms to the
+specification as a whole, and they do not cover the `.obj` writer at all. Nor
+are they evidence of independent authorship: an implementation translated from
+another codebase would satisfy them equally, because they assert the format's
+observable contract and not the origin of the code that produces it. The
+authorship claim rests on the source-history audit above.
 
 [^1]: Upstream `README.md`: "VoxelForge เป็น implementation ใหม่ที่ออกแบบ
     MCP-first ไม่ได้ fork โค้ด C ของ Goxel โดยตรง" — "VoxelForge is a new,

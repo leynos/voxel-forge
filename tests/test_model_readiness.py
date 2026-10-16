@@ -114,6 +114,31 @@ def test_store_select_requires_a_registered_scene() -> None:
         store.select("never-created")
 
 
+def test_get_distinguishes_absent_scene_from_unregistered_name() -> None:
+    """A missing current scene and a bad name need different remedies.
+
+    Both failures raise ``KeyError`` from the same method, so the message is
+    the only thing telling a caller which happened. Reporting "call
+    voxelforge_create_scene first" for a named lookup that missed sends a
+    caller who already created a scene to create another one, instead of
+    loading the saved scene they asked for or correcting the name.
+    """
+    empty = SceneStore()
+    with pytest.raises(KeyError, match="create_scene"):
+        empty.get()
+
+    populated = SceneStore()
+    populated.create("present")
+    with pytest.raises(KeyError, match="not loaded in this session") as caught:
+        populated.get("absent")
+
+    message = str(caught.value)
+    assert "absent" in message, "the message must name the scene that was missing"
+    assert "voxelforge_load" in message, (
+        "a named miss must point at loading a saved scene"
+    )
+
+
 def test_register_makes_a_scene_current() -> None:
     """Registering a scene adopts it as the current scene instance."""
     store = SceneStore()
