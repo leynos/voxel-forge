@@ -96,6 +96,20 @@ The server reports the mode it started in on standard error, with the fields
 `bridge_state=down` or `bridge_state=running`. Standard output stays reserved
 for MCP protocol data.
 
+When the bridge comes up it says so once, naming what asked for it
+(`trigger=server_start` for the eager path, `trigger=launch_editor` for the
+on-demand one), and when it stops it reports the transition:
+
+```text
+VoxelForge server: operation=bridge_start trigger=launch_editor
+VoxelForge bridge: operation=bridge_state bridge_state=down error_category=CancelledError
+```
+
+`error_category` names the class of whatever ended the listeners; an ordinary
+shutdown cancels the task, so it reports `CancelledError`. Calling
+`voxelforge_launch_editor` again while the bridge is already up does not report
+another start, so the line counts transitions rather than calls.
+
 ## Connecting an MCP client
 
 Point the client at the installed `voxel-forge-mcp` command with an empty

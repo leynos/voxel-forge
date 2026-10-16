@@ -73,6 +73,8 @@ def mcp_invocations(monkeypatch: pytest.MonkeyPatch) -> tuple[list[str], list[st
         calls.append("run")
         transports.append(kwargs["transport"])
 
-    monkeypatch.setattr(server, "_ensure_bridge", lambda: calls.append("bridge"))
+    monkeypatch.setattr(
+        server, "_ensure_bridge", lambda _trigger: calls.append("bridge")
+    )
     monkeypatch.setattr(server.mcp, "run", record_run)
     return calls, transports

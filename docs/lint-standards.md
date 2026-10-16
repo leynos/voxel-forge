@@ -108,6 +108,11 @@ Duplication fixes keep shared operations at their owning boundary:
 - Desktop Blender exports share the format-specific writer while retaining
   separate merged/raw feedback. Static help text stays in a local topic table
   and uses one informational-dialog operation.
+- `voxel_forge.lifecycle_log.emit_lifecycle` owns the `VoxelForge <source>:
+  operation=... key=value...` grammar the server and bridge both write to
+  standard error. Three guides quote those lines verbatim and tests pin their
+  field order, so one renderer keeps the documented strings and the emitted
+  strings in step; each call site still owns which fields it reports.
 - The server's `_edit_scene` context owns successful edit publication for
   palette and single-voxel mutation tools. Failure exits without publishing.
   WebSocket edits share one variant dispatcher and one post-edit broadcast.

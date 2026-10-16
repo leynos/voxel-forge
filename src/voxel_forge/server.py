@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import sys
 import typing as typ
 
 if typ.TYPE_CHECKING:
@@ -18,6 +17,7 @@ from .bridge import BRIDGE_HTTP_PORT as BRIDGE_HTTP_PORT
 from .bridge import current_ports, notify_scene_update, start_bridge_background
 from .export_roblox import to_luau_merged as to_luau_merged
 from .export_roblox import write_luau_file as write_luau_file
+from .lifecycle_log import emit_lifecycle
 from .mesh_merge import merge_stats as merge_stats
 from .model import DEFAULT_PALETTE as DEFAULT_PALETTE
 from .model import SceneStore, VoxelScene
@@ -66,17 +66,32 @@ def _announce_startup(bridge_mode: str, bridge_state: str) -> None:
     ``_ensure_bridge`` has returned, so an eager start that fails raises before
     this runs rather than reporting a state it never held.
     """
-    print(
-        f"VoxelForge server: operation=server_start bridge_mode={bridge_mode} "
-        f"bridge_state={bridge_state}",
-        file=sys.stderr,
+    emit_lifecycle(
+        "server", "server_start", bridge_mode=bridge_mode, bridge_state=bridge_state
     )
 
 
-def _ensure_bridge() -> None:
-    """Start the bridge if needed and hand it this module's scene registry."""
+def _ensure_bridge(trigger: str) -> None:
+    """Start the bridge if needed and hand it this module's scene registry.
+
+    ``trigger`` names the request that caused the start, so a log reader can
+    tell a startup-requested bridge from one an MCP client opened by calling
+    ``voxelforge_launch_editor``. Callers pass one of two fixed labels rather
+    than anything from the request itself, so the field stays a small closed
+    set that a log query can group by.
+
+    The line marks a transition, so it is emitted only when this call found the
+    bridge down. A later ``voxelforge_launch_editor`` against an already-running
+    bridge is a no-op and must not report a second start. The pre-check is a
+    plain read of the published ports; it is exact here because every caller
+    serializes its own start (``main`` is single-threaded, and the MCP tool
+    holds ``_editor_lock``).
+    """
+    was_running = current_ports() is not None
     start_bridge_background()
     bridge_module.use_store(store)
+    if not was_running:
+        emit_lifecycle("server", "bridge_start", trigger=trigger)
 
 
 def _sync_bridge(scene: VoxelScene) -> None:
@@ -182,7 +197,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.bridge:
-        _ensure_bridge()
+        _ensure_bridge("server_start")
     # Report the state the bridge actually reached, not the one requested: an
     # eager start that failed would already have raised out of _ensure_bridge.
     _announce_startup(

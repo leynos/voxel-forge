@@ -81,6 +81,22 @@ Clients that call only the MCP scene and export tools need no change at all.
 MCP tool names and their request schemas are unchanged; only the timing of
 bridge startup has changed.
 
+An integration that scrapes the server's standard error for the bridge
+endpoint should additionally watch the lifecycle lines. A bridge start is now
+reported once, with the request that caused it, and a stop is reported when
+the listeners end:
+
+```text
+VoxelForge server: operation=bridge_start trigger=launch_editor
+VoxelForge bridge: operation=bridge_state bridge_state=down error_category=CancelledError
+```
+
+`error_category` names the class of whatever ended the listeners; an ordinary
+shutdown cancels the task, so it reports `CancelledError`. A tool call that
+finds the bridge already running reports no start, so a counter over
+`bridge_start` measures transitions rather than calls. None of these lines are
+written to standard output, which stays reserved for MCP protocol data.
+
 ## See also
 
 - [Users guide](users-guide.md) — supported export helper calls.

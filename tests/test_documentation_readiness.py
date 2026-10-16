@@ -38,7 +38,7 @@ def _prepare_editor_tool(
     from voxel_forge import bridge
     from voxel_forge.server_tools import io
 
-    monkeypatch.setattr(server, "_ensure_bridge", lambda: None)
+    monkeypatch.setattr(server, "_ensure_bridge", lambda _trigger: None)
     monkeypatch.setattr(bridge, "current_ports", lambda: (43001, 43002))
     monkeypatch.setattr(io, "_running_editor", lambda: None)
     monkeypatch.setattr(io, "_start_supervised_editor", start_editor)

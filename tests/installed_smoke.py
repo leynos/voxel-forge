@@ -40,7 +40,7 @@ from pathlib import Path
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
 
-from listener_probe import is_probe_available, listening_ports
+from listener_probe import ProbeOutcome, probe_listeners
 
 COMMAND_NAME = "voxel-forge-mcp"
 PROTOCOL_VERSION = "2025-11-25"
@@ -277,24 +277,33 @@ def _tool_text(result: dict[str, object]) -> str:
     return text
 
 
-def _assert_no_listener(
-    client: _StdioClient, stage: str, *, is_probe_available: bool
-) -> None:
-    """Fail if the child is listening, or if the check could not run at all."""
-    ports = listening_ports(client.process.pid)
-    if ports:
-        msg = (
-            f"the server bound port(s) {ports} during {stage}, but a headless "
-            f"run must bind none:\n{client.stderr_text()}"
-        )
-        raise SmokeError(msg)
-    if not is_probe_available:
-        # Silence here would read as proof, when in fact nothing was measured.
-        print(
-            "note: /proc is unavailable, so the listening-socket check was "
-            "skipped on this platform",
-            file=sys.stderr,
-        )
+def _assert_no_listener(client: _StdioClient, stage: str) -> None:
+    """Fail if the child is listening, or if the check could not be conclusive.
+
+    An inconclusive probe is a failure rather than a quiet pass. The whole point
+    of this driver is to certify that the server bound nothing, and a platform
+    where the socket tables cannot be read cannot certify that — reporting OK
+    anyway would be the vacuous green result this module exists to prevent.
+
+    Examples
+    --------
+    >>> _assert_no_listener(client, "startup")  # raises unless nothing is bound
+    """
+    report = probe_listeners(client.process.pid)
+    if report.outcome is ProbeOutcome.MEASURED:
+        if report.ports:
+            msg = (
+                f"the server bound port(s) {list(report.ports)} during {stage}, "
+                f"but a headless run must bind none:\n{client.stderr_text()}"
+            )
+            raise SmokeError(msg)
+        return
+    msg = (
+        f"the listening-socket check was inconclusive during {stage} "
+        f"({report.outcome.value}): {report.reason}\n"
+        "a headless run cannot be certified without it"
+    )
+    raise SmokeError(msg)
 
 
 def run_smoke(export_path: Path, command_path: str | None = None) -> str:
@@ -321,8 +330,7 @@ def run_smoke(export_path: Path, command_path: str | None = None) -> str:
             msg = f"a default run must start with the bridge down, got: {announcement}"
             raise SmokeError(msg)
 
-        probe_started = is_probe_available(client.process.pid)
-        _assert_no_listener(client, "startup", is_probe_available=probe_started)
+        _assert_no_listener(client, "startup")
 
         client.call(
             "initialize",
@@ -358,9 +366,7 @@ def run_smoke(export_path: Path, command_path: str | None = None) -> str:
             msg = f"the export produced no bytes:\n{exported}"
             raise SmokeError(msg)
 
-        _assert_no_listener(
-            client, "the whole session", is_probe_available=probe_started
-        )
+        _assert_no_listener(client, "the whole session")
     finally:
         client.close()
 
