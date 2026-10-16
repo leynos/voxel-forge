@@ -42,6 +42,36 @@ web editor, `scene-data.ts` owns the scene wire types, bridge-payload
 selection, palette colour lookup, and per-layer colour grouping. `main.ts`
 owns browser state, rendering, picking, and input.
 
+## The consumer boundary
+
+VoxelForge is content tooling that other projects consume; it is not a runtime
+they link against. The full statement of that boundary is in
+[fork-and-interface-boundary.md](fork-and-interface-boundary.md), and the part
+that constrains a change here is this:
+
+- The interface to a consumer is a **file format plus a command-line and MCP
+  contract**. A consumer invokes the installed tool and reads the files it
+  produces.
+- VoxelForge takes **no dependency on a consumer**. Where a consumer publishes
+  a machine-readable specification, the tool consumes that specification as
+  pinned, vendored data rather than importing the consumer's code — the same
+  shape as reading any other published format.
+- A consumer **vendors no VoxelForge code**, and VoxelForge does not become a
+  shared library in either direction. A change that would move the interface
+  toward a linked library is out of scope, however convenient it looks.
+
+The reason to keep this written down rather than assumed is that the boundary
+erodes quietly. Two projects that share a file format have an obvious reason to
+want shared types, and a shared type is the first edge of a shared library.
+Routing the same information through a file or a documented command costs
+almost nothing while the projects are young and is very expensive to undo
+later.
+
+Changes *in* scope include anything that makes VoxelForge better as a
+stand-alone tool, anything that lets it read or write a format a consumer
+publishes from that format's own specification, and fixes or tests that keep
+the published formats round-tripping faithfully.
+
 ## Console scripts
 
 Every user-facing command is a console script declared in `pyproject.toml`
