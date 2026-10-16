@@ -56,10 +56,20 @@ _PROHIBITION_ANCHORS = {
 # "unimportable", the opposite claim. Each phrase here therefore carries the
 # word that makes it a permission, and it is the permission a negation cannot
 # repeat unaltered.
+#
+# Naming the import is what makes a phrase safe here, and "is allowed" alone
+# fails that twice over: it matches "Vendoring source is allowed", a sentence
+# about the *opposite* direction with no import in it, and it matches
+# "Importing the installed package is forbidden; vendoring source is allowed",
+# which permits the shared-library direction while forbidding the import. A
+# phrase admitted here must contain a word for the act. The guard test below
+# enforces that of the whole list rather than trusting this comment.
+_IMPORT_NOUNS = ("import", "in-process")
+
 _IMPORT_IS_SUPPORTED = (
     "can be imported",
     "may be imported",
-    "is allowed",
+    "importing the installed package is allowed",
 )
 
 # The documents that state the permission in their own words. The boundary
@@ -212,23 +222,66 @@ def _states_importing_is_supported(text: str) -> bool:
         "The consumer must never import the installed package.",
         "Importing the package is not supported.",
         "The contribution boundary makes the package unimportable.",
+        # The permission this module is *not* looking for. Vendoring and
+        # co-owning types are the shared-library direction the contract rules
+        # out, so a document could grant one of those and read as satisfying a
+        # check whose subject is the opposite permission -- and the old
+        # "is allowed" term did satisfy it, twice, on sentences that never
+        # mention an import.
+        "Vendoring VoxelForge source is allowed.",
+        "Importing the installed package is forbidden; vendoring source is allowed.",
     ],
 )
 def test_the_import_guard_rejects_a_negated_document(negated: str) -> None:
-    """A document forbidding the import must fail the check, not satisfy it.
+    """Text that does not grant this permission must fail the check.
 
     The guard above is a substring search, so what it accepts is only as good
-    as the phrases it searches for. Each case here is wording a document could
-    plausibly use to *forbid* the import, and each must be rejected. The third
-    is the sharpest: it contains the substring ``import``, which is why the
-    guard cannot search for that word alone -- doing so would have let a
-    document forbidding the import satisfy a check meant to find one
-    permitting it, which is exactly the defect the boundary tests exist to
-    catch, reintroduced inside the test that catches it.
+    as the phrases it searches for. Most cases here are wording a document
+    could plausibly use to *forbid* the import. The third is the sharpest of
+    those: it contains the substring ``import``, which is why the guard cannot
+    search for that word alone -- doing so would have let a document forbidding
+    the import satisfy a check meant to find one permitting it, which is
+    exactly the defect the boundary tests exist to catch, reintroduced inside
+    the test that catches it.
+
+    The last two are a different failure and the reason this test is not only
+    about negations: text can be affirmative and still be about the wrong
+    permission. ``Vendoring VoxelForge source is allowed`` grants the direction
+    the contract forbids, and the second case grants it while explicitly
+    forbidding the import. Both passed before the phrase naming the import
+    replaced the bare ``is allowed``.
     """
     assert not _states_importing_is_supported(negated), (
-        f"the guard accepted a document that forbids the import: {negated!r}. "
-        "Reword _IMPORT_IS_SUPPORTED as clauses a negation cannot contain"
+        f"the guard accepted text that does not grant the import permission: "
+        f"{negated!r}. Reword _IMPORT_IS_SUPPORTED as clauses only a statement "
+        "about importing the installed package can contain"
+    )
+
+
+def test_every_accepted_phrase_names_the_import_it_grants() -> None:
+    """Each phrase must mention the act, not merely that something is permitted.
+
+    A phrase with no word for the import is satisfied by any permission
+    sentence in the document, including one granting vendoring or co-ownership.
+    That is not hypothetical -- ``is allowed`` was in this list and matched
+    both counterexamples the guard test above now carries -- so the check is
+    structural rather than a reading of the current three entries: whatever is
+    added here later has to name the act too.
+
+    The whole phrase is checked, not just its first word, because the failure
+    mode is a phrase that is *only* a permission: a longer clause like
+    ``importing the installed package is allowed`` carries the noun and passes
+    on its own merits, which is exactly the shape wanted.
+    """
+    unnamed = [
+        phrase
+        for phrase in _IMPORT_IS_SUPPORTED
+        if not any(noun in phrase for noun in _IMPORT_NOUNS)
+    ]
+
+    assert not unnamed, (
+        f"these phrases grant a permission without naming the import, so text "
+        f"about a different permitted direction would satisfy them: {unnamed}"
     )
 
 
