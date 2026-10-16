@@ -1,0 +1,4 @@
+VoxelForge — a voxel editor inspired by Goxel (https://github.com/guillaumechereau/goxel)
+Features: 24-bit RGB, layers, unlimited scene size, export .vox (MagicaVoxel) and .obj
+MCP works with Cursor, Claude Desktop, and any other client that supports the Model Context Protocol
+Goxel itself is GPL-3.0 — VoxelForge is a new, MCP-first implementation

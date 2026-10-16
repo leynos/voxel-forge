@@ -229,6 +229,14 @@ obj_path = export_obj(scene, path, merge_boxes=False)
 luau_source = to_luau_merged(scene, parent="workspace", anchor=False)
 ```
 
+These helpers are a supported in-process API: install `voxel-forge` and import
+them by name, as above. That is a versioned dependency on a released package,
+which is a different thing from the cross-project code boundary the
+[fork and interface boundary](fork-and-interface-boundary.md) describes — that
+boundary is about not vendoring VoxelForge source and not co-owning shared
+types, not about whether the package may be imported. When the interface is a
+file or a command rather than a Python call, that document is the one to read.
+
 The MCP tools, including `voxelforge_export_obj`, are unchanged. Integrations
 upgrading from positional optional arguments should follow the
 [0.3 migration guide](migration-0.3.md).

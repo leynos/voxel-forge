@@ -60,6 +60,17 @@ that constrains a change here is this:
   shared library in either direction. A change that would move the interface
   toward a linked library is out of scope, however convenient it looks.
 
+This rule governs the boundary **between projects**. It does not make the
+package unimportable, and it is not in tension with the Python export helpers
+the [users guide](users-guide.md) documents: those are a supported in-process
+API, and an integration may install `voxel-forge` and call them. The
+distinction is between a versioned dependency on a released package and code
+co-owned across projects. Importing an installed package keeps the version
+boundary — the helper is called by name and version, and breaking it is a
+release note. Vendoring source, or sharing types that both projects edit in
+lockstep, dissolves that boundary, and it is the second that is out of scope in
+either direction.
+
 The reason to keep this written down rather than assumed is that the boundary
 erodes quietly. Two projects that share a file format have an obvious reason to
 want shared types, and a shared type is the first edge of a shared library.

@@ -13,11 +13,13 @@ overclaim must be caught, and the project's own claim must not be.
 
 from __future__ import annotations
 
-from pathlib import Path
+import typing as typ
 
 import pytest
+from readiness_helpers import REPOSITORY_ROOT
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 # Phrasings that credit an audit with *showing* the absence of Goxel C source,
 # in either README language. The audit reports which suffixes and markers it

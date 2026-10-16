@@ -10,12 +10,13 @@ The distinction that matters is between a message and a *shape*. Asserting that
 a response merely contains "placed" passes for "not placed", so a caller-facing
 confirmation is asserted in full where it is stable, and the tests that only
 need the contract assert on the value they depend on rather than on a
-substring. The error strings are pinned because their wording is the recovery
-instruction: a caller who mistypes a scene name reads that message and nothing
-else.
+substring. The failure messages are pinned separately, in
+``test_failure_messages.py``, because a successful confirmation and a recovery
+instruction are read for different reasons and regress independently.
 
 Run with ``uv run pytest -q``. Tests that save, load, or export request the
 ``scene_directory`` fixture so no real ``~/.voxel-forge`` directory is touched.
+The ``scene_store`` and ``occupied_store`` fixtures come from ``conftest.py``.
 """
 
 from __future__ import annotations
@@ -27,9 +28,9 @@ import pytest
 from voxel_forge import server
 from voxel_forge.model import SceneStore
 
-# The scene every confirmation test operates on. Shared rather than repeated so
-# the name a response echoes is one value the expectations can be read against,
-# and so the setup itself does not become the thing the tests have in common.
+# The scene every confirmation test operates on. It matches the ``SCENE`` that
+# ``conftest.py``'s ``scene_store`` fixture creates, and is written out here
+# because these tests read it back out of the response text they assert.
 _SCENE = "house"
 
 # Coordinates that carry meaning, named so a reader can tell them apart. The
@@ -39,32 +40,6 @@ _SCENE = "house"
 _ORIGIN = (0, 0, 0)
 _NEIGHBOUR = (1, 0, 0)
 _MISS = (9, 9, 9)
-
-
-@pytest.fixture
-def scene_store(empty_server_store: SceneStore) -> SceneStore:
-    """Provide the server's store with one scene already created.
-
-    Most confirmations only make sense once a scene exists, so the precondition
-    lives here rather than as a ``create`` call repeated in every test. It
-    builds on ``empty_server_store`` so the real store and bridge are still
-    replaced for the duration of the test.
-    """
-    empty_server_store.create(_SCENE)
-    return empty_server_store
-
-
-@pytest.fixture
-def occupied_store(scene_store: SceneStore) -> SceneStore:
-    """Provide the scene store holding one voxel at the origin.
-
-    Tests that act on existing geometry rather than creating it share this
-    precondition, so the voxel is placed here instead of by a call repeated at
-    the top of each. Colour ``2`` is the palette entry the confirmations under
-    test echo back.
-    """
-    server.voxelforge_place_block(*_ORIGIN, "2")
-    return scene_store
 
 
 def test_edit_confirmations_name_the_operation_and_its_result(
@@ -153,29 +128,6 @@ def test_build_confirmations_report_the_resolution_they_used(
     ), "the bear confirmation must name its resolution"
 
 
-@pytest.mark.parametrize(
-    ("payload", "message"),
-    [
-        ('{"not": "an array"}', "blocks must be a JSON array"),
-        ('"a string"', "blocks must be a JSON array"),
-        ('[["short"]]', "invalid block row: ['short']"),
-    ],
-)
-def test_place_many_rejection_messages_name_the_defect(
-    scene_store: SceneStore, payload: str, message: str
-) -> None:
-    """A rejected bulk payload must say which rule it broke.
-
-    These strings are the recovery instruction: the caller sees the message and
-    no other explanation of why the call failed, so each rejection names the
-    rule rather than reporting a generic parse failure. The row-level case
-    echoes the offending row, because "invalid block row" alone does not tell a
-    caller which of their rows was malformed.
-    """
-    with pytest.raises(ValueError, match="^" + message.replace("[", r"\[") + "$"):
-        server.voxelforge_place_many(payload)
-
-
 def test_place_many_confirmation_counts_voxels_and_totals(
     scene_store: SceneStore,
 ) -> None:
@@ -216,83 +168,6 @@ def test_export_confirmations_name_the_path_they_wrote(
     assert server.voxelforge_export_vox(_SCENE, str(vox)) == (
         f"export .vox → {vox} (2 voxels)"
     ), "the VOX export must name its destination and count"
-
-
-def test_absent_scene_load_names_the_scene_and_the_path(
-    scene_directory: Path,
-) -> None:
-    """A load of a scene that was never saved must name what could not be found.
-
-    The path is included because the message is the only place a caller learns
-    where the tool looked; without it, a scene saved under a different store
-    looks identical to a typo in the name.
-    """
-    with pytest.raises(FileNotFoundError, match="no scene 'missing' at ") as caught:
-        server.voxelforge_load("missing")
-
-    assert str(scene_directory) in str(caught.value), (
-        "the message must name the directory that was searched"
-    )
-
-
-@pytest.mark.parametrize(
-    ("existing_scene", "lookup", "expected"),
-    [
-        (
-            None,
-            "",
-            "no scene yet — call voxelforge_create_scene first",
-        ),
-        (
-            "present",
-            "absent",
-            (
-                "scene 'absent' is not loaded in this session — call "
-                "voxelforge_load for a saved scene, or use the name of an "
-                "existing session scene"
-            ),
-        ),
-    ],
-)
-def test_scene_lookup_failures_give_the_matching_remedy(
-    existing_scene: str | None, lookup: str, expected: str
-) -> None:
-    """The two lookup failures must not share one recovery instruction.
-
-    Both raise ``KeyError``, so the message is what tells a caller whether they
-    need to create a scene or correct a name. A caller who already created one
-    and mistyped it is sent to ``voxelforge_load`` or to an existing name; only
-    a session with no scene at all is told to create one.
-
-    Each message is compared in full rather than by substring. A substring
-    check for ``"voxelforge_load"`` passes for a message that also offers the
-    wrong remedy, and passes for one that names the scene but then tells the
-    caller to create a scene anyway -- the precise confusion this test exists
-    to prevent. ``args[0]`` is read instead of ``str()`` because ``KeyError``
-    repr-quotes its argument, so ``str()`` would be compared against the
-    message wrapped in quote characters.
-
-    This drives the adapter's ``resolve_scene``, not ``SceneStore.get``. The
-    recovery wording names MCP tools, which is the adapter's concern; asserting
-    it against the domain object would require the domain to know which tools
-    exist. The domain side of the same distinction is pinned in
-    ``test_model_readiness.py``, on the exception types.
-
-    An empty name means the caller passed no name at all, which is the case
-    that reaches the no-current-scene branch.
-    """
-    store = SceneStore()
-    if existing_scene is not None:
-        store.create(existing_scene)
-    server.store = store
-
-    with pytest.raises(KeyError) as caught:
-        server.resolve_scene(lookup)
-
-    assert caught.value.args[0] == expected, (
-        f"a lookup of {lookup!r} must raise {expected!r}; a wrong "
-        "remedy here sends the caller to the wrong recovery step"
-    )
 
 
 def test_save_and_load_confirmations_survive_a_round_trip(
@@ -380,3 +255,118 @@ def test_users_guide_quotes_responses_the_tools_actually_return(
         "these responses are emitted but not quoted in docs/users-guide.md:\n  "
         + "\n  ".join(missing)
     )
+
+
+def test_scene_property_confirmations_report_the_new_value(
+    scene_store: SceneStore,
+) -> None:
+    """Setting a scene property must confirm the value that is now in force.
+
+    ``set_palette`` and ``set_voxel_size`` were both translated in this release
+    and neither confirmation was asserted anywhere, so a regression could have
+    changed the reported value without any test noticing. Each confirmation is
+    compared against the scene the store actually holds, which is what makes
+    the assertion evidence: a hardcoded or stale value in the message fails
+    even though the message is well-formed.
+
+    The palette key ``9`` is deliberately one the default palette does not
+    define, so the message cannot be satisfied by echoing a pre-existing
+    entry.
+    """
+    assert server.voxelforge_set_palette("9", 1, 2, 3) == "palette 9 = RGB(1,2,3)", (
+        "set_palette must echo the key and the channels it applied"
+    )
+    assert server.store.get().palette["9"] == (1, 2, 3), (
+        "the confirmation must describe the palette the scene actually holds"
+    )
+
+    assert server.voxelforge_set_voxel_size(0.5) == (
+        f"set voxel_size=0.5 in '{_SCENE}'"
+    ), "set_voxel_size must name the value and the scene it applied it to"
+    assert server.store.get().voxel_size == pytest.approx(0.5), (
+        "the confirmation must describe the voxel size the scene actually holds"
+    )
+
+
+@pytest.mark.parametrize(
+    ("index", "expected"),
+    [
+        (0, "active layer = Layer 1"),
+        (2, "active layer = second"),
+    ],
+)
+def test_active_layer_confirmation_names_the_layer_it_selected(
+    scene_store: SceneStore, index: int, expected: str
+) -> None:
+    """Selecting a layer must name that layer, not its index.
+
+    The index is the argument the caller passed, so echoing it back would tell
+    them nothing they did not already know. The layer's *name* is what the
+    editor and the preview display, and it is the value a caller needs to
+    correlate the call with what they see.
+
+    The two rows are the two names a selection can produce: the layer the scene
+    starts with, and one the caller named. Both are checked because a tool that
+    ignored its argument and always answered with the default would pass on the
+    first row alone, so the second is what makes the index load-bearing.
+    """
+    for name in ("first", "second"):
+        server.voxelforge_add_layer(name)
+
+    assert server.voxelforge_set_active_layer(index) == expected, (
+        f"selecting layer {index} must report the layer now in force by name"
+    )
+    assert server.store.get().active_layer == index, (
+        "the confirmation must describe the active layer the scene actually holds"
+    )
+
+
+def test_about_confirmation_states_the_project_lineage_and_licence(
+    scene_store: SceneStore,
+    about_message: str,
+) -> None:
+    """``about`` must state what VoxelForge is and how it relates to Goxel.
+
+    This is the tool a client calls to orient itself in the project, and the
+    licence sentence is the load-bearing part: Goxel is GPL-3.0 and VoxelForge
+    is a separate implementation, which is a claim a consumer needs stated
+    rather than inferred. The whole text is pinned because it is fixed -- it
+    takes no arguments and reads no scene -- so any change to it is a change to
+    the project's self-description.
+
+    The expected text lives in ``tests/data/about-message.txt`` rather than in
+    the assertion, following the fixture-backed convention the desktop-extra
+    message already uses. Pinning four lines inline made the assertion a wall
+    of prose in which a changed word is easy to miss in review; beside the test
+    it is a file whose diff shows exactly which sentence moved.
+    """
+    assert server.voxelforge_about() == about_message, (
+        "about must state the lineage and the licence of the project it "
+        "describes, matching tests/data/about-message.txt"
+    )
+
+
+def test_merge_stats_reports_the_saving_in_words(
+    occupied_store: SceneStore,
+) -> None:
+    """Merge statistics must label the saving, not just print a number.
+
+    The line reads "voxels (after deduping overlaps)" and "saved", both
+    translated in this release. The first label is what distinguishes the count
+    from ``voxelforge_get_info``'s raw block count, and the second names what
+    the percentage is a percentage *of* -- a bare ``1 (50.0%)`` leaves the
+    caller to guess which quantity shrank.
+
+    The fixture places one voxel at the origin and a second is placed adjacent
+    to it, so the two merge into a single box. That is what makes the figures
+    evidence: a scene of non-adjacent voxels would report no saving at all, and
+    a test asserting zero could not tell a working merge from a broken one.
+    """
+    server.voxelforge_place_block(*_NEIGHBOUR, "2")
+
+    assert server.voxelforge_merge_stats() == (
+        f"Scene '{_SCENE}':\n"
+        "  voxels (after deduping overlaps): 2\n"
+        "  merged boxes (parts): 1\n"
+        "  saved: 1 (50.0%)"
+    ), "merge statistics must label each figure it reports"

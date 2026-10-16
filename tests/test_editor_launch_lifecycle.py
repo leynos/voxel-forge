@@ -193,3 +193,40 @@ def test_unexpected_exit_revokes_origin_and_reports_restart(
         record.getMessage().startswith("Editor exited unexpectedly")
         for record in caplog.records
     ), "record the exit and planned restart"
+
+
+def test_launch_before_the_bridge_binds_asks_the_caller_to_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A launch with no bridge ports must return the retry instruction.
+
+    ``_ensure_bridge`` starts the listener, but binding is asynchronous, so the
+    ports can still be unset when it returns. This branch is the caller-visible
+    face of that race, and it is the only signal distinguishing "try again" from
+    a launch that silently did nothing -- the editor is never started on this
+    path, so there is no URL and no process to observe. The message is compared
+    in full because its remedy names the exact tool to call.
+
+    No ``editor_child`` is needed: reaching the return means no child was
+    started, which is the point of the assertion below.
+    """
+    _prepare_launch(monkeypatch, tmp_path)
+    monkeypatch.setattr(bridge, "current_ports", lambda: None)
+
+    started: list[EditorPorts] = []
+
+    def record_start(ports: EditorPorts) -> tuple[subprocess.Popen[str], int]:
+        """Fail loudly if the not-ready path ever starts an editor."""
+        started.append(ports)
+        pytest.fail("the editor must not start before the bridge binds")
+
+    monkeypatch.setattr(io, "start_editor_process", record_start)
+
+    assert io.voxelforge_launch_editor() == (
+        "Bridge is not ready — call voxelforge_launch_editor again"
+    ), "a launch before the bridge binds must tell the caller to retry"
+    assert not started, (
+        "the retry path must not start an editor, since there is no bridge to "
+        "connect it to"
+    )
