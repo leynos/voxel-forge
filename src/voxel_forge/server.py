@@ -36,14 +36,13 @@ from .vox_io import import_vox as import_vox
 mcp = FastMCP(
     "VoxelForge",
     instructions=(
-        "VoxelForge — โปรแกรมสร้าง voxel 3D แบบ Goxel "
-        "(24-bit RGB, layers, export .vox/.obj).\nขั้นต"
-        "อน: voxelforge_create_scene → voxelforge_plac"
-        "e_many / voxelforge_fill_box → voxelforge_pre"
-        "view → voxelforge_export_vox หรือ voxelforge_"
-        "export_obj\nเปิด editor 3D: voxelforge_launch_"
-        "editor\nรองรับ import ไฟล์ MagicaVoxel (.vox) "
-        "ที่ Goxel ใช้ได้"
+        "VoxelForge — a Goxel-style 3D voxel builder "
+        "(24-bit RGB, layers, export .vox/.obj).\n"
+        "Typical flow: voxelforge_create_scene → voxelforge_place_many / "
+        "voxelforge_fill_box → voxelforge_preview → voxelforge_export_vox "
+        "or voxelforge_export_obj\n"
+        "Open the 3D editor: voxelforge_launch_editor\n"
+        "Supports importing MagicaVoxel (.vox) files that Goxel can open."
     ),
 )
 
@@ -121,14 +120,14 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     ``MAX_TOOL_VOXELS`` rows, or carries a row shorter than four entries.
     """
     if not isinstance(blocks_json, str):
-        msg = "blocks ต้องเป็น JSON string"
+        msg = "blocks must be a JSON string"
         raise InvalidSceneDataError(msg)
     if len(blocks_json) > MAX_BLOCKS_JSON_CHARS:
         msg = f"blocks payload must be at most {MAX_BLOCKS_JSON_CHARS:,} characters"
         raise InvalidSceneDataError(msg)
     data = json.loads(blocks_json)
     if not isinstance(data, list):
-        msg = "blocks ต้องเป็น JSON array"
+        msg = "blocks must be a JSON array"
         raise InvalidSceneDataError(msg)
     if len(data) > MAX_TOOL_VOXELS:
         msg = f"place_many supports at most {MAX_TOOL_VOXELS:,} voxels per call"
@@ -136,7 +135,7 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     out: list[tuple[int, int, int, str]] = []
     for row in data:
         if not isinstance(row, (list, tuple)) or len(row) < BLOCK_ROW_LENGTH:
-            msg = f"รูปแบบบล็อกไม่ถูก: {row}"
+            msg = f"invalid block row: {row}"
             raise InvalidSceneDataError(msg)
         out.append((int(row[0]), int(row[1]), int(row[2]), str(row[3])))
     return out

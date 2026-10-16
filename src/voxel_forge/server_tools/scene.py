@@ -15,137 +15,139 @@ from .edit import voxelforge_remove_block as voxelforge_remove_block
 
 @server.mcp.tool()
 def voxelforge_about() -> str:
-    """อธิบาย VoxelForge และความสัมพันธ์กับ Goxel."""
+    """Describe VoxelForge and its relationship to Goxel."""
     return (
-        "VoxelForge — voxel editor ของเรา สร้างจากแนวค"
-        "ิด Goxel (https://github.com/guillaumechereau"
-        "/goxel)\nฟีเจอร์: 24-bit RGB, layers, unlimite"
-        "d scene, export .vox (MagicaVoxel) และ .obj\nM"
-        "CP ใช้ได้กับ Cursor, Claude Desktop, และ clie"
-        "nt อื่นที่รองรับ Model Context Protocol\nGoxel"
-        " ต้นฉบับเป็น GPL-3.0 — VoxelForge เป็น implem"
-        "entation ใหม่ที่ออกแบบ MCP-first"
+        "VoxelForge — a voxel editor inspired by Goxel "
+        "(https://github.com/guillaumechereau/goxel)\n"
+        "Features: 24-bit RGB, layers, unlimited scene size, export .vox "
+        "(MagicaVoxel) and .obj\n"
+        "MCP works with Cursor, Claude Desktop, and any other client that "
+        "supports the Model Context Protocol\n"
+        "Goxel itself is GPL-3.0 — VoxelForge is a new, MCP-first "
+        "implementation"
     )
 
 
 @server.mcp.tool()
 def voxelforge_create_scene(name: str) -> str:
-    """สร้าง scene voxel ใหม่.
+    """Create a new voxel scene.
 
     Parameters
     ----------
     name : str
-        ชื่อ scene ใช้เป็นชื่อไฟล์ได้ ต้องเป็นข้อความยาว 1-80 ตัวอักษร
-        ห้ามมีตัวคั่นเส้นทางหรืออักขระควบคุม
+        Scene name, usable as a filename. Must be 1-80 characters, and must
+        contain no path separators or control characters.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมชื่อ scene และ layer เริ่มต้น
+        A confirmation message with the scene name and its initial layer.
 
     Raises
     ------
     ValueError
-        ถ้าชื่อ scene ไม่ปลอดภัยสำหรับใช้เป็นชื่อไฟล์
+        If the scene name is not safe to use as a filename.
 
     Notes
     -----
-    Scene ใหม่ยังไม่ถูกบันทึกลงดิสก์ ใช้ ``voxelforge_save`` เมื่อต้องการบันทึก
+    A new scene is not written to disk yet; call ``voxelforge_save`` when you
+    want it persisted.
     """
     with server.store.lock:
         scene = server.store.create(name)
         server._sync_bridge(scene)
-        return f"สร้าง scene '{scene.name}' แล้ว (layer เริ่มต้น: {scene.layers[0].name})"
+        return f"Created scene '{scene.name}' (initial layer: {scene.layers[0].name})"
 
 
 @server.mcp.tool()
 def voxelforge_select_scene(name: str) -> str:
-    """เลือก scene ที่กำลังแก้ไข.
+    """Select the scene being edited.
 
     Parameters
     ----------
     name : str
-        ชื่อ scene ที่โหลดไว้แล้วใน session นี้
+        Name of a scene already loaded in this session.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวนบล็อกของ scene
+        A confirmation message with the scene's block count.
 
     Raises
     ------
     KeyError
-        ถ้าไม่มี scene ชื่อนี้ใน session ให้ใช้ ``voxelforge_load`` โหลดจากดิสก์ก่อน
+        If no scene with this name is in the session; use
+        ``voxelforge_load`` to load one from disk first.
     """
     with server.store.lock:
         scene = server.store.select(name)
         server._sync_bridge(scene)
-        return f"เลือก scene '{scene.name}' ({scene.block_count()} บล็อก)"
+        return f"Selected scene '{scene.name}' ({scene.block_count()} blocks)"
 
 
 @server.mcp.tool()
 def voxelforge_add_layer(name: str, scene_name: str = "") -> str:
-    """เพิ่ม layer ใหม่ (เหมือน Goxel).
+    """Add a new layer (as in Goxel).
 
     Parameters
     ----------
     name : str
-        ชื่อ layer ที่จะแสดงใน editor และ preview
+        Name of the layer, shown in the editor and preview.
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวน layer ทั้งหมด
+        A confirmation message with the total layer count.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         layer = scene.add_layer(name)
         server._sync_bridge(scene)
         return (
-            "เพิ่ม layer '"
+            "Added layer '"
             f"{layer.name}"
-            "' ใน '"
+            "' to '"
             f"{scene.name}"
-            "' — รวม "
+            "' — "
             f"{len(scene.layers)}"
-            " layers"
+            " layers in total"
         )
 
 
 @server.mcp.tool()
 def voxelforge_set_active_layer(index: int, scene_name: str = "") -> str:
-    """ตั้ง layer ที่ใช้งาน (index เริ่ม 0).
+    """Set the active layer (0-based index).
 
     Parameters
     ----------
     index : int
-        ดัชนี layer เริ่มนับจาก 0
+        Layer index, counted from 0.
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมชื่อ layer ที่เลือก
+        A confirmation message with the selected layer's name.
 
     Raises
     ------
     ValueError
-        ถ้า ``index`` อยู่นอกช่วงของ layer ที่มีอยู่
+        If ``index`` is outside the range of existing layers.
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         if index < 0 or index >= len(scene.layers):
-            msg = f"layer index ต้องอยู่ระหว่าง 0..{len(scene.layers) - 1}"
+            msg = f"layer index must be within 0..{len(scene.layers) - 1}"
             raise ValueError(msg)
         scene.active_layer = index
         server._sync_bridge(scene)
@@ -161,52 +163,53 @@ def voxelforge_set_palette(  # ruff: ignore[too-many-arguments, too-many-positio
     b: int,
     scene_name: str = "",
 ) -> str:
-    """กำหนดสีในพาเลต (24-bit RGB).
+    """Set a palette colour (24-bit RGB).
 
     Parameters
     ----------
     color_key : str
-        คีย์ของสีที่จะกำหนดหรือเขียนทับ
+        Key of the colour to set or overwrite.
     r, g, b : int
-        ค่าแต่ละช่องเป็นจำนวนเต็ม 0-255 (ไม่รับ float หรือสตริงตัวเลข)
+        Channel values, each an integer 0-255 (floats and numeric strings are
+        not accepted).
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมค่าสีที่ตั้ง
+        A confirmation message with the colour that was set.
 
     Raises
     ------
     ValueError
-        ถ้าค่าใดไม่ใช่จำนวนเต็มในช่วง 0-255
+        If any value is not an integer in the 0-255 range.
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     """
     with server._edit_scene(scene_name) as scene:
         scene.set_palette_color(color_key, r, g, b)
-        return f"พาเลต {color_key} = RGB({r},{g},{b})"
+        return f"palette {color_key} = RGB({r},{g},{b})"
 
 
 @server.mcp.tool()
 def voxelforge_preview(scene_name: str = "") -> str:
-    """แสดงสรุป + มุมมอง ASCII แต่ละชั้น Y (ให้ AI ตรวจรูปทรง).
+    """Show a summary plus an ASCII view of each Y slice (for shape checking).
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความสรุปและภาพ ASCII ของ scene
+        A summary message and an ASCII rendering of the scene.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
@@ -215,26 +218,26 @@ def voxelforge_preview(scene_name: str = "") -> str:
 
 @server.mcp.tool()
 def voxelforge_get_info(scene_name: str = "") -> str:
-    """ข้อมูล scene เป็น JSON.
+    """Scene information as JSON.
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        JSON ของ ``VoxelScene.to_dict()`` (ชื่อ, voxel_size, พาเลต, layers)
+        JSON of ``VoxelScene.to_dict()`` (name, voxel_size, palette, layers).
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
 
     Notes
     -----
-    เป็นการอ่านเท่านั้น ไม่แก้ไข scene และไม่ประกาศ ``scene_update``
+    Read-only: it does not modify the scene and announces no ``scene_update``.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
@@ -243,69 +246,69 @@ def voxelforge_get_info(scene_name: str = "") -> str:
 
 @server.mcp.tool()
 def voxelforge_merge_stats(scene_name: str = "") -> str:
-    """ดูว่ารวม voxel เป็นกล่องแล้วลด part/mesh ได้เท่าไร (ก่อน export).
+    """See how much merging voxels into boxes saves before exporting.
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        จำนวน voxel, จำนวนกล่องหลังรวม, และเปอร์เซ็นต์ที่ลดได้
+        Voxel count, box count after merging, and the percentage reduction.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         stats = server.merge_stats(scene)
         return (
             f"Scene '{scene.name}':\n"
-            f"  voxels (หลัง dedupe ทับกัน): {stats['voxels']}\n"
+            f"  voxels (after deduping overlaps): {stats['voxels']}\n"
             f"  merged boxes (parts): {stats['merged_boxes']}\n"
-            f"  ลดได้: {stats['parts_saved']} ({stats['reduction_percent']}%)"
+            f"  saved: {stats['parts_saved']} ({stats['reduction_percent']}%)"
         )
 
 
 @server.mcp.tool()
 def voxelforge_set_voxel_size(size: float, scene_name: str = "") -> str:
-    """ตั้งขนาด voxel ใน world (1.0=ปกติ, 0.25=ละเอียด 4 เท่า).
+    """Set the voxel size in world units (1.0=normal, 0.25=4x finer).
 
     Parameters
     ----------
     size : float
-        ขนาดต่อหนึ่งช่องกริด ค่าถูกจำกัดไว้ในช่วง 0.05-2.0
+        Size of one grid cell; clamped to the range 0.05-2.0.
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมค่า voxel_size ที่ใช้จริง
+        A confirmation message with the voxel_size actually applied.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         scene.voxel_size = max(0.05, min(2.0, float(size)))
         server._sync_bridge(scene)
-        return f"ตั้ง voxel_size={scene.voxel_size} ใน '{scene.name}'"
+        return f"set voxel_size={scene.voxel_size} in '{scene.name}'"
 
 
 @server.mcp.tool()
 def voxelforge_default_palette() -> str:
-    """พาเลตสีเริ่มต้น.
+    """Return the default colour palette.
 
     Returns
     -------
     str
-        JSON ของพาเลตเริ่มต้น (คีย์ → [r, g, b])
+        JSON of the default palette (key → [r, g, b]).
     """
     return json.dumps({k: list(v) for k, v in server.DEFAULT_PALETTE.items()}, indent=2)

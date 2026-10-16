@@ -109,7 +109,7 @@ class SceneStore:
         with self._lock:
             key = name or self._current
             if not key or key not in self._scenes:
-                msg = "ยังไม่มี scene — เรียก voxelforge_create_scene ก่อน"
+                msg = "no scene yet — call voxelforge_create_scene first"
                 raise KeyError(msg)
             return self._scenes[key]
 

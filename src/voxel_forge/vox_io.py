@@ -128,7 +128,7 @@ def import_vox(path: str | Path) -> VoxelScene:
     path = Path(path)
     data = path.read_bytes()
     if data[: len(VOX_MAGIC)] != VOX_MAGIC:
-        msg = "ไม่ใช่ไฟล์ .vox ที่ถูกต้อง"
+        msg = "not a valid .vox file"
         raise ValueError(msg)
 
     scene = VoxelScene(name=path.stem)
@@ -347,7 +347,10 @@ def _box_obj_lines(
 def export_obj(
     scene: VoxelScene, path: str | Path, *, merge_boxes: bool = True
 ) -> Path:
-    """Export as Wavefront OBJ. merge_boxes=True รวม voxel ติดกันเป็นกล่องใหญ่ (แนะนำ).
+    """Export as Wavefront OBJ, optionally merging adjacent voxels into boxes.
+
+    With ``merge_boxes`` left at its default, touching voxels are merged into
+    larger boxes, which is recommended.
 
     Parameters
     ----------

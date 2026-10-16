@@ -7,21 +7,21 @@ from voxel_forge import server
 
 @server.mcp.tool()
 def voxelforge_build_tree(name: str = "tree", resolution: int = 4) -> str:
-    """สร้างต้นไม้ procedural ความละเอียดปรับได้.
+    """Build a procedural tree at an adjustable resolution.
 
-    resolution: 1=หยาบ, 2=ปานกลาง, 4=ละเอียด (แนะนำ), 8=สูงมาก
+    resolution: 1=coarse, 2=medium, 4=fine (recommended), 8=very high
 
     Parameters
     ----------
     name : str, optional
-        ชื่อ scene ที่สร้าง
+        Name of the scene to create.
     resolution : int, optional
-        ความละเอียดของโมเดล
+        Resolution of the model.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวน voxel และ voxel_size
+        A confirmation message with the voxel count and voxel_size.
     """
     scene = server.build_tree(name=name, resolution=resolution)
     with server.store.lock:
@@ -29,34 +29,35 @@ def voxelforge_build_tree(name: str = "tree", resolution: int = 4) -> str:
         server._sync_bridge(scene)
         vs = scene.voxel_size
         return (
-            f"สร้างต้นไม้ '{scene.name}' — {scene.block_count()} voxels, "
+            f"Built tree '{scene.name}' — {scene.block_count()} voxels, "
             f"voxel_size={vs} (resolution {resolution}x)\n"
-            f"เปิด editor เพื่อดู 3D หรือ voxelforge_preview ตรวจ ASCII"
+            f"Open the editor to view it in 3D, or run voxelforge_preview "
+            f"for an ASCII check"
         )
 
 
 @server.mcp.tool()
 def voxelforge_build_chibi_bear(name: str = "chibi_bear", resolution: int = 3) -> str:
-    """สร้างรูปปั้นหมี chibi (resolution 2-4 แนะนำ).
+    """Build a chibi bear statue (resolution 2-4 recommended).
 
     Parameters
     ----------
     name : str, optional
-        ชื่อ scene ที่สร้าง
+        Name of the scene to create.
     resolution : int, optional
-        ความละเอียดของโมเดล
+        Resolution of the model.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวน voxel
+        A confirmation message with the voxel count.
     """
     scene = server.build_chibi_bear(name=name, resolution=resolution)
     with server.store.lock:
         server.store.register(scene)
         server._sync_bridge(scene)
         return (
-            "สร้างหมี chibi '"
+            "Built chibi bear '"
             f"{scene.name}"
             "' — "
             f"{scene.block_count()}"

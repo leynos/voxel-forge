@@ -31,77 +31,78 @@ _editor_lock = threading.Lock()
 
 @server.mcp.tool()
 def voxelforge_save(scene_name: str = "") -> str:
-    """บันทึก scene ลง ~/.voxel-forge/scenes/.
+    """Save a scene to ~/.voxel-forge/scenes/.
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมเส้นทางไฟล์ที่บันทึก
+        A confirmation message with the path the file was saved to.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     ValueError
-        ถ้าชื่อ scene ไม่ปลอดภัยสำหรับใช้เป็นชื่อไฟล์
+        If the scene name is not safe to use as a filename.
     OSError
-        ถ้าเขียนโฟลเดอร์หรือไฟล์ไม่สำเร็จ
+        If writing the folder or file fails.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         path = server.save_scene(scene)
-        return f"บันทึก '{scene.name}' ที่ {path}"
+        return f"Saved '{scene.name}' to {path}"
 
 
 @server.mcp.tool()
 def voxelforge_load(name: str) -> str:
-    """โหลด scene จากไฟล์.
+    """Load a scene from a file.
 
     Parameters
     ----------
     name : str
-        ชื่อ scene ที่บันทึกไว้ ไม่ต้องใส่ ``.json``
+        Name of the saved scene, without the ``.json`` suffix.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวนบล็อก
+        A confirmation message with the block count.
 
     Raises
     ------
     FileNotFoundError
-        ถ้าไม่พบไฟล์ scene ชื่อนี้
+        If no scene file with this name is found.
     ValueError
-        ถ้าชื่อไม่ปลอดภัย หรือเนื้อหาไฟล์ไม่ผ่านการตรวจสอบ
+        If the name is unsafe, or the file contents fail validation.
     OSError
-        ถ้าอ่านไฟล์ไม่สำเร็จ
+        If reading the file fails.
     """
     scene = server.load_scene(name)
     with server.store.lock:
         server.store.register(scene)
         server._sync_bridge(scene)
-        return f"โหลด '{name}' ({scene.block_count()} บล็อก)"
+        return f"Loaded '{name}' ({scene.block_count()} blocks)"
 
 
 @server.mcp.tool()
 def voxelforge_list_scenes() -> str:
-    """รายชื่อ scene ใน session และไฟล์ที่เซฟ.
+    """List the scenes in this session and the scenes saved to disk.
 
     Returns
     -------
     str
-        JSON ที่มี ``active_session`` (scene ในหน่วยความจำ) และ ``saved_on_disk``
-        (ไฟล์ใน ``~/.voxel-forge/scenes``)
+        JSON holding ``active_session`` (in-memory scenes) and
+        ``saved_on_disk`` (files in ``~/.voxel-forge/scenes``).
 
     Raises
     ------
     OSError
-        ถ้าเข้าถึงโฟลเดอร์ scene ไม่สำเร็จ การอ่านล้มเหลวจะไม่ถูกกลืนเป็นรายการว่าง
+        If the scene folder cannot be read; a read failure is not swallowed
+        into an empty listing.
     """
     with server.store.lock:
         active = server.store.list_active()
@@ -114,65 +115,65 @@ def voxelforge_list_scenes() -> str:
 
 @server.mcp.tool()
 def voxelforge_import_vox(file_path: str) -> str:
-    """Import ไฟล์ .vox (MagicaVoxel / Goxel export format).
+    """Import a .vox file (the MagicaVoxel / Goxel export format).
 
     Parameters
     ----------
     file_path : str
-        เส้นทางไฟล์ ``.vox``
+        Path to the ``.vox`` file.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมชื่อ scene ที่ได้และจำนวน voxel
+        A confirmation message with the resulting scene name and voxel count.
 
     Raises
     ------
     ValueError
-        ถ้าไฟล์ไม่ใช่รูปแบบ ``.vox`` ที่ถูกต้อง
+        If the file is not a valid ``.vox`` document.
     OSError
-        ถ้าอ่านไฟล์ไม่สำเร็จ
+        If reading the file fails.
     """
     scene = server.import_vox(file_path)
     with server.store.lock:
         server.store.register(scene)
         server._sync_bridge(scene)
-        return (
-            f"import '{file_path}' → scene '{scene.name}' ({scene.block_count()} voxel)"
-        )
+        voxels = scene.block_count()
+        return f"import '{file_path}' → scene '{scene.name}' ({voxels} voxels)"
 
 
 @server.mcp.tool()
 def voxelforge_export_vox(scene_name: str = "", output_path: str = "") -> str:
-    """Export เป็น .vox (เปิดใน Goxel / MagicaVoxel ได้).
+    """Export to .vox (opens in Goxel / MagicaVoxel).
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
     output_path : str, optional
-        เส้นทางไฟล์ปลายทาง ค่าเริ่มต้นคือ ``~/.voxel-forge/exports/<name>.vox``
+        Destination file path; defaults to
+        ``~/.voxel-forge/exports/<name>.vox``.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมเส้นทางไฟล์และจำนวน voxel
+        A confirmation message with the file path and voxel count.
 
     Raises
     ------
     ValueError
-        ถ้า scene ใหญ่เกิน 256 ช่องต่อแกน มีสีเกิน 255 สี หรือมี voxel ทับกัน
-        ระหว่าง layer ที่มองเห็นได้
+        If the scene exceeds 256 cells per axis, carries more than 255
+        colours, or has voxels that overlap between visible layers.
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     OSError
-        ถ้าเขียนไฟล์ไม่สำเร็จ
+        If writing the file fails.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         path = server._export_path(scene, output_path, ".vox")
         server.export_vox(scene, path)
-        return f"export .vox → {path} ({scene.block_count()} voxel)"
+        return f"export .vox → {path} ({scene.block_count()} voxels)"
 
 
 @server.mcp.tool()
@@ -181,28 +182,28 @@ def voxelforge_export_obj(
     output_path: str = "",
     merge_boxes: bool = True,  # ruff: ignore[boolean-type-hint-positional-argument, boolean-default-value-positional-argument]  # MCP schema
 ) -> str:
-    """Export เป็น Wavefront .obj — merge_boxes=true รวม voxel ติดกัน (แนะนำ).
+    """Export to Wavefront .obj — merge_boxes=true merges adjacent voxels (recommended).
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
     output_path : str, optional
-        เส้นทางไฟล์ปลายทาง ค่าเริ่มต้นคือ ``~/.voxel-forge/exports/``
+        Destination file path; defaults to ``~/.voxel-forge/exports/``.
     merge_boxes : bool, optional
-        รวม voxel ที่ติดกันเป็นกล่องใหญ่ ค่าเริ่มต้น ``True``
+        Merge adjacent voxels into larger boxes; defaults to ``True``.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมเส้นทาง จำนวน part และจำนวน voxel
+        A confirmation message with the path, part count and voxel count.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     OSError
-        ถ้าเขียนไฟล์ไม่สำเร็จ
+        If writing the file fails.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
@@ -220,7 +221,7 @@ def voxelforge_export_obj(
             f"{path}"
             " ("
             f"{parts}"
-            " parts จาก "
+            " parts from "
             f"{scene.block_count()}"
             " voxels, merge="
             f"{merge_boxes}"
@@ -230,26 +231,26 @@ def voxelforge_export_obj(
 
 @server.mcp.tool()
 def voxelforge_export_obj_legacy(scene_name: str = "", output_path: str = "") -> str:
-    """Export เป็น Wavefront .obj (Goxel รองรับ).
+    """Export to Wavefront .obj (as supported by Goxel).
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
     output_path : str, optional
-        เส้นทางไฟล์ปลายทาง ค่าเริ่มต้นคือ ``~/.voxel-forge/exports/``
+        Destination file path; defaults to ``~/.voxel-forge/exports/``.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมเส้นทางและจำนวน voxel
+        A confirmation message with the path and voxel count.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     OSError
-        ถ้าเขียนไฟล์ไม่สำเร็จ
+        If writing the file fails.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
@@ -260,9 +261,10 @@ def voxelforge_export_obj_legacy(scene_name: str = "", output_path: str = "") ->
 
 @server.mcp.tool()
 def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "") -> str:
-    """Export Luau สำหรับ Roblox — รวม voxel เป็น Part ใหญ่ใน Model เดียว (ลดแลag).
+    """Export Luau for Roblox — merges voxels into large Parts in one Model.
 
-    ใช้ Roblox_Studio MCP execute_luau (Edit mode) รันโค้ดที่ได้
+    Run the resulting code in Roblox Studio via the Roblox_Studio MCP
+    ``execute_luau`` tool (Edit mode).
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
@@ -276,8 +278,8 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
         return (
             f"export Roblox merged -> {path}\n"
             f"  {stats['voxels']} voxels -> {stats['merged_boxes']} Parts "
-            f"(ลด {stats['reduction_percent']}%)\n"
-            f"  รันใน Studio ด้วย execute_luau"
+            f"({stats['reduction_percent']}% reduction)\n"
+            f"  run it in Studio with execute_luau"
         )
 
 
@@ -329,24 +331,25 @@ def _start_supervised_editor(
 @server.mcp.tool()
 def voxelforge_launch_editor() -> str:
     """
-    เปิด VoxelForge Web Editor ในเบราว์เซอร์ (Three.js 3D view).
+    Open the VoxelForge web editor in the browser (Three.js 3D view).
 
-    Bridge sync อัตโนมัติผ่าน WebSocket — แก้ใน editor หรือผ่าน MCP ได้ทั้งคู่.
+    The bridge syncs automatically over WebSocket — edits made in the editor
+    and edits made through MCP both propagate.
     """
     with _editor_lock:
         server._ensure_bridge("launch_editor")
         bridge_ports = bridge.current_ports()
         if bridge_ports is None:
-            return "Bridge ยังไม่พร้อม — ลองเรียก voxelforge_launch_editor อีกครั้ง"
+            return "Bridge is not ready — call voxelforge_launch_editor again"
         editor = _running_editor()
         if editor is None:
             try:
                 editor = _start_supervised_editor(bridge_ports)
             except EditorRuntimeError as exc:
                 return (
-                    f"ไม่สามารถเปิด editor ได้: {exc}\n"
-                    "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor "
-                    "อีกครั้ง"
+                    f"Could not open the editor: {exc}\n"
+                    "Install Bun (https://bun.sh), then call "
+                    "voxelforge_launch_editor again"
                 )
     _, port = editor
     ws_port, http_port = bridge_ports
@@ -356,7 +359,7 @@ def voxelforge_launch_editor() -> str:
 
     webbrowser.open(url)
     return (
-        f"เปิด {url} แล้ว (Bun editor ภายใต้การดูแลของ server)\n"
+        f"Opened {url} (Bun editor supervised by the server)\n"
         f"Bridge: ws://127.0.0.1:{ws_port} | "
         f"HTTP scene: http://127.0.0.1:{http_port}/scene"
     )

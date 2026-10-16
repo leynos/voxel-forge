@@ -91,7 +91,7 @@ def _grow_box(state: _MergeState, seed: tuple[int, int, int]) -> MergedBox:
 
 
 def collect_voxels(scene: VoxelScene) -> dict[tuple[int, int, int], str]:
-    """รวมทุก layer ที่มองเห็น — ถ้าทับกันใช้ layer หลัง (ด้านบน)."""
+    """Collect every visible layer, letting later (upper) layers win overlaps."""
     voxels: dict[tuple[int, int, int], str] = {}
     for layer in scene.layers:
         if not layer.visible:
@@ -103,8 +103,9 @@ def collect_voxels(scene: VoxelScene) -> dict[tuple[int, int, int], str]:
 def merge_boxes(voxels: dict[tuple[int, int, int], str]) -> list[MergedBox]:
     """Merge neighbouring same-coloured voxels into as few boxes as possible.
 
-    Greedy merge: ขยายกล่องจากมุม (min Y, Z, X) ให้ใหญ่สุดเท่าที่สีเดียวกันและติดกัน
-    ลด 17k voxels เหลือหลักร้อย part ได้ในหลายโมเดล.
+    Greedy merge: grow each box from a corner (min Y, Z, X) as far as
+    same-coloured neighbours allow. On many models this reduces tens of
+    thousands of voxels to a few hundred parts.
     """
     state = _MergeState(voxels=voxels, remaining=set(voxels.keys()))
     boxes: list[MergedBox] = []

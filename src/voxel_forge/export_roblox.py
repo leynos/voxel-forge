@@ -1,4 +1,4 @@
-"""Export สำหรับ Roblox — รวม voxel เป็น Part ใหญ่ (group ใน Model)."""
+"""Roblox export — merges voxels into large Parts grouped in one Model."""
 
 from __future__ import annotations
 
@@ -21,7 +21,8 @@ def to_luau_merged(
 ) -> str:
     """Return a Luau script that rebuilds the scene from merged parts.
 
-    สร้าง Luau ที่ใช้ Part ใหญ่แทน 1 voxel = 1 Part (ลด lag).
+    Emit Luau that uses large Parts instead of one Part per voxel, which
+    reduces part count and lag.
 
     Parameters
     ----------

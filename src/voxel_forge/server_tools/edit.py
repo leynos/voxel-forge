@@ -15,69 +15,75 @@ def voxelforge_place_block(  # ruff: ignore[too-many-arguments, too-many-positio
     scene_name: str = "",
 ) -> str:
     """
-    วาง voxel 1 ลูกที่พิกัด (x,y,z).
+    Place a single voxel at grid coordinates (x,y,z).
 
     Parameters
     ----------
     x, y, z : int
-        พิกัดกริดของ voxel
+        Grid coordinates of the voxel.
     color : str, optional
-        คีย์พาเลตหรือรหัส ``#RRGGBB`` ค่าเริ่มต้น ``"1"``
+        Palette key or ``#RRGGBB`` code; defaults to ``"1"``.
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวนบล็อกรวม
+        A confirmation message with the total block count.
 
     Raises
     ------
     ValueError
-        ถ้า ``color`` ไม่ใช่คีย์พาเลตหรือรหัส ``#RRGGBB`` ที่ถูกต้อง
+        If ``color`` is neither a palette key nor a valid ``#RRGGBB`` code.
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
 
     Notes
     -----
-    การเรียกที่ล้มเหลวไม่แก้ไข scene เพราะสีถูกตรวจสอบก่อนวางบล็อก
+    A failed call does not modify the scene, because the colour is validated
+    before any block is placed.
     """
     with server._edit_scene(scene_name) as scene:
         scene.place(x, y, z, color)
-        return f"วาง ({x},{y},{z}) สี '{color}' — รวม {scene.block_count()} บล็อก"
+        total = scene.block_count()
+        return f"placed ({x},{y},{z}) colour '{color}' — {total} blocks total"
 
 
 @server.mcp.tool()
 def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     """
-    วางหลาย voxel จาก JSON array.
+    Place many voxels from a JSON array.
 
     Parameters
     ----------
     blocks_json : str
-        JSON array ของแถว ``[x, y, z, สี]`` เช่น ``[[0,0,0,"1"], [1,0,0,"2"]]``
-        สีใช้คีย์พาเลตหรือรหัส ``#RRGGBB`` ได้ รองรับไม่เกิน ``MAX_TOOL_VOXELS`` แถว
+        JSON array of ``[x, y, z, colour]`` rows, for example
+        ``[[0,0,0,"1"], [1,0,0,"2"]]``. Colours may be palette keys or
+        ``#RRGGBB`` codes. At most ``MAX_TOOL_VOXELS`` rows are supported.
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวน voxel ที่วางและจำนวนบล็อกรวม
+        A confirmation message with the number of voxels placed and the total
+        block count.
 
     Raises
     ------
     ValueError
-        ถ้า payload ใหญ่เกินขอบเขต ไม่ใช่ JSON array มีแถวเกินขอบเขต แถวผิดรูปแบบ
-        หรือมีสีที่ resolve ไม่ได้
+        If the payload exceeds its bounds, is not a JSON array, holds
+        oversized or malformed rows, or carries a colour that cannot be
+        resolved.
     json.JSONDecodeError
-        ถ้า ``blocks_json`` ไม่ใช่ JSON ที่ถูกต้อง
+        If ``blocks_json`` is not valid JSON.
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
 
     Notes
     -----
-    ทุกสีถูกตรวจสอบก่อนวางบล็อกแรก เพื่อให้การเรียกที่ล้มเหลวไม่แก้ไข scene
+    Every colour is validated before the first block is placed, so a failed
+    call does not modify the scene.
     """
     blocks = server._parse_blocks_json(blocks_json)
     with server.store.lock:
@@ -88,13 +94,13 @@ def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
             scene.place(x, y, z, color)
         server._sync_bridge(scene)
         return (
-            "วาง "
+            "placed "
             f"{len(blocks)}"
-            " voxel ใน '"
+            " voxels in '"
             f"{scene.name}"
-            "' — รวม "
+            "' — "
             f"{scene.block_count()}"
-            " บล็อก"
+            " blocks total"
         )
 
 
@@ -111,32 +117,35 @@ def voxelforge_fill_box(  # ruff: ignore[too-many-arguments, too-many-positional
     scene_name: str = "",
 ) -> str:
     """
-    เติมกล่อง 3D (เหมาะสร้างฐาน/ตัวบ้าน/กำแพง).
+    Fill a 3D box (well suited to bases, bodies and walls).
 
     Parameters
     ----------
     x1, x2, y1, y2, z1, z2 : int
-        ขอบเขตแบบรวมปลายของแต่ละแกน ลำดับของคู่ไม่สำคัญ
+        Inclusive bounds on each axis; the order of each pair does not matter.
     color : str, optional
-        คีย์พาเลตหรือรหัส ``#RRGGBB`` ค่าเริ่มต้น ``"1"``
+        Palette key or ``#RRGGBB`` code; defaults to ``"1"``.
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมจำนวน voxel ที่เติมและจำนวนบล็อกรวม
+        A confirmation message with the number of voxels filled and the total
+        block count.
 
     Raises
     ------
     ValueError
-        ถ้าปริมาตรเกิน ``MAX_TOOL_VOXELS`` หรือ ``color`` resolve ไม่ได้
+        If the volume exceeds ``MAX_TOOL_VOXELS``, or ``color`` cannot be
+        resolved.
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
 
     Notes
     -----
-    ขอบเขตถูกตรวจสอบก่อนเติม เพื่อให้การเรียกที่ล้มเหลวไม่แก้ไข scene
+    The bounds are validated before filling, so a failed call does not modify
+    the scene.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
@@ -148,65 +157,70 @@ def voxelforge_fill_box(  # ruff: ignore[too-many-arguments, too-many-positional
             raise ValueError(msg)
         n = scene.fill_box(x1, x2, y1, y2, z1, z2, color)
         server._sync_bridge(scene)
-        return f"เติม {n} voxel สี '{color}' — รวม {scene.block_count()} บล็อก"
+        return (
+            f"filled {n} voxels with colour '{color}' — "
+            f"{scene.block_count()} blocks total"
+        )
 
 
 @server.mcp.tool()
 def voxelforge_remove_block(x: int, y: int, z: int, scene_name: str = "") -> str:
     """
-    ลบ voxel ที่พิกัด.
+    Remove the voxel at the given coordinates.
 
     Parameters
     ----------
     x, y, z : int
-        พิกัดกริดของ voxel
+        Grid coordinates of the voxel.
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ``"ลบแล้ว"`` เมื่อลบสำเร็จ หรือ ``"ไม่มี voxel ตรงนั้น"`` เมื่อพิกัดว่าง
+        ``"removed"`` on success, or ``"no voxel there"`` when the coordinates
+        are empty.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
 
     Notes
     -----
-    เมื่อพิกัดว่างจะไม่มีการประกาศ ``scene_update`` เพราะ scene ไม่เปลี่ยน
+    When the coordinates are empty no ``scene_update`` is announced, because
+    the scene did not change.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         ok = scene.remove(x, y, z)
         if ok:
             server._sync_bridge(scene)
-        return "ลบแล้ว" if ok else "ไม่มี voxel ตรงนั้น"
+        return "removed" if ok else "no voxel there"
 
 
 @server.mcp.tool()
 def voxelforge_clear(scene_name: str = "") -> str:
     """
-    ล้าง voxel ทั้งหมดในทุก layer.
+    Clear every voxel in every layer.
 
     Parameters
     ----------
     scene_name : str, optional
-        ชื่อ scene เป้าหมาย ค่าเริ่มต้นคือ scene ปัจจุบัน
+        Name of the target scene; defaults to the current scene.
 
     Returns
     -------
     str
-        ข้อความยืนยันพร้อมชื่อ scene
+        A confirmation message with the scene name.
 
     Raises
     ------
     KeyError
-        ถ้าไม่พบ scene เป้าหมาย
+        If the target scene is not found.
     """
     with server.store.lock:
         scene = server.store.get(scene_name or None)
         scene.clear()
         server._sync_bridge(scene)
-        return f"ล้าง scene '{scene.name}' แล้ว"
+        return f"cleared scene '{scene.name}'"

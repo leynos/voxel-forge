@@ -209,14 +209,14 @@ format.
     policy choice rather than an obligation.
   - Success: a new contributor can tell from the repository alone which
     changes are in scope for the shared format and which are not.
-- [ ] 1.4.2. Translate the README and the tool descriptions into English.
+- [x] 1.4.2. Translate the README and the tool descriptions into English.
   - The README, the `FastMCP` instructions string in
     `src/voxel_forge/server.py`, and several error messages are in Thai. The
     MCP instructions and tool docstrings are read by language models and by
     contributors, and are the tool's primary discovery surface.
   - Keep a Thai translation alongside if the maintainer wants one; the
     requirement is that an English reader can operate the tool.
-- [ ] 1.4.3. Substantiate the clean-room claim in the repository.
+- [x] 1.4.3. Substantiate the clean-room claim in the repository.
   - The README asserts that VoxelForge does not fork Goxel's C code. Publishing
     a fork makes that assertion something downstream users rely on, so it
     should be recorded in English, in a file a reader will find, alongside what

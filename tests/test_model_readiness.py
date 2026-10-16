@@ -153,19 +153,19 @@ def test_basic_agent_scene_workflow(
     assert "basic" in server.voxelforge_create_scene("basic"), (
         "create_scene must name the new scene"
     )
-    assert "วาง" in server.voxelforge_place_block(0, 0, 0, "2"), (
+    assert "placed" in server.voxelforge_place_block(0, 0, 0, "2"), (
         "place_block must confirm the placement"
     )
-    assert "เติม" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3"), (
+    assert "filled" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3"), (
         "fill_box must confirm the fill"
     )
     assert empty_server_store.get().block_count() == 3, (
         "place_block and fill_box must each add their voxels"
     )
-    assert "บันทึก" in server.voxelforge_save(), "save must confirm the file it wrote"
+    assert "Saved" in server.voxelforge_save(), "save must confirm the file it wrote"
 
     monkeypatch.setattr(server, "store", SceneStore())
-    assert "โหลด" in server.voxelforge_load("basic"), (
+    assert "Loaded" in server.voxelforge_load("basic"), (
         "load must confirm the scene it read"
     )
     assert server.store.get().block_count() == 3, (

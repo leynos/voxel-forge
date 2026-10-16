@@ -129,7 +129,7 @@ def load_scene(name: str) -> VoxelScene:
     """
     path = scenes_dir() / f"{validate_scene_name(name)}{SCENE_FILE_SUFFIX}"
     if not path.is_file():
-        msg = f"ไม่พบ scene '{name}' ที่ {path}"
+        msg = f"no scene '{name}' at {path}"
         raise FileNotFoundError(msg)
     return VoxelScene.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
