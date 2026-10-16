@@ -257,8 +257,8 @@ The two can be used side by side as MCP servers in the same Cursor session.
   fork guarantees, and the file-format and command-line contract consumers may
   rely on.
 - [Provenance](docs/provenance.md) — the upstream project, the licence
-  position, the source-history audit showing VoxelForge carries no Goxel C
-  source, and the limits of that audit.
+  position, the source-history audit of what this repository's history does and
+  does not contain, and the limits of that audit.
 - [Migrating to 0.2](docs/migration-0.2.md) — the installed-command changes in
   this release and what an existing setup has to update.
 - [Migrating to 0.3](docs/migration-0.3.md) — Python export arguments and
