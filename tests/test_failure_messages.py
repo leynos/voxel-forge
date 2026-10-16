@@ -26,12 +26,16 @@ import typing as typ
 import pytest
 
 from voxel_forge import server
-from voxel_forge.model import SceneStore
 from voxel_forge.model_validation import InvalidSceneDataError
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
     from pathlib import Path
+
+    # Annotates the ``scene_store`` and ``empty_server_store`` fixture
+    # parameters. Both fixtures hand back the store they built, so no test in
+    # this module constructs one itself and the import never runs.
+    from voxel_forge.model import SceneStore
 
 _SCENE = "house"
 
@@ -139,7 +143,10 @@ def test_import_rejection_names_the_format_it_could_not_read(tmp_path: Path) -> 
     ],
 )
 def test_scene_lookup_failures_give_the_matching_remedy(
-    existing_scene: str | None, lookup: str, expected: str
+    empty_server_store: SceneStore,
+    existing_scene: str | None,
+    lookup: str,
+    expected: str,
 ) -> None:
     """The two lookup failures must not share one recovery instruction.
 
@@ -165,10 +172,8 @@ def test_scene_lookup_failures_give_the_matching_remedy(
     An empty name means the caller passed no name at all, which is the case
     that reaches the no-current-scene branch.
     """
-    store = SceneStore()
     if existing_scene is not None:
-        store.create(existing_scene)
-    server.store = store
+        empty_server_store.create(existing_scene)
 
     with pytest.raises(KeyError) as caught:
         server.resolve_scene(lookup)
@@ -201,6 +206,13 @@ def test_scene_lookup_failures_give_the_matching_remedy(
         ),
         ("voxelforge_save", lambda: server.voxelforge_save(_ABSENT)),
         ("voxelforge_export_vox", lambda: server.voxelforge_export_vox(_ABSENT, "")),
+        # A shape the rows above do not reach: ``place_many`` is the only bulk
+        # edit, so it is the one tool that resolves a scene name alongside a
+        # payload argument.
+        (
+            "voxelforge_place_many",
+            lambda: server.voxelforge_place_many("[]", _ABSENT),
+        ),
     ],
 )
 def test_every_scene_name_tool_gives_the_same_lookup_remedy(

@@ -36,7 +36,18 @@ def scene_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 @pytest.fixture
 def empty_server_store(monkeypatch: pytest.MonkeyPatch) -> SceneStore:
-    """Replace the module-level scene registry and bridge sync for one test."""
+    """Replace the module-level scene registry and bridge sync for one test.
+
+    Both globals are replaced together. Handing a test a private registry
+    without also silencing ``_sync_bridge`` would leave its tool calls
+    notifying a real editor, and the tests that assert on that notification
+    (``test_scene_editing.py``) install their own stub on top.
+
+    The store is returned empty, so a test that wants a scene either creates
+    one itself or asks for the ``scene_store`` fixture below. ``monkeypatch``
+    restores both globals at teardown; assigning them directly would leak a
+    store and a notification stub into every test that ran afterwards.
+    """
     replacement = SceneStore()
     monkeypatch.setattr(server, "store", replacement)
     monkeypatch.setattr(server, "_sync_bridge", lambda _scene: None)

@@ -31,7 +31,15 @@ from voxel_forge import server
 from voxel_forge.model import SceneStore
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
     import mcp.types as mcp_types
+
+    # Annotates ``_server_globals``. ``SceneStore`` above stays a runtime
+    # import because ``test_a_confirmation_crosses_the_boundary_unchanged``
+    # builds a second store directly, which is what makes its comparison a
+    # protocol-versus-direct one rather than a comparison against a fixture.
+    from voxel_forge.model import VoxelScene
 
 # The scene the boundary tests establish over the protocol, and a name they
 # deliberately ask for and do not have. Named here so the precondition a real
@@ -56,6 +64,20 @@ _TRANSLATED_DESCRIPTIONS = {
     "voxelforge_load": "Load a scene from a file",
     "voxelforge_about": "Describe VoxelForge",
 }
+
+
+def _server_globals() -> tuple[SceneStore, cabc.Callable[[VoxelScene], None]]:
+    """Return the registry and bridge notifier exactly as this module found them.
+
+    Read once at import time, before any test in this file replaces either.
+    The final test below compares against what this returned, which is why it
+    has to be the last test here: it reports what the tests above it left
+    behind.
+    """
+    return server.store, server._sync_bridge
+
+
+_INITIAL_STORE, _INITIAL_SYNC_BRIDGE = _server_globals()
 
 
 def _wire_text(result: mcp_types.CallToolResult) -> str:
@@ -192,7 +214,9 @@ def test_tool_schemas_expose_the_argument_names_callers_use() -> None:
     )
 
 
-def test_a_confirmation_crosses_the_boundary_unchanged() -> None:
+def test_a_confirmation_crosses_the_boundary_unchanged(
+    empty_server_store: SceneStore,
+) -> None:
     """The text a caller acts on must survive the protocol, not just the call.
 
     Every other message test in the suite calls the tool function directly and
@@ -207,9 +231,6 @@ def test_a_confirmation_crosses_the_boundary_unchanged() -> None:
     for the same reason: it is the precondition a real caller would establish,
     and it exercises the round trip that the edit tools then read back.
     """
-    store = SceneStore()
-    server.store = store
-    server._sync_bridge = lambda _scene: None
 
     async def exchange() -> tuple[str, str]:
         """Place one voxel over the wire and the same one directly."""
@@ -230,6 +251,11 @@ def test_a_confirmation_crosses_the_boundary_unchanged() -> None:
     # makes this a boundary assertion rather than a second copy of the
     # message-contract test.
     wire = asyncio.run(exchange())
+    # Replacing the store again is safe here, unlike the assignments this file
+    # used to make: ``empty_server_store`` has already recorded the real store
+    # for restoration, so teardown still puts the original back. The direct
+    # call needs a store of its own, freshly seeded, to be comparable with the
+    # one the client filled in.
     server.store = SceneStore()
     server.store.create(_SCENE)
     direct = server.voxelforge_place_block(0, 0, 0, "1")
@@ -243,7 +269,9 @@ def test_a_confirmation_crosses_the_boundary_unchanged() -> None:
     )
 
 
-def test_a_lookup_failure_reaches_the_client_with_its_remedy() -> None:
+def test_a_lookup_failure_reaches_the_client_with_its_remedy(
+    empty_server_store: SceneStore,
+) -> None:
     """An error's recovery instruction must survive the boundary too.
 
     The SDK wraps a tool's exception rather than passing its message through,
@@ -254,10 +282,7 @@ def test_a_lookup_failure_reaches_the_client_with_its_remedy() -> None:
     which this test does not control; the point is that the instruction
     reaches the client at all.
     """
-    store = SceneStore()
-    store.create(_SCENE)
-    server.store = store
-    server._sync_bridge = lambda _scene: None
+    empty_server_store.create(_SCENE)
 
     async def lookup() -> str:
         async with create_connected_server_and_client_session(server.mcp) as client:
@@ -292,4 +317,33 @@ def test_a_tool_schema_change_names_the_scene_argument_as_optional() -> None:
     assert "name" in tools["voxelforge_create_scene"].inputSchema.get("required", []), (
         "create_scene must require a name, since it has no current scene to fall "
         "back on"
+    )
+
+
+def test_this_module_leaves_the_server_globals_as_it_found_them() -> None:
+    """Replacing a server global must be undone, not leaked to the next test.
+
+    The tests above hand the server a store and a silent bridge so they do not
+    touch a developer's session. Assigning those globals directly leaves them
+    assigned: a test that runs afterwards inherits a store it did not create,
+    and -- worse -- a ``_sync_bridge`` that silently discards notifications.
+    ``test_scene_editing.py`` asserts on exactly that call, so under one
+    collection order it would assert against another module's stub and pass
+    locally while proving nothing.
+
+    This test is the guard against that returning, and it is why the
+    replacements go through ``monkeypatch`` rather than through assignment. It
+    is placed last in the file deliberately: it reports what the tests above
+    left behind, so moving it earlier would make it check nothing. The
+    comparison is by identity, because restoring an equal-but-different store
+    would not be restoration.
+    """
+    assert server.store is _INITIAL_STORE, (
+        "server.store was replaced and not restored; a later test would run "
+        "against this module's scene rather than its own"
+    )
+    assert server._sync_bridge is _INITIAL_SYNC_BRIDGE, (
+        "server._sync_bridge was replaced and not restored; a later test "
+        "asserting on bridge notification would silently assert against the "
+        "stub this module installed"
     )
