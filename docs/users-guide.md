@@ -127,6 +127,51 @@ each client.
 After changing the configuration, restart the client and confirm that
 VoxelForge shows as connected.
 
+### What the tools say back
+
+Every tool returns a short English sentence describing what it did, because
+that sentence is what a language model reads to decide its next call. A
+confirmation names the scene or the parameters it acted on and the resulting
+counts, so a caller can tell a successful edit from a no-op without a second
+call:
+
+```text
+create_scene   -> Created scene 'house' (initial layer: Layer 1)
+place_block    -> placed (0,0,0) colour '2' — 1 blocks total
+fill_box       -> filled 2 voxels with colour '3' — 3 blocks total
+place_many     -> placed 1 voxels in 'house' — 4 blocks total
+add_layer      -> Added layer 'top' to 'house' — 2 layers in total
+select_scene   -> Selected scene 'house' (4 blocks)
+save           -> Saved 'house' to ~/.voxel-forge/scenes/house.json
+load           -> Loaded 'house' (4 blocks)
+```
+
+Removing a voxel reports which outcome occurred, since both calls succeed:
+
+```text
+remove_block (occupied)   -> removed
+remove_block (empty)      -> no voxel there
+```
+
+The limits are stated in the messages that enforce them. `fill_box` and
+`place_many` are each capped at **100,000 voxels per call**, and a bulk JSON
+payload is capped at **8,000,000 characters**. Exceeding either is rejected
+before any mutation, so a rejected call leaves the scene untouched.
+
+Error messages are written as the recovery instruction, not just as a
+diagnosis. A scene name that is not loaded says which name was missing and
+names both ways to get one:
+
+```text
+no scene yet — call voxelforge_create_scene first
+scene 'absent' is not loaded in this session — call voxelforge_load for a
+saved scene, or use the name of an existing session scene
+```
+
+The first is for a session with no scene at all; the second is for a session
+that has scenes but not one by that name. They are different failures with
+different remedies, which is why they do not share one message.
+
 ## The web editor
 
 The Three.js editor is bundled in the installed wheel and served by Bun. Bun
