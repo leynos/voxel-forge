@@ -76,10 +76,18 @@ def voxelforge_select_scene(name: str) -> str:
     Raises
     ------
     KeyError
-        If no scene with this name is in the session; use
-        ``voxelforge_load`` to load one from disk first.
+        If no scene with this name is in the session; the message names
+        ``voxelforge_load`` and the alternative of an existing scene name.
     """
     with server.store.lock:
+        # The lookup goes through ``resolve_scene`` rather than
+        # ``store.select`` so this tool reports a mistyped name the same way
+        # every other tool does. Selecting is the operation that *only* names a
+        # scene, so it is the likeliest place for a caller to hit this error
+        # first; leaving it on the domain's transport-neutral message would
+        # make the recovery instruction depend on which tool was called.
+        # ``store.lock`` is reentrant, so resolving inside it costs nothing.
+        server.resolve_scene(name)
         scene = server.store.select(name)
         server._sync_bridge(scene)
         return f"Selected scene '{scene.name}' ({scene.block_count()} blocks)"

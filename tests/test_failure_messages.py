@@ -30,9 +30,15 @@ from voxel_forge.model import SceneStore
 from voxel_forge.model_validation import InvalidSceneDataError
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
     from pathlib import Path
 
 _SCENE = "house"
+
+# A name that is deliberately absent from the shared ``scene_store`` fixture,
+# which registers ``house``. Every lookup-remedy test below asks for this one,
+# so the name they share is written once and cannot drift between them.
+_ABSENT = "absent"
 
 
 @pytest.mark.parametrize(
@@ -171,6 +177,57 @@ def test_scene_lookup_failures_give_the_matching_remedy(
         f"a lookup of {lookup!r} must raise {expected!r}; a wrong "
         "remedy here sends the caller to the wrong recovery step"
     )
+
+
+@pytest.mark.parametrize(
+    ("tool", "call"),
+    [
+        ("voxelforge_select_scene", lambda: server.voxelforge_select_scene(_ABSENT)),
+        ("voxelforge_preview", lambda: server.voxelforge_preview(_ABSENT)),
+        ("voxelforge_get_info", lambda: server.voxelforge_get_info(_ABSENT)),
+        ("voxelforge_clear", lambda: server.voxelforge_clear(_ABSENT)),
+        ("voxelforge_merge_stats", lambda: server.voxelforge_merge_stats(_ABSENT)),
+        (
+            "voxelforge_place_block",
+            lambda: server.voxelforge_place_block(0, 0, 0, "1", _ABSENT),
+        ),
+        (
+            "voxelforge_set_palette",
+            lambda: server.voxelforge_set_palette("9", 1, 2, 3, _ABSENT),
+        ),
+        (
+            "voxelforge_set_voxel_size",
+            lambda: server.voxelforge_set_voxel_size(0.5, _ABSENT),
+        ),
+        ("voxelforge_save", lambda: server.voxelforge_save(_ABSENT)),
+        ("voxelforge_export_vox", lambda: server.voxelforge_export_vox(_ABSENT, "")),
+    ],
+)
+def test_every_scene_name_tool_gives_the_same_lookup_remedy(
+    scene_store: SceneStore, tool: str, call: cabc.Callable[[], str]
+) -> None:
+    """A mistyped scene name must draw one remedy, whichever tool was called.
+
+    A caller who mistypes a name is in exactly one situation, and it does not
+    depend on which tool they happened to reach for. If the tools disagree,
+    the recovery instruction becomes a function of the tool rather than of
+    the mistake, and a caller who learns the remedy from one tool is misled
+    by the next -- ``voxelforge_select_scene`` is the tool whose entire
+    purpose is naming a scene, so it is the one a caller is most likely to
+    hit this error on first.
+
+    The assertion is deliberately on the *message*, not on which helper the
+    tool happens to call. Pinning the call site would pass for a tool that
+    routed through the adapter and then discarded its wording, which is the
+    failure this test exists to catch.
+    """
+    with pytest.raises(KeyError) as caught:
+        call()
+
+    assert caught.value.args[0] == (
+        f"scene '{_ABSENT}' is not loaded in this session — call voxelforge_load "
+        "for a saved scene, or use the name of an existing session scene"
+    ), f"{tool} must send a caller with a mistyped scene name to the same remedy"
 
 
 def test_layer_index_rejection_names_the_valid_range(

@@ -28,9 +28,16 @@ from mcp.shared.memory import (
 )
 
 from voxel_forge import server
+from voxel_forge.model import SceneStore
 
 if typ.TYPE_CHECKING:
     import mcp.types as mcp_types
+
+# The scene the boundary tests establish over the protocol, and a name they
+# deliberately ask for and do not have. Named here so the precondition a real
+# client would set up is stated once rather than repeated per test.
+_SCENE = "boundary-scene"
+_ABSENT = "absent"
 
 # Thai script, used to detect text a translation pass missed. The Unicode Thai
 # block runs from U+0E00 to U+0E7F; both bounds are named here rather than
@@ -49,6 +56,17 @@ _TRANSLATED_DESCRIPTIONS = {
     "voxelforge_load": "Load a scene from a file",
     "voxelforge_about": "Describe VoxelForge",
 }
+
+
+def _wire_text(result: mcp_types.CallToolResult) -> str:
+    """Return the text a client received from a tool call, as one string.
+
+    The SDK delivers a tool's return value as a list of content blocks, so the
+    client-visible text is their concatenation rather than any single block.
+    Reading them here keeps the tests below asserting on what a caller reads
+    rather than on the block structure that happens to carry it.
+    """
+    return "".join(getattr(block, "text", "") for block in result.content)
 
 
 def _fetch_tools() -> list[mcp_types.Tool]:
@@ -172,6 +190,90 @@ def test_tool_schemas_expose_the_argument_names_callers_use() -> None:
         "place_many must publish the JSON payload argument under the name its "
         "callers use"
     )
+
+
+def test_a_confirmation_crosses_the_boundary_unchanged() -> None:
+    """The text a caller acts on must survive the protocol, not just the call.
+
+    Every other message test in the suite calls the tool function directly and
+    asserts on its return value. That proves what the function *computes*; it
+    does not prove the string reaches a client, and the two are different
+    claims -- a response could be rewritten, truncated, or dropped by the
+    protocol layer while the direct call stayed correct.
+
+    The text is compared byte-for-byte across both surfaces rather than
+    asserted against a fresh literal, so the test fails if the two ever
+    disagree in either direction. The scene is created through the *client*
+    for the same reason: it is the precondition a real caller would establish,
+    and it exercises the round trip that the edit tools then read back.
+    """
+    store = SceneStore()
+    server.store = store
+    server._sync_bridge = lambda _scene: None
+
+    async def exchange() -> tuple[str, str]:
+        """Place one voxel over the wire and the same one directly."""
+        async with create_connected_server_and_client_session(server.mcp) as client:
+            created = await client.call_tool(
+                "voxelforge_create_scene", {"name": _SCENE}
+            )
+            assert created.isError is False, "create_scene must succeed"
+            return _wire_text(
+                await client.call_tool(
+                    "voxelforge_place_block",
+                    {"x": 0, "y": 0, "z": 0, "color": "1"},
+                )
+            )
+
+    # The same operation, run once through the protocol and once directly, on
+    # two stores that start identically. Comparing the two strings is what
+    # makes this a boundary assertion rather than a second copy of the
+    # message-contract test.
+    wire = asyncio.run(exchange())
+    server.store = SceneStore()
+    server.store.create(_SCENE)
+    direct = server.voxelforge_place_block(0, 0, 0, "1")
+
+    assert wire == direct, (
+        "a confirmation must reach the client unchanged; a client that reads a "
+        "different sentence than the tool returned cannot act on it"
+    )
+    assert wire == "placed (0,0,0) colour '1' — 1 blocks total", (
+        "the exchanged text must be the confirmation, not an empty payload"
+    )
+
+
+def test_a_lookup_failure_reaches_the_client_with_its_remedy() -> None:
+    """An error's recovery instruction must survive the boundary too.
+
+    The SDK wraps a tool's exception rather than passing its message through,
+    so what a client reads is the *server's* rendering of it. That rendering is
+    what the caller has to act on, and it is not what a direct
+    ``pytest.raises`` assertion inspects. The remedy is checked by its
+    presence in the delivered text because the wrapper supplies the prefix,
+    which this test does not control; the point is that the instruction
+    reaches the client at all.
+    """
+    store = SceneStore()
+    store.create(_SCENE)
+    server.store = store
+    server._sync_bridge = lambda _scene: None
+
+    async def lookup() -> str:
+        async with create_connected_server_and_client_session(server.mcp) as client:
+            result = await client.call_tool(
+                "voxelforge_select_scene", {"name": _ABSENT}
+            )
+            assert result.isError is True, "an unknown scene name must fail"
+            return _wire_text(result)
+
+    text = asyncio.run(lookup())
+
+    assert "voxelforge_load" in text, (
+        "the client must receive the tool to call next, or the failure is not "
+        "recoverable from what it was shown"
+    )
+    assert _ABSENT in text, "the failure must name the scene that was missing"
 
 
 def test_a_tool_schema_change_names_the_scene_argument_as_optional() -> None:
