@@ -197,6 +197,54 @@ def test_launch_editor_requests_the_bridge(
     )
 
 
+def test_a_second_request_against_a_running_bridge_reports_no_new_start(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only the transition is reported, so a repeat request must stay silent.
+
+    ``bridge_start`` marks the bridge going from down to up. A second
+    ``voxelforge_launch_editor`` against a bridge that is already serving finds
+    it up, so logging another start there would make a counter over that
+    operation overcount: an operator reading the log would see two starts where
+    the process performed one. The real ``_ensure_bridge`` runs here rather than
+    a stub, because the condition under test is its ``current_ports``
+    pre-check, and a stubbed-out function would assert nothing about it.
+
+    ``start_bridge_background`` is replaced by one that publishes readiness
+    itself, since the real launcher waits on a thread that cannot become healthy
+    in this process. It is still called on *both* requests: deciding whether a
+    bridge is already up belongs to the launcher, and replacing it with a
+    once-only stub would hide the very state the second call reads.
+    """
+    from voxel_forge.server_tools import io
+
+    ports = (43001, 43002)
+
+    def report_healthy() -> tuple[int, int]:
+        """Report the ports a bridge that is already serving would hold."""
+        monkeypatch.setattr(server, "current_ports", lambda: ports)
+        return ports
+
+    monkeypatch.setattr(server, "current_ports", lambda: None)
+    monkeypatch.setattr(server, "start_bridge_background", report_healthy)
+    monkeypatch.setattr(server, "store", server.SceneStore())
+    monkeypatch.setattr(io.bridge, "use_store", lambda _store: None)
+
+    server._ensure_bridge("launch_editor")
+    first = capsys.readouterr().err
+    assert "operation=bridge_start trigger=launch_editor" in first, (
+        f"the first request must report the transition it caused, got: {first!r}"
+    )
+
+    # The bridge is up now, so this call must find it running and stay quiet.
+    server._ensure_bridge("launch_editor")
+    second = capsys.readouterr().err
+
+    assert not second, (
+        f"a request against a running bridge must report nothing, got: {second!r}"
+    )
+
+
 class _StoppableBridge:
     """A real bridge task, alive only while the test lets it run."""
 

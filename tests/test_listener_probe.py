@@ -1,15 +1,16 @@
-"""Contract tests for the process-scoped listening-socket probe.
+"""Contract tests for the process-scoped listening-socket probe, live processes.
 
 ``tests/installed_smoke.py`` asserts that a headless run binds no socket, and
 that assertion is only worth anything if the probe underneath it can actually
-see a socket. These tests are the probe's own controls: they prove it detects a
-process that really is listening, that it does not attribute another process's
-listener to an idle one, and that it reports an unreadable table as
-inconclusive rather than as an empty result.
+see a socket. These tests are the probe's controls against *real* processes:
+they prove it detects a process that really is listening, that it does not
+attribute another process's listener to an idle one, and that an unreadable
+process is reported as inconclusive rather than as an empty result.
 
-Without the last group, a probe that returned "no listener" whenever it failed
-to read ``/proc`` would let the headless check pass unconditionally — a green
-result that measured nothing.
+The synthetic-table controls — a ``/proc`` tree the test writes itself, so the
+malformed and unreadable paths can be reached without a misbehaving host — live
+in ``tests/test_listener_probe_tables.py``. The driver's use of each answer is a
+third question, asked in ``tests/test_smoke_listener_gate.py``.
 """
 
 from __future__ import annotations
@@ -186,88 +187,3 @@ def test_probe_reports_an_absent_proc_as_unsupported(
         "tells an operator the platform is at fault, not this process"
     )
     assert report.reason, "the report must say why the probe cannot run here"
-
-
-def test_probe_reports_an_unlistable_descriptor_table_as_failed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A descriptor table that cannot be listed must not read as "no socket".
-
-    ``Path.glob`` swallows the ``OSError`` for a directory it cannot list and
-    yields nothing, which is exactly how an unreadable table used to become a
-    vacuous pass. The probe reads the directory with ``iterdir`` so the failure
-    reaches the caller; this test is the control for that choice.
-    """
-    proc = tmp_path / "proc"
-    (proc / "1" / "net").mkdir(parents=True)
-    (proc / "1" / "net" / "tcp").write_text("  sl local_address rem_address st\n")
-    # The fd directory exists but carries no read permission, as another user's
-    # process does on a real host.
-    (proc / "1" / "fd").mkdir()
-    (proc / "1" / "fd").chmod(0o000)
-    monkeypatch.setattr("listener_probe.PROC_ROOT", proc)
-    try:
-        if _can_list(proc / "1" / "fd"):
-            pytest.skip("this test needs to be able to detect an unlistable directory")
-
-        report = probe_listeners(1)
-    finally:
-        (proc / "1" / "fd").chmod(0o700)
-
-    assert report.outcome is ProbeOutcome.FAILED, (
-        "an unlistable descriptor table is a failed probe, not an empty result"
-    )
-    assert not report.ports, "silence must never be reported as a measurement"
-
-
-def _can_list(directory: Path) -> bool:
-    """Report whether ``directory`` can be listed by this process."""
-    try:
-        list(directory.iterdir())
-    except OSError:
-        return False
-    return True
-
-
-def test_probe_reports_a_malformed_table_as_failed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A listing row with no inode column must fail the probe, not be skipped.
-
-    Skipping the row could drop a real listener and so turn a bound socket into
-    a false negative — the precise error the headless check must not make.
-    """
-    proc = tmp_path / "proc"
-    (proc / "1" / "fd").mkdir(parents=True)
-    socket_link = proc / "1" / "fd" / "7"
-    socket_link.symlink_to("socket:[424242]")
-    (proc / "1" / "net").mkdir()
-    (proc / "1" / "net" / "tcp").write_text(
-        "  sl  local_address rem_address   st\n"
-        "   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000\n"
-    )
-    monkeypatch.setattr("listener_probe.PROC_ROOT", proc)
-
-    report = probe_listeners(1)
-
-    assert report.outcome is ProbeOutcome.FAILED, (
-        "a truncated row must not be silently ignored"
-    )
-    assert "Malformed" in report.reason or "row" in report.reason, (
-        f"the reason must name the malformed row, got: {report.reason!r}"
-    )
-
-
-def test_probe_refuses_an_unrecognized_outcome() -> None:
-    """The driver must fail closed on an outcome it does not recognise.
-
-    ``_assert_no_listener`` treats only ``MEASURED`` as certification and raises
-    for everything else, so a future outcome cannot silently become a pass. The
-    enum's members are pinned here so that adding one is a reviewed decision
-    rather than an accident.
-    """
-    assert {outcome.name for outcome in ProbeOutcome} == {
-        "MEASURED",
-        "UNSUPPORTED",
-        "FAILED",
-    }, "a new outcome needs a driver decision before it is added"

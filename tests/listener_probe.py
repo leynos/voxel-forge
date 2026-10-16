@@ -93,15 +93,67 @@ def _socket_inodes(pid: int) -> set[int]:
     return inodes
 
 
+def _port_from(address: str) -> int:
+    """Return the port encoded in a ``/proc/net/tcp`` address field.
+
+    Raises
+    ------
+    ValueError
+        If the field carries no port separator, or the separator is not followed
+        by hexadecimal digits. Slicing the field instead would silently invent a
+        port out of the host address, which is worse than refusing to answer.
+    """
+    _, separator, port_hex = address.rpartition(":")
+    if not separator:
+        msg = f"no port separator in address {address!r}"
+        raise ValueError(msg)
+    return int(port_hex, 16)
+
+
+def _listening_row_port(table: Path, row: str, inodes: set[int]) -> int | None:
+    """Return the port one table row names, if it is a listener ``pid`` owns.
+
+    Returns ``None`` for a row that is not this process's listening socket, and
+    for the blank line a table can end with.
+
+    Raises
+    ------
+    _MalformedTableError
+        If the row is too short, or its inode and port cannot be parsed. Both
+        are read as a refusal to answer rather than skipped: a dropped row could
+        be the very listener the probe exists to find.
+    """
+    fields = row.split()
+    if not fields:
+        return None
+    if len(fields) <= _INODE_FIELD:
+        msg = f"{table} held a row with no inode column: {row!r}"
+        raise _MalformedTableError(msg)
+    try:
+        is_owned = int(fields[_INODE_FIELD]) in inodes
+        port = _port_from(fields[_LOCAL_ADDRESS_FIELD])
+    except (IndexError, ValueError) as failure:
+        msg = f"{table} held a row that could not be read: {row!r}"
+        raise _MalformedTableError(msg) from failure
+    if fields[_STATE_FIELD] == _TCP_LISTEN and is_owned:
+        return port
+    return None
+
+
 def _listening_ports(pid: int, inodes: set[int]) -> list[int]:
     """Return the listening ports ``pid`` holds, read from its network tables.
 
     Raises
     ------
     _MalformedTableError
-        If a row is too short to carry an inode. Skipping such a row could hide
-        a real listener and turn the answer into a false negative, so the probe
-        refuses to answer rather than guessing.
+        If a row cannot be read. Skipping such a row could hide a real listener
+        and turn the answer into a false negative, so the probe refuses to
+        answer rather than guessing.
+    FileNotFoundError
+        If the IPv4 table is absent. That table is one every kernel carries, so
+        its absence means the read went wrong rather than the table being
+        inapplicable; treating it as "no listeners" would certify a headless run
+        without having looked at a single socket.
     """
     ports: list[int] = []
     for name in ("tcp", "tcp6"):
@@ -109,21 +161,15 @@ def _listening_ports(pid: int, inodes: set[int]) -> list[int]:
         try:
             rows = table.read_text(encoding="utf-8")
         except FileNotFoundError:
+            if name == "tcp":
+                raise
             # A kernel built without IPv6 has no tcp6 table, and that is not a
             # read failure.
             continue
         for row in rows.splitlines()[1:]:
-            fields = row.split()
-            if not fields:
-                continue
-            if len(fields) <= _INODE_FIELD:
-                msg = f"{table} held a row with no inode column: {row!r}"
-                raise _MalformedTableError(msg)
-            if (
-                fields[_STATE_FIELD] == _TCP_LISTEN
-                and int(fields[_INODE_FIELD]) in inodes
-            ):
-                ports.append(int(fields[_LOCAL_ADDRESS_FIELD].rsplit(":", 1)[1], 16))
+            port = _listening_row_port(table, row, inodes)
+            if port is not None:
+                ports.append(port)
     return ports
 
 
