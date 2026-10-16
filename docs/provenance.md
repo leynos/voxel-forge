@@ -76,20 +76,39 @@ without leaving this checkout:
      grep -acE '#include[[:space:]]*[<"]|(fn|func)[[:space:]]+main[[:space:]]*\(|^[[:space:]]*package[[:space:]]+main'
    ```
 
-   This reads every blob in the repository — 565 of them, some 6.5 MB — and
-   prints `0`: no file contains a `#include` directive or a `main` definition
-   in the C, C++, Rust, or Go style. Two limits apply to that result. It
-   detects the marker lines conventional sources carry, not compiled source of
-   any conceivable shape, and it is a content test rather than an authorship
-   test: a translation of Goxel's algorithms into Python would contain none of
-   these markers and would pass it. What it rules out is the specific escape
-   the suffix census leaves open.
+   This reads every blob in the repository — several hundred of them, a few
+   megabytes — and prints `0`. No exact count is given, because the number
+   changes with every commit that touches this file: the document is itself one
+   of the blobs the scan reads. The result is what carries the finding, and it
+   does not move with the count.
+
+   Read that `0` as the absence of the marker forms the expression names, and
+   no more: a C-family preprocessor include directive, in either its
+   angle-bracket or its quoted form, plus the entry-point declarations Rust and
+   Go conventionally carry and an unindented Go package clause naming `main`.
+   It does **not** by itself detect a bare C or C++ `int main(void)`, which
+   carries none of those, so it is not a general test for compiled source. Two
+   further limits apply. It matches markers conventional sources happen to
+   carry rather than source of any conceivable shape, and it is a content test
+   rather than an authorship test: a translation of Goxel's algorithms into
+   Python would contain none of these markers and would pass it. What it rules
+   out is the specific escape the suffix census leaves open — compiled source
+   stored under a name that does not advertise it — and it rules that out only
+   for the marker forms listed.
+
+   Note that this document is itself one of the blobs the scan reads, so the
+   marker forms are described here in words rather than written out. Spelling
+   one of them literally on this page would make the scan match this file and
+   report a nonzero count, which is a property of the audit rather than of the
+   repository.
 
    Both commands should run on a full (non-shallow) clone, because both derive
    their paths from the commits actually fetched; a full clone is still not a
    guarantee that every remote ref was fetched. `git ls-files` is not a
    substitute for either: it sees just the current index and would miss source
-   deleted in an earlier commit.
+   deleted in an earlier commit. Read both results as findings about names and
+   markers in the inspected history — not as a proof that no such source exists
+   in any form.
 4. **Every Goxel reference in this repository is descriptive.** "Goxel" appears
    only in format and attribution contexts — for example `vox_io.py`'s
    "Goxel-compatible format" and `__init__.py`'s "Goxel-inspired". None refers
@@ -97,12 +116,13 @@ without leaving this checkout:
 
 ### What this evidence does not establish
 
-This is a source-history audit, not a clean-room attestation. It shows that no
-Goxel source is present and that upstream asserts independent authorship. It
-cannot prove the absence of an undocumented translation, because no test and no
-repository audit can establish which source material an author consulted. Treat
-the claim as well-supported and author-asserted, not as independently
-adjudicated.
+This is a source-history audit, not a clean-room attestation. It reports that
+no filename suffix in the history identifies conventional C, C++, Rust, or Go
+source, that no reachable blob matches the marker expression in item 3, and
+that upstream asserts independent authorship. It cannot prove the absence of an
+undocumented translation, because no test and no repository audit can establish
+which source material an author consulted. Treat the claim as well-supported
+and author-asserted, not as independently adjudicated.
 
 Two limits apply specifically to the path enumeration in item 3, because
 `git log --all --format= --name-only` lists paths reported by commit diffs:
@@ -112,18 +132,41 @@ Two limits apply specifically to the path enumeration in item 3, because
   reconciling counts taken from that same listing would not reveal the gap. In
   this repository it cannot have done so: the history contains **no merge
   commits**, so no merge diff exists to be omitted. This was checked with
-  `git rev-list --all --merges --count`, which returns `0`. Repeating the
-  census from reachable objects rather than from diffs — filtering to blobs, as
-  the content scan above does — yields the same 128 paths, so the two methods
-  agree exactly.
+  `git rev-list --all --merges --count`, which returns `0`.
+
+  That check disposes of the merge concern, but it does not on its own show
+  that the path list is complete. An independent enumeration does, by reading
+  the tree of every reachable commit rather than any diff:
+
+  ```sh
+  git rev-list --all | while read -r commit; do
+    git ls-tree -r --name-only "$commit"
+  done | sort -u
+  ```
+
+  This returns the same 128 paths as the diff-based census, so the two methods
+  agree exactly. The tree walk is the stronger of the two and is the one that
+  establishes coverage: it reports every entry of every reachable commit's tree
+  and does not depend on which commit happened to introduce a path.
+
+  The content scan above should **not** be used for this purpose. Deriving
+  paths from `git rev-list --all --objects` undercounts them, because that
+  listing reports each reachable object once: where the same content sits at
+  two paths, it need only name one, so the other vanishes from the list. On a
+  two-file fixture holding identical bytes at `a/one.c` and `b/two.c`, the
+  object listing reports only `a/one.c`. It happens to yield 128 paths here,
+  matching the tree walk, but that agreement is not what proves the census
+  complete.
 - **Git may quote unusual path names.** With `core.quotePath` at its default of
   true, a line-oriented census parses the quoted form, so a path ending in
   `.cxx` could be reported with a trailing quote and miss the pattern. This is
   live rather than hypothetical — quoting is enabled here — but nothing in this
   history triggers it: no path contains a non-ASCII or otherwise quotable
   character, and enumerating with NUL-delimited records (`git log --all
-  --format= --name-only -z`) returns byte-identical results to the line-based
-  form.
+  --format= --name-only -z`) gives results identical to the line-based form
+  once both are split into records. The raw byte streams happen to match here
+  too, but that is incidental to this history; what matters is that the records
+  agree.
 
 Neither limit is discharged by argument above; both were checked against the
 actual history, and the figures are given so a reader can check them again.

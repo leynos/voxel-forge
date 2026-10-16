@@ -228,15 +228,16 @@ format.
   - Evidence route: `docs/provenance.md` carries a source-history audit the
     reader can reproduce in the checkout — upstream's own authorship
     statement, a root commit byte-identical to upstream's `main`, an
-    enumeration of every filename suffix in the history together with a
-    content scan of every reachable blob, neither of which finds C, C++, Rust,
-    or Go source in any fetched commit, and Goxel references limited to format
-    and attribution contexts. The format-conformance tests are labelled as
-    conformance evidence only, since a translated implementation would pass
-    them too. The audit's limits are stated: it cannot prove the absence of an
-    undocumented translation, and filename and marker evidence is narrower
-    than source-language absence, so the claim is recorded as well-supported
-    and author-asserted rather than independently adjudicated.
+    enumeration of every filename suffix in the history and a content scan of
+    every reachable blob, which report no suffix and no marker identifying
+    C, C++, Rust, or Go source in the inspected history, and Goxel references
+    limited to format and attribution contexts. The format-conformance tests
+    are labelled as conformance evidence only, since a translated
+    implementation would pass them too. The audit's limits are stated:
+    filename and marker findings are narrower than source-language absence,
+    and no repository audit can prove the absence of an undocumented
+    translation, so the claim is recorded as well-supported and
+    author-asserted rather than independently adjudicated.
 
 ## 2. Voxels carry meaning, not just colour
 
