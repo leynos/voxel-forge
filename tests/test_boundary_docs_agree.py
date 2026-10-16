@@ -136,6 +136,11 @@ def test_the_requirement_tables_cover_every_boundary_document() -> None:
 
     The two directions are asserted separately so a failure says which one
     broke rather than only that the sets differ.
+
+    Note this checks only that *some* requirement names each document, not that
+    the right one does. ``docs/migration-0.3.md`` naming the helpers is checked
+    here, but whether it carries the prohibition is not -- and must not be, since
+    it is not a document the rule is stated in.
     """
     checked = (
         set(_DOCUMENTS_STATING_IMPORT_IS_SUPPORTED)
@@ -168,13 +173,14 @@ def test_each_boundary_document_states_the_python_helpers_are_supported(
     check that concatenated all four would pass while any single one
     contradicted the rest.
 
-    Only the documents that state the permission are checked; the two that
-    reach it by link are covered by the prohibition check below, which is what
-    they are actually for. Widening the phrase list until a merely-linking
-    document passed is the tempting shortcut and it is the wrong one: the only
-    wording a linking document could satisfy it with is a bare mention, which
-    is precisely the weakness ``test_the_import_guard_rejects_a_negated_document``
-    exists to catch.
+    Only the documents that state the permission are checked. The migration
+    guide, which reaches the helpers by link, is not unguarded for it -- but the
+    check that covers it is the helper-name one, not the prohibition one: that
+    one names only the two documents that carry the rule. Widening this phrase
+    list until a merely-linking document passed is the tempting shortcut and it
+    is the wrong one: the only wording a linking document could satisfy it with
+    is a bare mention, which is precisely the weakness
+    ``test_the_import_guard_rejects_a_negated_document`` exists to catch.
 
     ``role`` says what the document is *for*, so a failure names the reader who
     is being misled rather than only the phrase that went missing.
