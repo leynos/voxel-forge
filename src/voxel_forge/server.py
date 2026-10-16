@@ -21,7 +21,12 @@ from .lifecycle_log import emit_lifecycle
 from .mesh_merge import merge_stats as merge_stats
 from .model import DEFAULT_PALETTE as DEFAULT_PALETTE
 from .model import SceneStore, VoxelScene
-from .model_validation import BLOCK_ROW_LENGTH, InvalidSceneDataError
+from .model_validation import (
+    BLOCK_ROW_LENGTH,
+    InvalidSceneDataError,
+    NoCurrentSceneError,
+    UnknownSceneError,
+)
 from .paths import exports_dir as _exports_dir
 from .preview import summary as summary
 from .procedural import build_chibi_bear as build_chibi_bear
@@ -141,11 +146,53 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     return out
 
 
+def resolve_scene(scene_name: str = "") -> VoxelScene:
+    """Return a registered scene, wording a lookup failure as a recovery step.
+
+    This is where the domain's transport-neutral errors become the caller-facing
+    instruction an MCP client reads and acts on, which is why it lives in the
+    adapter rather than in ``SceneStore``. The two failures need different
+    remedies and are distinct domain types, so the branch is on type rather than
+    on matching message text: a session with no scene at all is told to create
+    one, while a caller who named a scene has already created one and is directed
+    to load a saved scene or correct the name.
+
+    Parameters
+    ----------
+    scene_name : str, optional
+        Name of the target scene; empty means the current scene.
+
+    Returns
+    -------
+    VoxelScene
+        The requested scene.
+
+    Raises
+    ------
+    KeyError
+        If no scene is current, or the named scene is not registered. The
+        message names the tool to call next.
+    """
+    try:
+        return store.get(scene_name or None)
+    except NoCurrentSceneError as exc:
+        msg = "no scene yet — call voxelforge_create_scene first"
+        raise KeyError(msg) from exc
+    except UnknownSceneError as exc:
+        missing = scene_name
+        msg = (
+            f"scene '{missing}' is not loaded in this session — call "
+            "voxelforge_load for a saved scene, or use the name of an "
+            "existing session scene"
+        )
+        raise KeyError(msg) from exc
+
+
 @contextlib.contextmanager
 def _edit_scene(scene_name: str) -> cabc.Iterator[VoxelScene]:
     """Lock the entire edit and publish only after successful mutation."""
     with store.lock:
-        scene = store.get(scene_name or None)
+        scene = resolve_scene(scene_name)
         has_completed = False
         try:
             yield scene

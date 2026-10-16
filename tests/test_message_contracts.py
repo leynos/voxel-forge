@@ -240,7 +240,7 @@ def test_absent_scene_load_names_the_scene_and_the_path(
     [
         (
             None,
-            None,
+            "",
             "no scene yet — call voxelforge_create_scene first",
         ),
         (
@@ -255,7 +255,7 @@ def test_absent_scene_load_names_the_scene_and_the_path(
     ],
 )
 def test_scene_lookup_failures_give_the_matching_remedy(
-    existing_scene: str | None, lookup: str | None, expected: str
+    existing_scene: str | None, lookup: str, expected: str
 ) -> None:
     """The two lookup failures must not share one recovery instruction.
 
@@ -272,21 +272,25 @@ def test_scene_lookup_failures_give_the_matching_remedy(
     repr-quotes its argument, so ``str()`` would be compared against the
     message wrapped in quote characters.
 
-    A ``None`` name means the caller passed no name at all, which is the case
-    that reaches the no-current-scene branch. An empty string reaches it too,
-    but only through the implementation's falsy-name rule, and pinning the
-    caller's actual mistake is the point.
+    This drives the adapter's ``resolve_scene``, not ``SceneStore.get``. The
+    recovery wording names MCP tools, which is the adapter's concern; asserting
+    it against the domain object would require the domain to know which tools
+    exist. The domain side of the same distinction is pinned in
+    ``test_model_readiness.py``, on the exception types.
+
+    An empty name means the caller passed no name at all, which is the case
+    that reaches the no-current-scene branch.
     """
     store = SceneStore()
     if existing_scene is not None:
         store.create(existing_scene)
-    lookup_scene = store.get if lookup is None else lambda: store.get(lookup)
+    server.store = store
 
     with pytest.raises(KeyError) as caught:
-        lookup_scene()
+        server.resolve_scene(lookup)
 
     assert caught.value.args[0] == expected, (
-        f"a lookup of {existing_scene!r} must raise {expected!r}; a wrong "
+        f"a lookup of {lookup!r} must raise {expected!r}; a wrong "
         "remedy here sends the caller to the wrong recovery step"
     )
 

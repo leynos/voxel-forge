@@ -107,7 +107,7 @@ def voxelforge_add_layer(name: str, scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         layer = scene.add_layer(name)
         server._sync_bridge(scene)
         return (
@@ -145,7 +145,7 @@ def voxelforge_set_active_layer(index: int, scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         if index < 0 or index >= len(scene.layers):
             msg = f"layer index must be within 0..{len(scene.layers) - 1}"
             raise ValueError(msg)
@@ -212,7 +212,7 @@ def voxelforge_preview(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         return server.summary(scene)
 
 
@@ -240,7 +240,7 @@ def voxelforge_get_info(scene_name: str = "") -> str:
     Read-only: it does not modify the scene and announces no ``scene_update``.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         return json.dumps(scene.to_dict(), ensure_ascii=False, indent=2)
 
 
@@ -264,7 +264,7 @@ def voxelforge_merge_stats(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         stats = server.merge_stats(scene)
         return (
             f"Scene '{scene.name}':\n"
@@ -296,7 +296,7 @@ def voxelforge_set_voxel_size(size: float, scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         scene.voxel_size = max(0.05, min(2.0, float(size)))
         server._sync_bridge(scene)
         return f"set voxel_size={scene.voxel_size} in '{scene.name}'"

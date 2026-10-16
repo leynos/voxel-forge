@@ -87,7 +87,7 @@ def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     """
     blocks = server._parse_blocks_json(blocks_json)
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         for _x, _y, _z, color in blocks:
             scene.resolve_color(color)
         for x, y, z, color in blocks:
@@ -148,7 +148,7 @@ def voxelforge_fill_box(  # ruff: ignore[too-many-arguments, too-many-positional
     the scene.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         volume = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1) * (abs(z2 - z1) + 1)
         if volume > server.MAX_TOOL_VOXELS:
             msg = (
@@ -192,7 +192,7 @@ def voxelforge_remove_block(x: int, y: int, z: int, scene_name: str = "") -> str
     the scene did not change.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         ok = scene.remove(x, y, z)
         if ok:
             server._sync_bridge(scene)
@@ -220,7 +220,7 @@ def voxelforge_clear(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.store.get(scene_name or None)
+        scene = server.resolve_scene(scene_name)
         scene.clear()
         server._sync_bridge(scene)
         return f"cleared scene '{scene.name}'"

@@ -23,6 +23,7 @@ from readiness_helpers import child_chunks
 
 from voxel_forge import scene_store, server
 from voxel_forge.model import SceneStore, VoxelScene
+from voxel_forge.model_validation import NoCurrentSceneError, UnknownSceneError
 from voxel_forge.vox_io import export_vox, import_vox
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -110,32 +111,43 @@ def test_store_select_requires_a_registered_scene() -> None:
     selected = store.select("original")
 
     assert selected is store.get(), "select must make the named scene current"
-    with pytest.raises(KeyError, match="not loaded in this session"):
+    with pytest.raises(UnknownSceneError):
         store.select("never-created")
 
 
 def test_get_distinguishes_absent_scene_from_unregistered_name() -> None:
     """A missing current scene and a bad name need different remedies.
 
-    Both failures raise ``KeyError`` from the same method, so the message is
-    the only thing telling a caller which happened. Reporting "call
-    voxelforge_create_scene first" for a named lookup that missed sends a
-    caller who already created a scene to create another one, instead of
-    loading the saved scene they asked for or correcting the name.
+    The registry reports the two as distinct types rather than distinct
+    messages, so a caller branches on the type instead of matching message
+    text. That keeps the recovery wording -- which names MCP tools, and so
+    belongs to the MCP adapter -- out of the domain model.
+
+    Both types still derive from ``KeyError``, so the pre-existing contract for
+    any caller that only needs "there is no scene" is unchanged.
     """
     empty = SceneStore()
-    with pytest.raises(KeyError, match="create_scene"):
+    with pytest.raises(NoCurrentSceneError):
         empty.get()
 
     populated = SceneStore()
     populated.create("present")
-    with pytest.raises(KeyError, match="not loaded in this session") as caught:
+    with pytest.raises(UnknownSceneError) as caught:
         populated.get("absent")
 
-    message = str(caught.value)
-    assert "absent" in message, "the message must name the scene that was missing"
-    assert "voxelforge_load" in message, (
-        "a named miss must point at loading a saved scene"
+    assert "absent" in caught.value.args[0], (
+        "the domain message must still name the scene that was missing, so the "
+        "failure is diagnosable from a log"
+    )
+    assert issubclass(NoCurrentSceneError, KeyError), (
+        "the narrower types must keep the KeyError contract callers already catch"
+    )
+    assert issubclass(UnknownSceneError, KeyError), (
+        "the narrower types must keep the KeyError contract callers already catch"
+    )
+    assert not issubclass(UnknownSceneError, NoCurrentSceneError), (
+        "the two failures must stay distinguishable, or the adapter cannot give "
+        "each its own remedy"
     )
 
 

@@ -46,6 +46,41 @@ class InvalidSceneDataError(ValueError):
     """
 
 
+class NoCurrentSceneError(KeyError):
+    """No scene is current in this session.
+
+    A domain condition, distinct from :class:`UnknownSceneError`: the caller
+    named nothing and nothing was current. Both are ``KeyError`` so existing
+    callers keep working, but they are separate types so the adapter can give
+    each its own recovery instruction instead of inferring intent from a
+    message string.
+
+    The message is deliberately transport-neutral. Naming an MCP tool here
+    would make the domain model depend on the tool surface, which is the
+    adapter's concern; ``resolve_scene`` in ``server`` attaches the
+    caller-facing wording.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("no scene is current in this session")
+
+
+class UnknownSceneError(KeyError):
+    """A named scene is not registered in this session.
+
+    Separate from :class:`NoCurrentSceneError` because a caller who named a
+    scene has already created one and needs a different remedy: load a saved
+    scene, or correct the name. ``select`` raises this too, since a selection
+    target is named.
+
+    The name is carried in the message so the failure is diagnosable from a
+    log, where no adapter has translated it yet.
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"scene '{name}' is not registered")
+
+
 def validate_scene_name(name: str) -> str:
     """Validate a scene name for use as a cross-platform filename component.
 
