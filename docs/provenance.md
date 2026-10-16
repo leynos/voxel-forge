@@ -42,24 +42,38 @@ without leaving this checkout:
    repository's history therefore begins as upstream's published history and
    adds to it; no separately authored body of code is joined in.
 3. **No C, C++, Rust, or Go source file exists anywhere in that history.**
-   Running this returns no matches:
+   This is checked by enumerating every filename suffix the history contains,
+   rather than by naming the suffixes each language "usually" uses — a list
+   that is easy to get subtly wrong. Running:
 
    ```sh
-   git log --all --format= --name-only | sort -u | grep -Ei '\.(c|h|cpp|hpp|cc|rs|go)$'
+   git log --all --format= --name-only | sort -u | grep -oE '\.[^./]+$' | sort -u
    ```
 
-   Read the result as an empty match list, not as a success exit status: with
-   no matches `grep` exits 1, which here means the audit found nothing to
-   report, not that the audit failed. Run it on a full (non-shallow) clone,
-   because `git log --all` reports only the commits actually fetched.
-   `git ls-files` is not a substitute: it sees just the current index and would
-   miss source deleted in an earlier commit.
+   reports fifteen suffixes and no others:
 
-   The command covers the extensions listed above. It is not a general sweep
-   for compiled languages, which would need a wider expression (`.cs`, `.java`,
-   `.swift`, `.zig`, and others). For the claim at hand the narrower check is
-   sufficient, because a fork of Goxel would have to carry Goxel's C sources,
-   and no `.c` or `.h` file appears in any fetched commit.
+   ```text
+   .bat .gitignore .html .json .jsonc .lock .md .mjs .py .spec .toml .ts
+   .txt .yaml .yml
+   ```
+
+   Those account for 126 of the 128 paths in history; the remainder are
+   `LICENSE` and `Makefile`, which carry no suffix. The enumeration therefore
+   leaves nothing over, so a `.c`, `.h`, `.cpp`, `.hpp`, `.cc`, `.rs`, `.go`,
+   `.cxx`, `.hh`, or `.hxx` file would have to appear in that list to exist.
+   None does. The same fact can be asked as a query instead:
+
+   ```sh
+   git log --all --format= --name-only | sort -u |
+     grep -Ei '\.(c|h|cpp|cxx|cc|c\+\+|hpp|hxx|hh|h\+\+|rs|go)$'
+   ```
+
+   Read that as an empty match list, not as a success exit status: with no
+   matches `grep` exits 1, which here means the audit found nothing to report,
+   not that the audit failed. Run both on a full (non-shallow) clone, because
+   `git log --all` reports only the commits actually fetched. `git ls-files` is
+   not a substitute: it sees just the current index and would miss source
+   deleted in an earlier commit.
 4. **Every Goxel reference in this repository is descriptive.** "Goxel" appears
    only in format and attribution contexts — for example `vox_io.py`'s
    "Goxel-compatible format" and `__init__.py`'s "Goxel-inspired". None refers

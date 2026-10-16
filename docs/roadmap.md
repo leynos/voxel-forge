@@ -227,8 +227,9 @@ format.
     without reading Thai and without taking the claim on trust.
   - Evidence route: `docs/provenance.md` carries a source-history audit the
     reader can reproduce in the checkout — upstream's own authorship
-    statement, a root commit byte-identical to upstream's `main`, no C, C++,
-    Rust, or Go source file in any fetched commit, and Goxel references limited
+    statement, a root commit byte-identical to upstream's `main`, an
+    enumeration of every filename suffix in the history that shows no C, C++,
+    Rust, or Go source in any fetched commit, and Goxel references limited
     to format and attribution contexts. The format-conformance tests are
     labelled as conformance evidence only, since a translated implementation
     would pass them too. The audit's limit is stated: it cannot prove the
