@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from voxel_forge import server
-from voxel_forge.scene_errors import SceneOperation
+from voxel_forge.scene_boundary import SceneOperation
 
 from .edit import voxelforge_clear as voxelforge_clear
 from .edit import voxelforge_fill_box as voxelforge_fill_box
@@ -225,9 +225,10 @@ def voxelforge_preview(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(
-            server.store, scene_name, operation=SceneOperation.PREVIEW
-        )
+        # A read calls the quiet query path, not ``resolve_scene``: a failed
+        # query must not emit an operational log record or publish a scene
+        # update, but the caller still gets the same recovery wording.
+        scene = server.query_scene(server.store, scene_name)
         return server.summary(scene)
 
 
@@ -255,9 +256,8 @@ def voxelforge_get_info(scene_name: str = "") -> str:
     Read-only: it does not modify the scene and announces no ``scene_update``.
     """
     with server.store.lock:
-        scene = server.resolve_scene(
-            server.store, scene_name, operation=SceneOperation.GET_INFO
-        )
+        # A read calls the quiet query path; see ``voxelforge_preview``.
+        scene = server.query_scene(server.store, scene_name)
         return json.dumps(scene.to_dict(), ensure_ascii=False, indent=2)
 
 
@@ -281,9 +281,8 @@ def voxelforge_merge_stats(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(
-            server.store, scene_name, operation=SceneOperation.MERGE_STATS
-        )
+        # A read calls the quiet query path; see ``voxelforge_preview``.
+        scene = server.query_scene(server.store, scene_name)
         stats = server.merge_stats(scene)
         return (
             f"Scene '{scene.name}':\n"

@@ -111,8 +111,15 @@ def test_store_select_requires_a_registered_scene() -> None:
     selected = store.select("original")
 
     assert selected is store.get(), "select must make the named scene current"
-    with pytest.raises(UnknownSceneError):
+    with pytest.raises(UnknownSceneError) as caught:
         store.select("never-created")
+
+    assert caught.value.name == "never-created", (
+        "select must report the name it was asked for, not the current scene's"
+    )
+    assert caught.value.args[0] == (
+        "scene 'never-created' is not registered in this session"
+    ), "the select failure must use the same transport-neutral message as get"
 
 
 def test_get_distinguishes_absent_scene_from_unregistered_name() -> None:
@@ -135,9 +142,14 @@ def test_get_distinguishes_absent_scene_from_unregistered_name() -> None:
     with pytest.raises(UnknownSceneError) as caught:
         populated.get("absent")
 
-    assert "absent" in caught.value.args[0], (
-        "the domain message must still name the scene that was missing, so the "
-        "failure is diagnosable from a log"
+    assert caught.value.name == "absent", (
+        "the failure must carry the missing name as data, not only inside prose"
+    )
+    assert caught.value.args[0] == (
+        "scene 'absent' is not registered in this session"
+    ), (
+        "the domain message must be transport-neutral and still name the scene, "
+        "so the failure is diagnosable from a log"
     )
     assert issubclass(NoCurrentSceneError, KeyError), (
         "the narrower types must keep the KeyError contract callers already catch"
@@ -325,4 +337,47 @@ def test_the_domain_errors_live_in_their_own_module() -> None:
     assert scene_errors.UnknownSceneError is UnknownSceneError, (
         "the re-export must be the same class, or a caller's except clause "
         "would miss it"
+    )
+
+
+def test_the_domain_error_module_names_no_adapter_concept() -> None:
+    """The error module must describe conditions, not the tool surface.
+
+    ``SceneOperation`` started life beside the errors, which quietly made the
+    domain depend on MCP tool names, log fields and the lookup function. The
+    module now holds the two conditions alone, and the operations live in
+    ``scene_boundary``. The attribute check is what keeps a future "just put it
+    back, it's nearly the same thing" from undoing the split; the source check
+    catches a re-export, which an attribute test would miss because the name
+    would still be absent only until someone added the import.
+    """
+    import ast
+    import inspect
+
+    from voxel_forge import scene_errors
+
+    assert not hasattr(scene_errors, "SceneOperation"), (
+        "the operation set is adapter knowledge; it belongs in scene_boundary"
+    )
+
+    # The docstring may *say* the module is free of adapter concerns; what
+    # matters is that nothing is imported or defined that drags one in. An AST
+    # check distinguishes the explanation from the dependency, which a text
+    # search cannot.
+    tree = ast.parse(inspect.getsource(scene_errors))
+    imported = {
+        alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        (node.module or "").split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert "logging" not in imported, (
+        "logging is the adapter's side-effect, not a domain concern"
+    )
+    assert "scene_boundary" not in imported, (
+        "the domain must not depend on the adapter that consumes it"
     )

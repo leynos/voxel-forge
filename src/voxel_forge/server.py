@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import json
-import logging
 import typing as typ
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
+
+    # Annotates the ``operation`` parameter only; every call site imports the
+    # enum from ``scene_boundary`` itself, so no runtime name is needed here.
+    from .scene_boundary import SceneOperation
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -27,8 +30,9 @@ from .paths import exports_dir as _exports_dir
 from .preview import summary as summary
 from .procedural import build_chibi_bear as build_chibi_bear
 from .procedural import build_tree as build_tree
+from .scene_boundary import query_scene as query_scene
+from .scene_boundary import resolve_scene as resolve_scene
 from .scene_errors import NoCurrentSceneError as NoCurrentSceneError
-from .scene_errors import SceneOperation
 from .scene_errors import UnknownSceneError as UnknownSceneError
 from .scene_store import list_saved_scenes as list_saved_scenes
 from .scene_store import load_scene as load_scene
@@ -54,13 +58,11 @@ store = SceneStore()
 # Scene-lookup failures reach a caller as a recovery message, which is the
 # right thing for the caller and invisible to whoever operates the server: a
 # client retrying a mistyped name looks, from outside, exactly like an idle
-# server. These failures are logged at the boundary where the domain type is
-# still known, so the two categories are distinguishable in a log without
-# parsing the translated message -- and before ``resolve_scene`` replaces the
-# message with wording that names an MCP tool. The scene name is not logged:
-# it is caller data, and the category plus the operation is what a maintainer
-# needs to see whether one tool or all of them are failing.
-_LOG = logging.getLogger(__name__)
+# server. ``scene_boundary`` logs those failures under its own logger; the
+# transaction is written there rather than here because that is where the
+# domain type is still known. The scene name is not logged: it is caller data,
+# and the category plus the operation is what a maintainer needs to see whether
+# one tool or all of them are failing.
 MAX_TOOL_VOXELS: int = 100_000
 # Bounds the raw request before json.loads materialises it. At the limit above a
 # well-formed payload is about 2.5 million characters, so this leaves room for
@@ -153,72 +155,6 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
             raise InvalidSceneDataError(msg)
         out.append((int(row[0]), int(row[1]), int(row[2]), str(row[3])))
     return out
-
-
-def resolve_scene(
-    scene_store: SceneStore,
-    scene_name: str = "",
-    *,
-    operation: SceneOperation,
-) -> VoxelScene:
-    """Return a registered scene, wording a lookup failure as a recovery step.
-
-    This is where the domain's transport-neutral errors become the caller-facing
-    instruction an MCP client reads and acts on, which is why it lives in the
-    adapter rather than in ``SceneStore``. The two failures need different
-    remedies and are distinct domain types, so the branch is on type rather than
-    on matching message text: a session with no scene at all is told to create
-    one, while a caller who named a scene has already created one and is directed
-    to load a saved scene or correct the name.
-
-    ``scene_store`` is supplied by the caller rather than read from a module
-    global. The store is the dependency this translation drives, so passing it
-    makes the translation testable against a store of its own and keeps the
-    function independent of whichever instance the process happens to hold.
-    Tool modules pass ``server.store``, so the process still has exactly one.
-
-    ``operation`` is keyword-only and required: a lookup that cannot say what
-    asked for the scene would log a failure nobody can act on. It comes from
-    the closed set in :class:`~voxel_forge.scene_errors.SceneOperation`, so the
-    value reaches the log as a known label rather than as free text.
-
-    Parameters
-    ----------
-    scene_store : SceneStore
-        The registry to read, supplied by the caller.
-    scene_name : str, optional
-        Name of the target scene; empty means the current scene.
-    operation : SceneOperation
-        What the caller was doing, for the failure record.
-
-    Returns
-    -------
-    VoxelScene
-        The requested scene.
-
-    Raises
-    ------
-    KeyError
-        If no scene is current, or the named scene is not registered. The
-        message names the tool to call next.
-    """
-    try:
-        return scene_store.get(scene_name or None)
-    except NoCurrentSceneError as exc:
-        _LOG.info(
-            "scene lookup failed operation=%s category=no_current_scene", operation
-        )
-        msg = "no scene yet — call voxelforge_create_scene first"
-        raise KeyError(msg) from exc
-    except UnknownSceneError as exc:
-        _LOG.info("scene lookup failed operation=%s category=unknown_scene", operation)
-        missing = scene_name
-        msg = (
-            f"scene '{missing}' is not loaded in this session — call "
-            "voxelforge_load for a saved scene, or use the name of an "
-            "existing session scene"
-        )
-        raise KeyError(msg) from exc
 
 
 @contextlib.contextmanager

@@ -20,7 +20,7 @@ from voxel_forge.orchestration import (
     stop_editor_process,
     supervise,
 )
-from voxel_forge.scene_errors import SceneOperation
+from voxel_forge.scene_boundary import SceneOperation
 
 _LOG = logging.getLogger(__name__)
 

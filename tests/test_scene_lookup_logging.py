@@ -11,9 +11,14 @@ The label is a ``SceneOperation`` member passed by the call site, which means
 it is exactly the kind of thing a new tool forgets: the code still works, the
 recovery message is still right, and only the log is wrong. These tests drive
 every advertised tool that resolves a scene through the adapter and require
-each one to name its own operation, then assert that the tools driven and the
-tools advertised are the same set -- in both directions, so a tool added
+each command to name its own operation, then assert that the tools driven and
+the tools advertised are the same set -- in both directions, so a tool added
 without a row here fails rather than escaping the check.
+
+The reads are the exception, and are driven separately: ``preview``,
+``get_info`` and ``merge_stats`` call ``query_scene``, which raises the
+domain error without logging or publishing. A read is therefore asserted to
+leave no record and no publication, on both its failure and its success paths.
 
 Run with ``uv run pytest -q``. Tools are driven as functions rather than over
 the wire: this is about the adapter's record, and the protocol adds nothing to
@@ -22,6 +27,7 @@ it.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import typing as typ
 
@@ -29,7 +35,7 @@ import pytest
 from mcp_wire_helpers import fetch_tools
 
 from voxel_forge import server
-from voxel_forge.scene_errors import SceneOperation
+from voxel_forge.scene_boundary import SceneOperation
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -51,10 +57,17 @@ _ABSENT = "absent"
 # in ``conftest.py``; the fixture is what creates it.
 _SCENE = "house"
 
-# Every tool that resolves a scene through ``resolve_scene``, with the label
-# its call site passes. The mapping is a specification, not a sample: the test
-# below fails if the published tool surface grows a scene lookup without a row.
-_OPERATIONS: dict[str, tuple[SceneOperation, cabc.Callable[[], str]]] = {
+# The logger the adapter records under. It is ``scene_boundary``'s module
+# logger, not ``voxel_forge.server``: the record is written where the domain
+# type is still known, and scoping ``caplog`` to the same name is what makes a
+# record from another module fail the assertion instead of padding it.
+_LOGGER = "voxel_forge.scene_boundary"
+
+# Every *command* that resolves a scene through ``resolve_scene``, with the
+# label its call site passes. The mapping is a specification, not a sample: the
+# test below fails if the published tool surface grows a scene-lookup command
+# without a row.
+_OPERATIONS: dict[str, tuple[SceneOperation, cabc.Callable[[], object]]] = {
     "voxelforge_select_scene": (
         SceneOperation.SELECT,
         lambda: server.voxelforge_select_scene(_ABSENT),
@@ -74,18 +87,6 @@ _OPERATIONS: dict[str, tuple[SceneOperation, cabc.Callable[[], str]]] = {
     "voxelforge_set_voxel_size": (
         SceneOperation.SET_VOXEL_SIZE,
         lambda: server.voxelforge_set_voxel_size(0.5, _ABSENT),
-    ),
-    "voxelforge_preview": (
-        SceneOperation.PREVIEW,
-        lambda: server.voxelforge_preview(_ABSENT),
-    ),
-    "voxelforge_get_info": (
-        SceneOperation.GET_INFO,
-        lambda: server.voxelforge_get_info(_ABSENT),
-    ),
-    "voxelforge_merge_stats": (
-        SceneOperation.MERGE_STATS,
-        lambda: server.voxelforge_merge_stats(_ABSENT),
     ),
     "voxelforge_place_block": (
         SceneOperation.PLACE_BLOCK,
@@ -129,6 +130,16 @@ _OPERATIONS: dict[str, tuple[SceneOperation, cabc.Callable[[], str]]] = {
     ),
 }
 
+# The read-only tools, which reach the scene through ``query_scene`` and so
+# must never log or publish. They are listed apart from ``_OPERATIONS`` because
+# the two groups have opposite contracts; the coverage test below requires the
+# union to be exactly the scene-resolving surface.
+_QUERY_TOOLS: dict[str, cabc.Callable[[], str]] = {
+    "voxelforge_preview": lambda: server.voxelforge_preview(_ABSENT),
+    "voxelforge_get_info": lambda: server.voxelforge_get_info(_ABSENT),
+    "voxelforge_merge_stats": lambda: server.voxelforge_merge_stats(_ABSENT),
+}
+
 
 class _ToolCall(typ.NamedTuple):
     """One tool and the call a test makes to it.
@@ -139,7 +150,19 @@ class _ToolCall(typ.NamedTuple):
     """
 
     tool: str
-    call: cabc.Callable[[], str]
+    call: cabc.Callable[[], object]
+
+
+class _QueryCase(typ.NamedTuple):
+    """One read-only tool, its call, and whether that call must fail.
+
+    ``raises`` is data rather than a fixture parameter so the two query tests
+    can share :func:`_drive_query` and still drive opposite branches.
+    """
+
+    tool: str
+    call: cabc.Callable[[], object]
+    raises: bool
 
 
 @pytest.mark.parametrize(
@@ -149,7 +172,7 @@ class _ToolCall(typ.NamedTuple):
         for name, (operation, call) in _OPERATIONS.items()
     ],
 )
-def test_each_scene_tool_logs_its_own_operation(
+def test_each_scene_command_logs_its_own_operation(
     scene_store: SceneStore,
     caplog: pytest.LogCaptureFixture,
     case: _ToolCall,
@@ -169,7 +192,7 @@ def test_each_scene_tool_logs_its_own_operation(
     about what reached the log.
     """
     with (
-        caplog.at_level(logging.INFO, logger="voxel_forge.server"),
+        caplog.at_level(logging.INFO, logger=_LOGGER),
         pytest.raises(KeyError),
     ):
         case.call()
@@ -182,50 +205,34 @@ def test_each_scene_tool_logs_its_own_operation(
     )
 
 
-@pytest.mark.parametrize(
-    "case",
-    [
-        pytest.param(_ToolCall(name, call), id=name)
-        for name, call in (
-            ("voxelforge_preview", lambda: server.voxelforge_preview(_SCENE)),
-            ("voxelforge_get_info", lambda: server.voxelforge_get_info(_SCENE)),
-            ("voxelforge_merge_stats", lambda: server.voxelforge_merge_stats(_SCENE)),
-        )
-    ],
-)
-def test_a_successful_query_neither_logs_nor_publishes(
-    scene_store: SceneStore,
+def _drive_query(
+    case: _QueryCase,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
-    case: _ToolCall,
 ) -> None:
-    """A read that succeeds must leave no operational trace at the adapter.
+    """Drive one read-only tool and assert it left no operational trace.
 
-    ``resolve_scene`` sits in the path of three read-only tools as well as the
-    editing ones, and a lookup that succeeds returns the scene without logging
-    anything. That is the property that keeps the failure record meaningful: if
-    the adapter logged on success too, a query would be indistinguishable from
-    a command in the log, and a maintainer could no longer read the line as
-    "this lookup failed".
+    Both directions of the query contract end in the same two assertions, so
+    they live here: a guard that silenced only the failing branch would pass
+    one test and fail the other, and the difference between the two tests is
+    only which branch they drive.
 
-    The bridge publisher is stubbed to record calls, so this also pins that a
-    read does not announce a scene update. Together the two assertions are the
-    command/query boundary the finding asked for: a query must not perform the
-    command-side effects of logging and publishing.
+    The publisher is stubbed to record its calls, which is what makes "a read
+    does not announce a scene update" observable rather than merely unasserted.
     """
     published: list[object] = []
     monkeypatch.setattr(server, "_sync_bridge", published.append)
+    failure = pytest.raises(KeyError) if case.raises else contextlib.nullcontext()
 
-    with caplog.at_level(logging.INFO, logger="voxel_forge.server"):
+    with caplog.at_level(logging.INFO, logger=_LOGGER), failure:
         case.call()
 
     messages = [
-        record.getMessage()
-        for record in caplog.records
-        if record.name == "voxel_forge.server"
+        record.getMessage() for record in caplog.records if record.name == _LOGGER
     ]
+    outcome = "failed" if case.raises else "successful"
     assert not messages, (
-        f"{case.tool} is a query; a successful lookup must log nothing, got {messages}"
+        f"{case.tool} is a query; a {outcome} lookup must log nothing, got {messages}"
     )
     assert not published, (
         f"{case.tool} is a query; it must not announce a scene update, but "
@@ -233,14 +240,60 @@ def test_a_successful_query_neither_logs_nor_publishes(
     )
 
 
+@pytest.mark.parametrize(
+    "case",
+    [
+        *(
+            pytest.param(_QueryCase(name, call, raises=True), id=f"{name}-failed")
+            for name, call in _QUERY_TOOLS.items()
+        ),
+        *(
+            pytest.param(_QueryCase(name, call, raises=False), id=f"{name}-succeeds")
+            for name, call in (
+                ("voxelforge_preview", lambda: server.voxelforge_preview(_SCENE)),
+                ("voxelforge_get_info", lambda: server.voxelforge_get_info(_SCENE)),
+                (
+                    "voxelforge_merge_stats",
+                    lambda: server.voxelforge_merge_stats(_SCENE),
+                ),
+            )
+        ),
+    ],
+)
+def test_a_query_neither_logs_nor_publishes(
+    scene_store: SceneStore,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    case: _QueryCase,
+) -> None:
+    """A read must stay a query on both its branches.
+
+    ``preview``, ``get_info`` and ``merge_stats`` all need the scene, and all
+    three are reads. Routing them through the command-side ``resolve_scene``
+    would make a lookup failure emit an operational record and, worse, put a
+    publication policy in a query path. These tools call ``query_scene``
+    instead, which lets the domain error propagate untouched.
+
+    Both branches are driven deliberately: a guard that silenced only the
+    failure branch would pass half the table and miss the read that wrongly
+    announces itself on success, which is the branch a caller reaches in normal
+    use.
+    """
+    _drive_query(case, caplog, monkeypatch)
+
+
 def test_every_advertised_scene_tool_is_driven_here() -> None:
-    """The table above must cover the tools that actually resolve a scene.
+    """The tables above must cover the tools that actually resolve a scene.
 
     A row per tool is not enough: a new tool could be added to the server and
     resolve its scene without ever appearing here, and every test in this
     module would still pass. The reverse direction catches a stale row -- one
     naming a tool the server no longer publishes -- which would otherwise
     keep passing against a function nobody can call.
+
+    Commands and queries are covered together, in both directions: a read moved
+    onto the command path (or the reverse) would otherwise drop out of the
+    checked set silently, and the two groups have opposite contracts.
 
     The advertised set is the whole tool surface, which is larger than the set
     of scene-resolving tools. Tools that take no scene (``create_scene``,
@@ -263,9 +316,10 @@ def test_every_advertised_scene_tool_is_driven_here() -> None:
         "voxelforge_load",
     }
     expected = advertised - scene_independent
+    covered = set(_OPERATIONS) | set(_QUERY_TOOLS)
 
-    assert set(_OPERATIONS) == expected, (
-        "the operation table must name exactly the tools that resolve a scene; "
-        f"missing from the table: {sorted(expected - set(_OPERATIONS))}; "
-        f"not published: {sorted(set(_OPERATIONS) - advertised)}"
+    assert covered == expected, (
+        "the operation tables must name exactly the tools that resolve a scene; "
+        f"missing from the tables: {sorted(expected - covered)}; "
+        f"not published: {sorted(covered - advertised)}"
     )

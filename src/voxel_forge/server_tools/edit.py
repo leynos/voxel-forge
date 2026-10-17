@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from voxel_forge import server
-from voxel_forge.scene_errors import SceneOperation
+from voxel_forge.scene_boundary import SceneOperation
 
 
 @server.mcp.tool()

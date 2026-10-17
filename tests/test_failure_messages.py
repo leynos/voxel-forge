@@ -37,7 +37,12 @@ if typ.TYPE_CHECKING:
     # parameters. Both fixtures hand back the store they built, so no test in
     # this module constructs one itself and the import never runs.
     from voxel_forge.model import SceneStore
-from voxel_forge.scene_errors import SceneOperation
+from voxel_forge.scene_boundary import SceneOperation
+
+# The logger the adapter records under. It is ``scene_boundary``'s module
+# logger, not ``voxel_forge.server``: the record is written where the domain
+# type is still known.
+_LOGGER = "voxel_forge.scene_boundary"
 
 _SCENE = "house"
 
@@ -326,7 +331,7 @@ def test_each_lookup_failure_is_logged_under_its_own_category(
         empty_server_store.create(case.existing_scene)
 
     with (
-        caplog.at_level(logging.INFO, logger="voxel_forge.server"),
+        caplog.at_level(logging.INFO, logger=_LOGGER),
         pytest.raises(KeyError),
     ):
         server.resolve_scene(
