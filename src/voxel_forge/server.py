@@ -30,7 +30,7 @@ from .paths import exports_dir as _exports_dir
 from .preview import summary as summary
 from .procedural import build_chibi_bear as build_chibi_bear
 from .procedural import build_tree as build_tree
-from .scene_boundary import query_scene as query_scene
+from .scene_boundary import lookup_scene as lookup_scene
 from .scene_boundary import resolve_scene as resolve_scene
 from .scene_errors import NoCurrentSceneError as NoCurrentSceneError
 from .scene_errors import UnknownSceneError as UnknownSceneError
@@ -58,11 +58,11 @@ store = SceneStore()
 # Scene-lookup failures reach a caller as a recovery message, which is the
 # right thing for the caller and invisible to whoever operates the server: a
 # client retrying a mistyped name looks, from outside, exactly like an idle
-# server. ``scene_boundary`` logs those failures under its own logger; the
-# transaction is written there rather than here because that is where the
-# domain type is still known. The scene name is not logged: it is caller data,
-# and the category plus the operation is what a maintainer needs to see whether
-# one tool or all of them are failing.
+# server. The command path logs those failures in ``scene_boundary``, under
+# its own logger; the record is written there rather than here because that is
+# where the domain type is still known. The scene name is not logged: it is
+# caller data, and the category plus the operation is what a maintainer needs
+# to see whether one tool or all of them are failing.
 MAX_TOOL_VOXELS: int = 100_000
 # Bounds the raw request before json.loads materialises it. At the limit above a
 # well-formed payload is about 2.5 million characters, so this leaves room for

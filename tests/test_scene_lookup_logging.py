@@ -15,10 +15,12 @@ each command to name its own operation, then assert that the tools driven and
 the tools advertised are the same set -- in both directions, so a tool added
 without a row here fails rather than escaping the check.
 
-The reads are the exception, and are driven separately: ``preview``,
-``get_info`` and ``merge_stats`` call ``query_scene``, which raises the
-domain error without logging or publishing. A read is therefore asserted to
-leave no record and no publication, on both its failure and its success paths.
+The reads are the exception, and are driven separately. Their handler calls
+``lookup_scene`` and returns; the typed domain error crosses the handler
+unchanged, and the registration decorator ``recover_lookup_failures`` is what
+words it for the client. A read is therefore asserted to leave no record and
+no publication on both its failure and its success paths, and -- at the
+boundary -- to word both lookup failures as distinct recovery instructions.
 
 Run with ``uv run pytest -q``. Tools are driven as functions rather than over
 the wire: this is about the adapter's record, and the protocol adds nothing to
@@ -28,6 +30,7 @@ it.
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import typing as typ
 
@@ -130,14 +133,14 @@ _OPERATIONS: dict[str, tuple[SceneOperation, cabc.Callable[[], object]]] = {
     ),
 }
 
-# The read-only tools, which reach the scene through ``query_scene`` and so
+# The read-only tools, which reach the scene through ``lookup_scene`` and so
 # must never log or publish. They are listed apart from ``_OPERATIONS`` because
 # the two groups have opposite contracts; the coverage test below requires the
 # union to be exactly the scene-resolving surface.
-_QUERY_TOOLS: dict[str, cabc.Callable[[], str]] = {
-    "voxelforge_preview": lambda: server.voxelforge_preview(_ABSENT),
-    "voxelforge_get_info": lambda: server.voxelforge_get_info(_ABSENT),
-    "voxelforge_merge_stats": lambda: server.voxelforge_merge_stats(_ABSENT),
+_QUERY_TOOLS: dict[str, cabc.Callable[..., str]] = {
+    "voxelforge_preview": server.voxelforge_preview,
+    "voxelforge_get_info": server.voxelforge_get_info,
+    "voxelforge_merge_stats": server.voxelforge_merge_stats,
 }
 
 
@@ -156,13 +159,16 @@ class _ToolCall(typ.NamedTuple):
 class _QueryCase(typ.NamedTuple):
     """One read-only tool, its call, and whether that call must fail.
 
-    ``raises`` is data rather than a fixture parameter so the two query tests
-    can share :func:`_drive_query` and still drive opposite branches.
+    ``raises`` and ``empty`` are data rather than fixture parameters so one
+    parametrized test can drive every branch and still assert the same
+    no-log, no-publication contract. ``empty`` selects the fixture state: a
+    session with no scene at all, versus the shared one that has ``house``.
     """
 
     tool: str
     call: cabc.Callable[[], object]
     raises: bool
+    empty: bool = False
 
 
 @pytest.mark.parametrize(
@@ -240,45 +246,63 @@ def _drive_query(
     )
 
 
-@pytest.mark.parametrize(
-    "case",
-    [
-        *(
-            pytest.param(_QueryCase(name, call, raises=True), id=f"{name}-failed")
-            for name, call in _QUERY_TOOLS.items()
-        ),
-        *(
-            pytest.param(_QueryCase(name, call, raises=False), id=f"{name}-succeeds")
-            for name, call in (
-                ("voxelforge_preview", lambda: server.voxelforge_preview(_SCENE)),
-                ("voxelforge_get_info", lambda: server.voxelforge_get_info(_SCENE)),
-                (
-                    "voxelforge_merge_stats",
-                    lambda: server.voxelforge_merge_stats(_SCENE),
-                ),
-            )
-        ),
-    ],
-)
+def _query_cases() -> list[pytest.ParameterSet]:
+    """Build one row per read tool, branch, and scene argument.
+
+    Three branches are driven, and each has its own reason: the unknown name
+    is the mistyped-name path a caller reaches most often; the empty name is
+    the no-current-scene path, which words a different remedy; and the success
+    path is what a guard that silenced only failures would leave broken. The
+    scene argument is data rather than a separate call builder so the three
+    cannot drift apart.
+    """
+    return [
+        pytest.param(
+            _QueryCase(
+                tool,
+                functools.partial(function, scene_name),
+                raises,
+                empty=not scene_name,
+            ),
+            id=f"{tool}-{branch}",
+        )
+        for branch, scene_name, raises in (
+            ("unknown-scene", _ABSENT, True),
+            ("no-current-scene", "", True),
+            ("succeeds", _SCENE, False),
+        )
+        for tool, function in _QUERY_TOOLS.items()
+    ]
+
+
+@pytest.mark.parametrize("case", _query_cases())
 def test_a_query_neither_logs_nor_publishes(
-    scene_store: SceneStore,
+    empty_server_store: SceneStore,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
     case: _QueryCase,
 ) -> None:
-    """A read must stay a query on both its branches.
+    # The no-scene row needs an empty registry, and the other two need the
+    # shared scene. ``empty_server_store`` is requested directly and only
+    # populated when the row asks for it, so no row has to reach across
+    # fixtures for its precondition.
+    """A read must stay a query on every branch it can take.
 
     ``preview``, ``get_info`` and ``merge_stats`` all need the scene, and all
     three are reads. Routing them through the command-side ``resolve_scene``
     would make a lookup failure emit an operational record and, worse, put a
-    publication policy in a query path. These tools call ``query_scene``
-    instead, which lets the domain error propagate untouched.
+    publication policy in a query path. The handler calls ``lookup_scene``
+    instead, and the boundary decorator words the failure above it, so neither
+    the log nor the bridge hears from a read.
 
-    Both branches are driven deliberately: a guard that silenced only the
-    failure branch would pass half the table and miss the read that wrongly
+    Every branch is driven deliberately. A guard that silenced only the failure
+    branch would pass two-thirds of this table and miss the read that wrongly
     announces itself on success, which is the branch a caller reaches in normal
-    use.
+    use. The two failures are separate rows because they word different
+    remedies, and a decorator that collapsed them would leave one row passing.
     """
+    if not case.empty:
+        empty_server_store.create(_SCENE)
     _drive_query(case, caplog, monkeypatch)
 
 

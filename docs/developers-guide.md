@@ -67,20 +67,29 @@ one.
 The adapter side lives in `scene_boundary.py` and is split in three, because a
 query and a command have opposite contracts:
 
-- `scene_boundary.lookup_scene(store, scene_name)` reads the registry and lets
-  the domain error propagate untouched. No wording, no log, no publication.
-- `scene_boundary.query_scene(store, scene_name)` adds the caller-facing
-  wording but still records nothing and publishes nothing. `preview`,
-  `get_info` and `merge_stats` call this one (via `server.query_scene`), so a
-  read still answers a mistyped name the same way a command does, without
-  gaining a command's side-effects.
+- `scene_boundary.lookup_scene(store, scene_name)` is the read path. It reads
+  the registry and lets the typed domain error propagate untouched — no
+  wording, no log, no publication. `preview`, `get_info` and `merge_stats`
+  call it, via the `server.lookup_scene` re-export, and return the rendered
+  scene.
+- `scene_boundary.recovery_message(scene_name)` is the adapter's wording for a
+  failed lookup. It lives here rather than in `scene_errors.py` because it
+  names MCP tools.
+- `scene_boundary.recover_lookup_failures` is the read-tool registration
+  decorator. A read handler is a query; the decorator is the MCP boundary that
+  turns the typed failure into `recovery_message` at the point where the tool
+  is registered. The handler therefore contains no presentation policy, and
+  the wording is applied exactly once, above it. `functools.wraps` preserves
+  the signature the MCP schema is built from, so decoration changes the
+  failure wording and nothing about the tool's advertised parameters.
 - `scene_boundary.resolve_scene(store, scene_name, *, operation=...)` is the
   command-side adapter: it words the failure *and* writes the operational
   record. Every scene-mutating or scene-exporting tool calls it, through the
   `server.resolve_scene` re-export.
 
-The wording of the two remedies is shared through `_recovery_message`, so the
-instruction does not vary with the tool that surfaced the mistake.
+The wording of the two remedies is shared through `recovery_message`, so the
+instruction does not vary with the tool that surfaced the mistake — the
+decorator and the command path draw on the same function.
 
 Both translations branch on the exception **type** rather than on message
 content. The store is passed in rather than read from the module global so a
@@ -101,8 +110,12 @@ A tool that resolves a scene directly through `SceneStore.get` or
 `SceneStore.select` bypasses the recovery wording and will disagree with its
 neighbours — `voxelforge_select_scene` did exactly that until a test
 parametrized across ten tools caught it. The rule for a new tool is therefore
-narrow and testable: resolve targets through `server.resolve_scene`, and add a
-`SceneOperation` member for what the tool does.
+narrow and testable, and it depends on which side of the boundary the tool sits
+on. A scene-mutating or scene-exporting tool resolves through
+`server.resolve_scene` and adds a `SceneOperation` member for what it does. A
+read resolves through `server.lookup_scene` inside the handler and wears
+`@recover_lookup_failures` at registration; it adds no `SceneOperation`,
+because a query writes no operational record.
 
 The same boundary is where the failure is logged, for the reason above:
 `resolve_scene` still knows which domain type it caught, while the message it
@@ -121,15 +134,22 @@ The tests pin all of it. `tests/test_failure_messages.py` checks the recovery
 wording and the per-category log lines, and its
 `test_every_scene_name_tool_gives_the_same_lookup_remedy` asserts on the
 *message* across the tool set rather than on which helper a tool happens to
-call — which is why the query path shares `_recovery_message` with the command
-path. `tests/test_scene_lookup_logging.py` drives every advertised
-scene-resolving tool and requires each command to log its own `operation=`
-label; it also asserts set equality between the tools driven and the
-scene-resolving part of the advertised surface, in both directions, so a new
-tool cannot silently escape the check. The same module pins the query side of
-the boundary on both paths: `preview`, `get_info` and `merge_stats` must log
-nothing and publish no scene update whether the lookup *fails* or *succeeds*,
-so a query stays distinguishable from a command in the log.
+call — which is why the decorator and the command path share
+`recovery_message`. `tests/test_scene_lookup_logging.py` drives every
+advertised scene-resolving tool and requires each command to log its own
+`operation=` label; it also asserts set equality between the tools driven and
+the scene-resolving part of the advertised surface, in both directions, so a
+new tool cannot silently escape the check. The same module pins the query side
+of the boundary on three paths — an unknown name, a session with no scene, and
+a successful lookup: `preview`, `get_info` and `merge_stats` must log nothing
+and publish no scene update on any of them, so a query stays distinguishable
+from a command in the log. `tests/test_scene_query_boundary.py` covers the
+wording: two tests reach the handler through `functools.wraps` and assert that
+it raises the *typed* domain error, while the decorated tool words both
+failures as distinct recovery instructions. That pair is what keeps the layers
+honest: the handler knows the condition, and only the decorator knows the
+wording.
+
 `tests/test_model_readiness.py` pins the domain side: the exception types,
 their transport-neutral messages, and the `UnknownSceneError.name` attribute
 from both `get` and `select`.

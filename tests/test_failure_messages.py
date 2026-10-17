@@ -194,7 +194,7 @@ def test_scene_lookup_failures_give_the_matching_remedy(
 
     with pytest.raises(KeyError) as caught:
         server.resolve_scene(
-            empty_server_store, lookup, operation=SceneOperation.GET_INFO
+            empty_server_store, lookup, operation=SceneOperation.SELECT
         )
 
     assert caught.value.args[0] == expected, (
@@ -335,12 +335,12 @@ def test_each_lookup_failure_is_logged_under_its_own_category(
         pytest.raises(KeyError),
     ):
         server.resolve_scene(
-            empty_server_store, case.lookup, operation=SceneOperation.GET_INFO
+            empty_server_store, case.lookup, operation=SceneOperation.SELECT
         )
 
     messages = [record.getMessage() for record in caplog.records]
     assert (
-        f"scene lookup failed operation=get_info category={case.category}" in messages
+        f"scene lookup failed operation=select category={case.category}" in messages
     ), (
         f"a {case.category} lookup must be logged under its own category and "
         f"name the operation that asked; got {messages}"

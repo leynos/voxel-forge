@@ -10,18 +10,28 @@ registered; those are domain conditions and live in ``scene_errors``. What a
 client should *do* about it, and what the log should say, depends on which tool
 asked -- that is adapter policy, so it lives here.
 
-Three functions form the boundary, and the ordering is the contract:
+The boundary has a query side and a command side, and the difference is the
+point:
 
 ``lookup_scene``
-    Reads the registry and lets the domain error propagate. No wording, no
-    log, no publication.
-``query_scene``
-    Adds the caller-facing wording for a read. Still no log and no
-    publication, so ``preview``, ``get_info`` and ``merge_stats`` cannot gain
-    a command's side-effects.
+    The read path. Reads the registry and lets the typed, transport-neutral
+    domain error propagate. No wording, no log, no publication.
+``recovery_message``
+    The adapter's wording for a failed lookup, kept out of the domain module
+    because it names MCP tools.
+``recover_lookup_failures``
+    The read-tool registration decorator. A read's body calls
+    ``lookup_scene`` and renders its result; the decorator is what turns the
+    typed failure into :func:`recovery_message` at the client boundary. The
+    read handler therefore contains no presentation policy at all, and the
+    wording is applied exactly once, in one place.
 ``resolve_scene``
-    The command path: words the failure *and* records it. Every scene-mutating
-    or scene-exporting tool calls this.
+    The command path, where the failure must also be recorded: it words the
+    error *and* logs the operation. Every scene-mutating or scene-exporting
+    tool calls this.
+
+The helpers take the store as a parameter rather than reading a module global,
+so the translation is testable against a store of its own.
 
 :class:`SceneOperation` is a ``StrEnum`` so a log field, a dictionary key, and
 a test comparison all read the same literal, and so an unlisted operation
@@ -34,16 +44,23 @@ name the *kind of work* rather than the tool name, so a log line reads
 from __future__ import annotations
 
 import enum
+import functools
+import inspect
 import logging
 import typing as typ
 
 from .scene_errors import NoCurrentSceneError, UnknownSceneError
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+
     # Annotates parameters and return types only; the runtime needs neither.
     from .model import SceneStore, VoxelScene
 
 _LOG = logging.getLogger(__name__)
+
+_P = typ.ParamSpec("_P")
+_R = typ.TypeVar("_R")
 
 # The remedy for a session that has no scene at all. A caller who has not
 # created one cannot be told to load or rename it.
@@ -65,9 +82,6 @@ class SceneOperation(enum.StrEnum):
     SET_ACTIVE_LAYER = "set_active_layer"
     SET_PALETTE = "set_palette"
     SET_VOXEL_SIZE = "set_voxel_size"
-    PREVIEW = "preview"
-    GET_INFO = "get_info"
-    MERGE_STATS = "merge_stats"
     PLACE_BLOCK = "place_block"
     PLACE_MANY = "place_many"
     FILL_BOX = "fill_box"
@@ -80,21 +94,74 @@ class SceneOperation(enum.StrEnum):
     EXPORT_ROBLOX_MERGED = "export_roblox_merged"
 
 
-def _recovery_message(scene_name: str) -> str:
+def recovery_message(scene_name: str) -> str:
     """Word a missing-scene failure as the step the caller should take next.
 
-    Shared by the command and query paths so a mistyped name draws the same
-    remedy whichever tool the caller happened to reach for: the mistake is one
-    situation, so the instruction must not vary with the tool that surfaced it.
+    Wording only. No log record is written here, so a caller that needs the
+    words without the command path can take them.
 
-    Wording only. No log record is written here, which is what lets a query
-    reuse it without gaining an operational side-effect.
+    This is the MCP adapter's wording, so it lives here rather than with the
+    conditions. The message is shared so a mistyped name draws the same remedy
+    whichever tool the caller happened to reach for: the mistake is one
+    situation, so the instruction must not vary with the tool that surfaced it.
     """
     return (
         f"scene '{scene_name}' is not loaded in this session — call "
         "voxelforge_load for a saved scene, or use the name of an "
         "existing session scene"
     )
+
+
+def recover_lookup_failures(
+    tool: cabc.Callable[_P, _R],
+) -> cabc.Callable[_P, _R]:
+    """Word a read tool's lookup failure as the recovery step it implies.
+
+    A read handler calls :func:`lookup_scene` and renders the scene it gets.
+    That handler knows nothing about MCP wording, and should not: it is a
+    query, so it does not log, does not publish, and does not decide what a
+    client should read. This decorator is the MCP boundary for those tools,
+    applied where the tool is registered, so the translation happens once,
+    above the handler, and the handler stays a query all the way down.
+
+    ``functools.wraps`` preserves the signature the MCP schema is built from,
+    so decoration changes the failure wording and nothing about the tool's
+    advertised parameters.
+
+    Parameters
+    ----------
+    tool : Callable
+        The registered read tool. It calls :func:`lookup_scene` and may let
+        :class:`NoCurrentSceneError` or :class:`UnknownSceneError` escape.
+
+    Returns
+    -------
+    Callable
+        The same tool, with both lookup failures translated to ``KeyError``
+        carrying the caller-facing recovery instruction.
+
+    Notes
+    -----
+    The scene name is recovered by binding the call against the tool's own
+    signature, so a caller may pass it by keyword or positionally and the
+    decorator needs no per-tool table. Reaching :class:`UnknownSceneError` at
+    all means the call already matched the signature, so the bind cannot fail
+    here.
+    """
+    signature = inspect.signature(tool)
+
+    @functools.wraps(tool)
+    def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        try:
+            return tool(*args, **kwargs)
+        except NoCurrentSceneError as exc:
+            raise KeyError(_NO_CURRENT_SCENE_REMEDY) from exc
+        except UnknownSceneError as exc:
+            bound = signature.bind(*args, **kwargs)
+            scene_name = typ.cast("str", bound.arguments.get("scene_name", ""))
+            raise KeyError(recovery_message(scene_name)) from exc
+
+    return wrapped
 
 
 def lookup_scene(scene_store: SceneStore, scene_name: str) -> VoxelScene:
@@ -126,41 +193,6 @@ def lookup_scene(scene_store: SceneStore, scene_name: str) -> VoxelScene:
     return scene_store.get(scene_name or None)
 
 
-def query_scene(scene_store: SceneStore, scene_name: str) -> VoxelScene:
-    """Return a scene for a read, translating the failure but recording nothing.
-
-    The read-side counterpart of :func:`resolve_scene`: the caller gets the
-    same recovery wording, so a mistyped name is answered the same way by
-    ``get_info`` as by ``place_block``, but nothing is logged and nothing is
-    published. A query that fails is a caller mistake, not an operational
-    event, and a read has no mutation to announce.
-
-    Parameters
-    ----------
-    scene_store : SceneStore
-        The registry to read, supplied by the caller.
-    scene_name : str
-        Name of the target scene; empty means the current scene.
-
-    Returns
-    -------
-    VoxelScene
-        The requested scene.
-
-    Raises
-    ------
-    KeyError
-        If no scene is current, or the named scene is not registered. The
-        message names the tool to call next.
-    """
-    try:
-        return lookup_scene(scene_store, scene_name)
-    except NoCurrentSceneError as exc:
-        raise KeyError(_NO_CURRENT_SCENE_REMEDY) from exc
-    except UnknownSceneError as exc:
-        raise KeyError(_recovery_message(scene_name)) from exc
-
-
 def resolve_scene(
     scene_store: SceneStore,
     scene_name: str = "",
@@ -177,10 +209,11 @@ def resolve_scene(
     told to create one, while a caller who named a scene has already created
     one and is directed to load a saved scene or correct the name.
 
-    Keeping the lookup, the wording and the record separable is what lets a
-    read-only tool share the wording without the side-effect: ``preview``,
-    ``get_info`` and ``merge_stats`` call :func:`query_scene`, so a failed
-    query logs nothing and publishes nothing.
+    A read does not share this function. ``preview``, ``get_info`` and
+    ``merge_stats`` call :func:`lookup_scene`, so a failed query keeps its
+    typed domain error and neither logs nor publishes; their recovery wording
+    is applied by :func:`recover_lookup_failures` at registration, which is
+    the layer that knows it is answering a client.
 
     ``scene_store`` is supplied by the caller rather than read from a module
     global. The store is the dependency this translation drives, so passing it
@@ -224,4 +257,4 @@ def resolve_scene(
         raise KeyError(_NO_CURRENT_SCENE_REMEDY) from exc
     except UnknownSceneError as exc:
         _LOG.info("scene lookup failed operation=%s category=unknown_scene", operation)
-        raise KeyError(_recovery_message(scene_name)) from exc
+        raise KeyError(recovery_message(scene_name)) from exc

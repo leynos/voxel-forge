@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from voxel_forge import server
-from voxel_forge.scene_boundary import SceneOperation
+from voxel_forge.scene_boundary import SceneOperation, recover_lookup_failures
 
 from .edit import voxelforge_clear as voxelforge_clear
 from .edit import voxelforge_fill_box as voxelforge_fill_box
@@ -206,6 +206,7 @@ def voxelforge_set_palette(  # ruff: ignore[too-many-arguments, too-many-positio
 
 
 @server.mcp.tool()
+@recover_lookup_failures
 def voxelforge_preview(scene_name: str = "") -> str:
     """Show a summary plus an ASCII view of each Y slice (for shape checking).
 
@@ -225,14 +226,16 @@ def voxelforge_preview(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        # A read calls the quiet query path, not ``resolve_scene``: a failed
-        # query must not emit an operational log record or publish a scene
-        # update, but the caller still gets the same recovery wording.
-        scene = server.query_scene(server.store, scene_name)
+        # A read looks the scene up and returns; it does not log, publish, or
+        # word a failure. ``recover_lookup_failures`` above is the MCP boundary
+        # that turns the typed domain error into the caller's recovery
+        # instruction, so the handler itself stays a query.
+        scene = server.lookup_scene(server.store, scene_name)
         return server.summary(scene)
 
 
 @server.mcp.tool()
+@recover_lookup_failures
 def voxelforge_get_info(scene_name: str = "") -> str:
     """Scene information as JSON.
 
@@ -256,12 +259,13 @@ def voxelforge_get_info(scene_name: str = "") -> str:
     Read-only: it does not modify the scene and announces no ``scene_update``.
     """
     with server.store.lock:
-        # A read calls the quiet query path; see ``voxelforge_preview``.
-        scene = server.query_scene(server.store, scene_name)
+        # A read looks the scene up; see ``voxelforge_preview``.
+        scene = server.lookup_scene(server.store, scene_name)
         return json.dumps(scene.to_dict(), ensure_ascii=False, indent=2)
 
 
 @server.mcp.tool()
+@recover_lookup_failures
 def voxelforge_merge_stats(scene_name: str = "") -> str:
     """See how much merging voxels into boxes saves before exporting.
 
@@ -281,8 +285,8 @@ def voxelforge_merge_stats(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        # A read calls the quiet query path; see ``voxelforge_preview``.
-        scene = server.query_scene(server.store, scene_name)
+        # A read looks the scene up; see ``voxelforge_preview``.
+        scene = server.lookup_scene(server.store, scene_name)
         stats = server.merge_stats(scene)
         return (
             f"Scene '{scene.name}':\n"
