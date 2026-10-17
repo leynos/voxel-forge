@@ -42,6 +42,44 @@ web editor, `scene-data.ts` owns the scene wire types, bridge-payload
 selection, palette colour lookup, and per-layer colour grouping. `main.ts`
 owns browser state, rendering, picking, and input.
 
+## Scene lookup failures
+
+A scene lookup has two failure modes and they need different remedies, so
+they are two types rather than one. Both live in `model_validation.py` and
+both derive from `KeyError`, so a caller that only needs "there is no scene"
+can keep catching that.
+
+- `NoCurrentSceneError` — the caller named nothing and nothing was current.
+  The remedy is to create a scene.
+- `UnknownSceneError` — the caller named a scene that is not registered. The
+  remedy is to load a saved scene or correct the name.
+
+The messages on those types are **transport-neutral**: neither names an MCP
+tool. That is deliberate. Putting the recovery wording in the domain would
+make the domain model depend on the tool surface, which is the adapter's
+concern, and it would put wording the guides quote in two places instead of
+one.
+
+`server.resolve_scene` is that adapter. It is the single place a lookup
+failure becomes caller-facing text, branching on the exception **type**
+rather than on message content, and it is what every scene tool calls for a
+target lookup. A tool that resolves a scene directly through `SceneStore.get`
+or `SceneStore.select` bypasses the recovery wording and will disagree with
+its neighbours — `voxelforge_select_scene` did exactly that until a test
+parametrized across ten tools caught it. The rule for a new tool is therefore
+narrow and testable: resolve targets through `server.resolve_scene`.
+
+The same boundary is where the two categories are logged, for the reason
+above: `resolve_scene` still knows which domain type it caught, while the
+message it builds names an MCP tool and a scene name the log should not hold.
+
+The tests pin both sides of that split. `tests/test_failure_messages.py`
+checks the recovery wording and the per-category log lines, and its
+`test_every_scene_name_tool_gives_the_same_lookup_remedy` asserts on the
+*message* across the tool set rather than on which helper a tool happens to
+call. `tests/test_model_readiness.py` pins the domain side: the exception
+types and their transport-neutral messages.
+
 ## The consumer boundary
 
 VoxelForge is content tooling that other projects consume; it is not a runtime

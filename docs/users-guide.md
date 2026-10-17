@@ -129,11 +129,11 @@ VoxelForge shows as connected.
 
 ### What the tools say back
 
-Every tool returns a short English sentence describing what it did, because
-that sentence is what a language model reads to decide its next call. A
-confirmation names the scene or the parameters it acted on and the resulting
-counts, so a caller can tell a successful edit from a no-op without a second
-call:
+**Every confirmation is a short English sentence** describing what the tool
+did, because that sentence is what a language model reads to decide its next
+call. A confirmation names the scene or the parameters it acted on and the
+resulting counts, so a caller can tell a successful edit from a no-op without
+a second call:
 
 ```text
 create_scene   -> Created scene 'house' (initial layer: Layer 1)
@@ -152,6 +152,23 @@ Removing a voxel reports which outcome occurred, since both calls succeed:
 remove_block (occupied)   -> removed
 remove_block (empty)      -> no voxel there
 ```
+
+**A few tools answer with a document instead**, and a client should parse
+those rather than read them as prose. Three shapes occur:
+
+- **JSON**, from `voxelforge_list_scenes`, `voxelforge_get_info`, and
+  `voxelforge_default_palette`. Each returns an object whose keys are part of
+  the contract, so a client reads `active_session` and `saved_on_disk` rather
+  than matching on text.
+- **An ASCII preview**, from `voxelforge_preview`: a summary line followed by
+  one rendering per Y slice, for checking a shape without rendering it.
+- **Multi-line statistics or status**, from `voxelforge_merge_stats` and the
+  editor tools. These are several labelled lines rather than one sentence.
+
+The short-sentence claim above is about confirmations, not about every
+return value. Treating it as universal is the mistake this section exists to
+prevent: a client that assumes one line per call will misread the JSON and
+the preview.
 
 The limits are stated in the messages that enforce them. `fill_box` and
 `place_many` are each capped at **100,000 voxels per call**, and a bulk JSON

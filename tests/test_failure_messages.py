@@ -21,11 +21,12 @@ rather than each constructing their own.
 
 from __future__ import annotations
 
+import logging
 import typing as typ
 
 import pytest
 
-from voxel_forge import server
+from voxel_forge import scene_store, server
 from voxel_forge.model_validation import InvalidSceneDataError
 
 if typ.TYPE_CHECKING:
@@ -95,12 +96,22 @@ def test_absent_scene_load_names_the_scene_and_the_path(
     The path is included because the message is the only place a caller learns
     where the tool looked; without it, a scene saved under a different store
     looks identical to a typo in the name.
+
+    The whole message is compared, including the ``.json`` suffix, rather than
+    a prefix plus a directory substring. Both weaker forms were in this test
+    and both are satisfied by a wrong filename -- ``no scene 'missing' at
+    <dir>/missing`` passes the prefix-and-directory check while pointing at a
+    file the tool never looks for. The expected path is built with
+    ``scene_store.SCENE_FILE_SUFFIX`` so the assertion fails if the suffix
+    constant and the message ever disagree.
     """
-    with pytest.raises(FileNotFoundError, match="no scene 'missing' at ") as caught:
+    expected = scene_directory / f"missing{scene_store.SCENE_FILE_SUFFIX}"
+
+    with pytest.raises(FileNotFoundError) as caught:
         server.voxelforge_load("missing")
 
-    assert str(scene_directory) in str(caught.value), (
-        "the message must name the directory that was searched"
+    assert caught.value.args[0] == f"no scene 'missing' at {expected}", (
+        "the message must name the scene and the exact file that was searched"
     )
 
 
@@ -206,6 +217,28 @@ def test_scene_lookup_failures_give_the_matching_remedy(
         ),
         ("voxelforge_save", lambda: server.voxelforge_save(_ABSENT)),
         ("voxelforge_export_vox", lambda: server.voxelforge_export_vox(_ABSENT, "")),
+        (
+            "voxelforge_fill_box",
+            lambda: server.voxelforge_fill_box(0, 0, 0, 1, 1, 1, "1", _ABSENT),
+        ),
+        (
+            "voxelforge_remove_block",
+            lambda: server.voxelforge_remove_block(0, 0, 0, _ABSENT),
+        ),
+        ("voxelforge_add_layer", lambda: server.voxelforge_add_layer("top", _ABSENT)),
+        (
+            "voxelforge_set_active_layer",
+            lambda: server.voxelforge_set_active_layer(0, _ABSENT),
+        ),
+        ("voxelforge_export_obj", lambda: server.voxelforge_export_obj(_ABSENT, "")),
+        (
+            "voxelforge_export_obj_legacy",
+            lambda: server.voxelforge_export_obj_legacy(_ABSENT, ""),
+        ),
+        (
+            "voxelforge_export_roblox_merged",
+            lambda: server.voxelforge_export_roblox_merged(_ABSENT, ""),
+        ),
         # A shape the rows above do not reach: ``place_many`` is the only bulk
         # edit, so it is the one tool that resolves a scene name alongside a
         # payload argument.
@@ -240,6 +273,69 @@ def test_every_scene_name_tool_gives_the_same_lookup_remedy(
         f"scene '{_ABSENT}' is not loaded in this session — call voxelforge_load "
         "for a saved scene, or use the name of an existing session scene"
     ), f"{tool} must send a caller with a mistyped scene name to the same remedy"
+
+
+class _LookupFailure(typ.NamedTuple):
+    """One failing lookup, its store precondition, and the category it logs.
+
+    The three values are one scenario rather than three independent knobs, so
+    they travel together. Grouping them also keeps the test below within the
+    project's four-parameter limit without dropping a fixture it needs.
+    """
+
+    existing_scene: str | None
+    lookup: str
+    category: str
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _LookupFailure(None, "", "no_current_scene"), id="no-current-scene"
+        ),
+        pytest.param(
+            _LookupFailure("present", "absent", "unknown_scene"), id="unknown-scene"
+        ),
+    ],
+)
+def test_each_lookup_failure_is_logged_under_its_own_category(
+    empty_server_store: SceneStore,
+    caplog: pytest.LogCaptureFixture,
+    case: _LookupFailure,
+) -> None:
+    """A lookup failure must leave a maintainer-visible signal, distinct per cause.
+
+    The recovery message is written for the caller: it names an MCP tool and
+    tells them what to do next. That is the wrong shape for an operator, who
+    cannot act on a caller's scene name and cannot tell a caller mistyping
+    names from an idle server. The two categories are logged where the domain
+    type is still known, so the log says which failure occurred without parsing
+    translated prose -- and the scene name is deliberately absent from the log,
+    because it is caller data rather than diagnostic state.
+
+    Asserting the *category* rather than merely that something was logged is
+    what makes this check the branch distinction: a single catch-all log line
+    under both exceptions would satisfy "logged" while losing exactly the
+    information the two domain types were split to preserve.
+    """
+    if case.existing_scene is not None:
+        empty_server_store.create(case.existing_scene)
+
+    with (
+        caplog.at_level(logging.INFO, logger="voxel_forge.server"),
+        pytest.raises(KeyError),
+    ):
+        server.resolve_scene(case.lookup)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert f"scene lookup failed category={case.category}" in messages, (
+        f"a {case.category} lookup must be logged under its own category; "
+        f"got {messages}"
+    )
+    assert not any(_ABSENT in message for message in messages), (
+        "the scene name is caller data and must not be written to the log"
+    )
 
 
 def test_layer_index_rejection_names_the_valid_range(

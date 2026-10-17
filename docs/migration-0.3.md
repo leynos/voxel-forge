@@ -97,6 +97,35 @@ finds the bridge already running reports no start, so a counter over
 `bridge_start` measures transitions rather than calls. None of these lines are
 written to standard output, which stays reserved for MCP protocol data.
 
+## MCP responses are now English, and the two lookup failures differ
+
+The MCP tool descriptions and their responses were Thai in 0.2. They are
+English in 0.3. Tool names and request schemas are unchanged, so an
+integration that calls tools by name and passes the same arguments needs no
+change **unless it matches on response text**.
+
+If it does, there are three things to update:
+
+1. **Confirmations are English sentences.** The wording is documented in the
+   [users guide](users-guide.md#what-the-tools-say-back), which is the
+   authority for the text rather than this page.
+2. **Not every response is a sentence.** `voxelforge_list_scenes`,
+   `voxelforge_get_info`, and `voxelforge_default_palette` return JSON;
+   `voxelforge_preview` returns a summary followed by an ASCII rendering; and
+   `voxelforge_merge_stats` and the editor tools return several labelled
+   lines. Parse the JSON ones rather than matching on text.
+3. **The two scene-lookup failures are now distinct.** A session with no
+   scene at all reports one message and tells the caller to create a scene; a
+   session that has scenes but not the one named reports a different message
+   and names both `voxelforge_load` and the alternative of using an existing
+   name. In 0.2 both were a bare "not found", so a client that treated every
+   lookup failure the same way will now see two cases it has to tell apart.
+
+A client that matches on the old Thai strings, or that assumes one line per
+response, is the case this section exists for. The recovery messages are
+written as the instruction to follow, so matching on a fragment such as
+`voxelforge_load` is more stable than matching the whole sentence.
+
 ## See also
 
 - [Users guide](users-guide.md) — supported export helper calls.

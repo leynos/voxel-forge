@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import typing as typ
 
 if typ.TYPE_CHECKING:
@@ -52,6 +53,16 @@ mcp = FastMCP(
 )
 
 store = SceneStore()
+# Scene-lookup failures reach a caller as a recovery message, which is the
+# right thing for the caller and invisible to whoever operates the server: a
+# client retrying a mistyped name looks, from outside, exactly like an idle
+# server. These failures are logged at the boundary where the domain type is
+# still known, so the two categories are distinguishable in a log without
+# parsing the translated message -- and before ``resolve_scene`` replaces the
+# message with wording that names an MCP tool. The scene name is not logged:
+# it is caller data, and the category plus the tool is what a maintainer
+# needs to see whether one tool or all of them are failing.
+_LOG = logging.getLogger(__name__)
 MAX_TOOL_VOXELS: int = 100_000
 # Bounds the raw request before json.loads materialises it. At the limit above a
 # well-formed payload is about 2.5 million characters, so this leaves room for
@@ -176,9 +187,11 @@ def resolve_scene(scene_name: str = "") -> VoxelScene:
     try:
         return store.get(scene_name or None)
     except NoCurrentSceneError as exc:
+        _LOG.info("scene lookup failed category=no_current_scene")
         msg = "no scene yet — call voxelforge_create_scene first"
         raise KeyError(msg) from exc
     except UnknownSceneError as exc:
+        _LOG.info("scene lookup failed category=unknown_scene")
         missing = scene_name
         msg = (
             f"scene '{missing}' is not loaded in this session — call "
