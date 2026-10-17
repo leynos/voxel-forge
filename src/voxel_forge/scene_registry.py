@@ -5,11 +5,8 @@ from __future__ import annotations
 import threading
 
 from .model_scene import VoxelScene
-from .model_validation import (
-    NoCurrentSceneError,
-    UnknownSceneError,
-    validate_scene_name,
-)
+from .model_validation import validate_scene_name
+from .scene_errors import NoCurrentSceneError, UnknownSceneError
 
 
 class SceneStore:

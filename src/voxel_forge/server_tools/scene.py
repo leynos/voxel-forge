@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from voxel_forge import server
+from voxel_forge.scene_errors import SceneOperation
 
 from .edit import voxelforge_clear as voxelforge_clear
 from .edit import voxelforge_fill_box as voxelforge_fill_box
@@ -87,7 +88,7 @@ def voxelforge_select_scene(name: str) -> str:
         # first; leaving it on the domain's transport-neutral message would
         # make the recovery instruction depend on which tool was called.
         # ``store.lock`` is reentrant, so resolving inside it costs nothing.
-        server.resolve_scene(name)
+        server.resolve_scene(server.store, name, operation=SceneOperation.SELECT)
         scene = server.store.select(name)
         server._sync_bridge(scene)
         return f"Selected scene '{scene.name}' ({scene.block_count()} blocks)"
@@ -115,7 +116,9 @@ def voxelforge_add_layer(name: str, scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.ADD_LAYER
+        )
         layer = scene.add_layer(name)
         server._sync_bridge(scene)
         return (
@@ -153,7 +156,9 @@ def voxelforge_set_active_layer(index: int, scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.SET_ACTIVE_LAYER
+        )
         if index < 0 or index >= len(scene.layers):
             msg = f"layer index must be within 0..{len(scene.layers) - 1}"
             raise ValueError(msg)
@@ -195,7 +200,7 @@ def voxelforge_set_palette(  # ruff: ignore[too-many-arguments, too-many-positio
     KeyError
         If the target scene is not found.
     """
-    with server._edit_scene(scene_name) as scene:
+    with server._edit_scene(scene_name, operation=SceneOperation.SET_PALETTE) as scene:
         scene.set_palette_color(color_key, r, g, b)
         return f"palette {color_key} = RGB({r},{g},{b})"
 
@@ -220,7 +225,9 @@ def voxelforge_preview(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.PREVIEW
+        )
         return server.summary(scene)
 
 
@@ -248,7 +255,9 @@ def voxelforge_get_info(scene_name: str = "") -> str:
     Read-only: it does not modify the scene and announces no ``scene_update``.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.GET_INFO
+        )
         return json.dumps(scene.to_dict(), ensure_ascii=False, indent=2)
 
 
@@ -272,7 +281,9 @@ def voxelforge_merge_stats(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.MERGE_STATS
+        )
         stats = server.merge_stats(scene)
         return (
             f"Scene '{scene.name}':\n"
@@ -304,7 +315,9 @@ def voxelforge_set_voxel_size(size: float, scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.SET_VOXEL_SIZE
+        )
         scene.voxel_size = max(0.05, min(2.0, float(size)))
         server._sync_bridge(scene)
         return f"set voxel_size={scene.voxel_size} in '{scene.name}'"

@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import typing as typ
 
+# Re-exported so the import path that predates the split keeps working. The
+# definitions live in ``scene_errors``: a registry or a tool that catches a
+# lookup failure has no business importing the palette constants and field
+# validators this module exists to hold. New code imports from
+# ``scene_errors`` directly.
+from .scene_errors import NoCurrentSceneError as NoCurrentSceneError
+from .scene_errors import UnknownSceneError as UnknownSceneError
+
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
 
@@ -44,41 +52,6 @@ class InvalidSceneDataError(ValueError):
 
     Used only at scene-schema boundaries, e.g. ``raise InvalidSceneDataError("name")``.
     """
-
-
-class NoCurrentSceneError(KeyError):
-    """No scene is current in this session.
-
-    A domain condition, distinct from :class:`UnknownSceneError`: the caller
-    named nothing and nothing was current. Both are ``KeyError`` so existing
-    callers keep working, but they are separate types so the adapter can give
-    each its own recovery instruction instead of inferring intent from a
-    message string.
-
-    The message is deliberately transport-neutral. Naming an MCP tool here
-    would make the domain model depend on the tool surface, which is the
-    adapter's concern; ``resolve_scene`` in ``server`` attaches the
-    caller-facing wording.
-    """
-
-    def __init__(self) -> None:
-        super().__init__("no scene is current in this session")
-
-
-class UnknownSceneError(KeyError):
-    """A named scene is not registered in this session.
-
-    Separate from :class:`NoCurrentSceneError` because a caller who named a
-    scene has already created one and needs a different remedy: load a saved
-    scene, or correct the name. ``select`` raises this too, since a selection
-    target is named.
-
-    The name is carried in the message so the failure is diagnosable from a
-    log, where no adapter has translated it yet.
-    """
-
-    def __init__(self, name: str) -> None:
-        super().__init__(f"scene '{name}' is not registered")
 
 
 def validate_scene_name(name: str) -> str:

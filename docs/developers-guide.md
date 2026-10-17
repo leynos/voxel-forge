@@ -45,9 +45,13 @@ owns browser state, rendering, picking, and input.
 ## Scene lookup failures
 
 A scene lookup has two failure modes and they need different remedies, so
-they are two types rather than one. Both live in `model_validation.py` and
-both derive from `KeyError`, so a caller that only needs "there is no scene"
-can keep catching that.
+they are two types rather than one. Both live in `scene_errors.py` and both
+derive from `KeyError`, so a caller that only needs "there is no scene" can
+keep catching that. They sit apart from `model_validation.py` because that
+module holds *field* validation — palette values, name length, voxel size
+bounds — and a registry that raises a lookup failure should not import those
+to spell it. `model_validation.py` re-exports the two names so older imports
+keep working; new code imports from `scene_errors` directly.
 
 - `NoCurrentSceneError` — the caller named nothing and nothing was current.
   The remedy is to create a scene.
@@ -60,25 +64,53 @@ make the domain model depend on the tool surface, which is the adapter's
 concern, and it would put wording the guides quote in two places instead of
 one.
 
-`server.resolve_scene` is that adapter. It is the single place a lookup
-failure becomes caller-facing text, branching on the exception **type**
-rather than on message content, and it is what every scene tool calls for a
-target lookup. A tool that resolves a scene directly through `SceneStore.get`
-or `SceneStore.select` bypasses the recovery wording and will disagree with
-its neighbours — `voxelforge_select_scene` did exactly that until a test
+`server.resolve_scene(store, scene_name, *, operation=...)` is that adapter.
+It is the single place a lookup failure becomes caller-facing text, branching
+on the exception **type** rather than on message content, and it is what every
+scene tool calls for a target lookup. The store is passed in rather than read
+from the module global so the translation can be tested against a store of its
+own; tool modules pass `server.store`, so the process still has exactly one.
+
+`operation` is keyword-only and required, and its value comes from the closed
+set in `SceneOperation` (`scene_errors.py`). A tool that resolves a scene
+without naming its operation would leave a log record nobody can act on, so
+the parameter has no default. `server._edit_scene` forwards the same label for
+the two tools that edit through the context manager.
+
+A tool that resolves a scene directly through `SceneStore.get` or
+`SceneStore.select` bypasses the recovery wording and will disagree with its
+neighbours — `voxelforge_select_scene` did exactly that until a test
 parametrized across ten tools caught it. The rule for a new tool is therefore
-narrow and testable: resolve targets through `server.resolve_scene`.
+narrow and testable: resolve targets through `server.resolve_scene`, and add a
+`SceneOperation` member for what the tool does.
 
-The same boundary is where the two categories are logged, for the reason
-above: `resolve_scene` still knows which domain type it caught, while the
-message it builds names an MCP tool and a scene name the log should not hold.
+The same boundary is where the failure is logged, for the reason above:
+`resolve_scene` still knows which domain type it caught, while the message it
+builds names an MCP tool and a scene name the log should not hold. The record
+names both the category and the operation:
 
-The tests pin both sides of that split. `tests/test_failure_messages.py`
-checks the recovery wording and the per-category log lines, and its
+```text
+scene lookup failed operation=place_many category=unknown_scene
+```
+
+The category says what went wrong; the operation says which tool the caller
+reached for. Without the second field every failing edit logs the same line as
+every failing export.
+
+The tests pin all of it. `tests/test_failure_messages.py` checks the recovery
+wording and the per-category log lines, and its
 `test_every_scene_name_tool_gives_the_same_lookup_remedy` asserts on the
 *message* across the tool set rather than on which helper a tool happens to
-call. `tests/test_model_readiness.py` pins the domain side: the exception
-types and their transport-neutral messages.
+call. `tests/test_scene_lookup_logging.py` drives every advertised
+scene-resolving tool and requires each to log its own `operation=` label; it
+also asserts set equality between the tools driven and the scene-resolving
+part of the advertised surface, in both directions, so a new tool cannot
+silently escape the check. The same module pins the query side of the
+boundary: `preview`, `get_info`, and `merge_stats` reach the adapter too, and
+a lookup that *succeeds* must log nothing and publish no scene update, so a
+query stays distinguishable from a command in the log.
+`tests/test_model_readiness.py` pins the domain side: the exception types and
+their transport-neutral messages.
 
 ## The consumer boundary
 

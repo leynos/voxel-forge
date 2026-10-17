@@ -37,6 +37,7 @@ if typ.TYPE_CHECKING:
     # parameters. Both fixtures hand back the store they built, so no test in
     # this module constructs one itself and the import never runs.
     from voxel_forge.model import SceneStore
+from voxel_forge.scene_errors import SceneOperation
 
 _SCENE = "house"
 
@@ -187,7 +188,9 @@ def test_scene_lookup_failures_give_the_matching_remedy(
         empty_server_store.create(existing_scene)
 
     with pytest.raises(KeyError) as caught:
-        server.resolve_scene(lookup)
+        server.resolve_scene(
+            empty_server_store, lookup, operation=SceneOperation.GET_INFO
+        )
 
     assert caught.value.args[0] == expected, (
         f"a lookup of {lookup!r} must raise {expected!r}; a wrong "
@@ -326,12 +329,16 @@ def test_each_lookup_failure_is_logged_under_its_own_category(
         caplog.at_level(logging.INFO, logger="voxel_forge.server"),
         pytest.raises(KeyError),
     ):
-        server.resolve_scene(case.lookup)
+        server.resolve_scene(
+            empty_server_store, case.lookup, operation=SceneOperation.GET_INFO
+        )
 
     messages = [record.getMessage() for record in caplog.records]
-    assert f"scene lookup failed category={case.category}" in messages, (
-        f"a {case.category} lookup must be logged under its own category; "
-        f"got {messages}"
+    assert (
+        f"scene lookup failed operation=get_info category={case.category}" in messages
+    ), (
+        f"a {case.category} lookup must be logged under its own category and "
+        f"name the operation that asked; got {messages}"
     )
     assert not any(_ABSENT in message for message in messages), (
         "the scene name is caller data and must not be written to the log"

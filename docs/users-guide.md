@@ -258,8 +258,13 @@ boundary is about not vendoring VoxelForge source and not co-owning shared
 types, and importing the installed package is allowed. When the interface is a
 file or a command rather than a Python call, that document is the one to read.
 
-The MCP tools, including `voxelforge_export_obj`, are unchanged. Integrations
-upgrading from positional optional arguments should follow the
+The MCP tool names and their request schemas are unchanged, so an integration
+that calls `voxelforge_export_obj` by name keeps working. What a call says
+*back* did change: confirmations, JSON payloads, and error messages are now
+English prose with the shapes described under
+[What the tools say back](#what-the-tools-say-back), and a scene-lookup
+failure now names the recovery step to take. An integration that reads the
+response text rather than only checking for success should follow the
 [0.3 migration guide](migration-0.3.md).
 
 ## Windows batch wrappers

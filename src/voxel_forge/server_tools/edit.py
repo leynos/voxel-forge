@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from voxel_forge import server
+from voxel_forge.scene_errors import SceneOperation
 
 
 @server.mcp.tool()
@@ -43,7 +44,7 @@ def voxelforge_place_block(  # ruff: ignore[too-many-arguments, too-many-positio
     A failed call does not modify the scene, because the colour is validated
     before any block is placed.
     """
-    with server._edit_scene(scene_name) as scene:
+    with server._edit_scene(scene_name, operation=SceneOperation.PLACE_BLOCK) as scene:
         scene.place(x, y, z, color)
         total = scene.block_count()
         return f"placed ({x},{y},{z}) colour '{color}' — {total} blocks total"
@@ -87,7 +88,9 @@ def voxelforge_place_many(blocks_json: str, scene_name: str = "") -> str:
     """
     blocks = server._parse_blocks_json(blocks_json)
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.PLACE_MANY
+        )
         for _x, _y, _z, color in blocks:
             scene.resolve_color(color)
         for x, y, z, color in blocks:
@@ -148,7 +151,9 @@ def voxelforge_fill_box(  # ruff: ignore[too-many-arguments, too-many-positional
     the scene.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.FILL_BOX
+        )
         volume = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1) * (abs(z2 - z1) + 1)
         if volume > server.MAX_TOOL_VOXELS:
             msg = (
@@ -192,7 +197,9 @@ def voxelforge_remove_block(x: int, y: int, z: int, scene_name: str = "") -> str
     the scene did not change.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.REMOVE_BLOCK
+        )
         ok = scene.remove(x, y, z)
         if ok:
             server._sync_bridge(scene)
@@ -220,7 +227,9 @@ def voxelforge_clear(scene_name: str = "") -> str:
         If the target scene is not found.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.CLEAR
+        )
         scene.clear()
         server._sync_bridge(scene)
         return f"cleared scene '{scene.name}'"

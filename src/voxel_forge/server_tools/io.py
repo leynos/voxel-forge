@@ -20,6 +20,7 @@ from voxel_forge.orchestration import (
     stop_editor_process,
     supervise,
 )
+from voxel_forge.scene_errors import SceneOperation
 
 _LOG = logging.getLogger(__name__)
 
@@ -53,7 +54,9 @@ def voxelforge_save(scene_name: str = "") -> str:
         If writing the folder or file fails.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.SAVE
+        )
         path = server.save_scene(scene)
         return f"Saved '{scene.name}' to {path}"
 
@@ -170,7 +173,9 @@ def voxelforge_export_vox(scene_name: str = "", output_path: str = "") -> str:
         If writing the file fails.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.EXPORT_VOX
+        )
         path = server._export_path(scene, output_path, ".vox")
         server.export_vox(scene, path)
         return f"export .vox → {path} ({scene.block_count()} voxels)"
@@ -206,7 +211,9 @@ def voxelforge_export_obj(
         If writing the file fails.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.EXPORT_OBJ
+        )
         suffix = "_merged.obj" if merge_boxes else ".obj"
         path = server._export_path(scene, output_path, suffix)
         server.export_obj(scene, path, merge_boxes=merge_boxes)
@@ -253,7 +260,9 @@ def voxelforge_export_obj_legacy(scene_name: str = "", output_path: str = "") ->
         If writing the file fails.
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.EXPORT_OBJ_LEGACY
+        )
         path = server._export_path(scene, output_path, ".obj")
         server.export_obj(scene, path, merge_boxes=False)
         return f"export .obj (no merge) -> {path} ({scene.block_count()} voxels)"
@@ -267,7 +276,9 @@ def voxelforge_export_roblox_merged(scene_name: str = "", output_path: str = "")
     ``execute_luau`` tool (Edit mode).
     """
     with server.store.lock:
-        scene = server.resolve_scene(scene_name)
+        scene = server.resolve_scene(
+            server.store, scene_name, operation=SceneOperation.EXPORT_ROBLOX_MERGED
+        )
         stats = server.merge_stats(scene)
         if output_path:
             path = Path(output_path)

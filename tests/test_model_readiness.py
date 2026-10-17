@@ -304,3 +304,25 @@ def test_bounded_edits_fail_before_mutation(
     assert scene.block_count() == 0, (
         "every rejected bounded edit must leave the scene unchanged"
     )
+
+
+def test_the_domain_errors_live_in_their_own_module() -> None:
+    """The lookup errors must not drag field validation in with them.
+
+    A registry or a tool that catches a lookup failure should depend on the
+    condition and nothing else. While the two error types lived beside the
+    palette constants and name validators, importing either pulled in the
+    whole validation module -- which is the opposite of what a domain module's
+    imports should say about it. ``model_validation`` still re-exports both
+    names so older imports keep working; the definitions moved.
+    """
+    from voxel_forge import scene_errors
+
+    assert scene_errors.NoCurrentSceneError is NoCurrentSceneError, (
+        "the re-export must be the same class, or a caller's except clause "
+        "would miss it"
+    )
+    assert scene_errors.UnknownSceneError is UnknownSceneError, (
+        "the re-export must be the same class, or a caller's except clause "
+        "would miss it"
+    )

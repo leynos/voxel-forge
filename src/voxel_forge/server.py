@@ -22,16 +22,14 @@ from .lifecycle_log import emit_lifecycle
 from .mesh_merge import merge_stats as merge_stats
 from .model import DEFAULT_PALETTE as DEFAULT_PALETTE
 from .model import SceneStore, VoxelScene
-from .model_validation import (
-    BLOCK_ROW_LENGTH,
-    InvalidSceneDataError,
-    NoCurrentSceneError,
-    UnknownSceneError,
-)
+from .model_validation import BLOCK_ROW_LENGTH, InvalidSceneDataError
 from .paths import exports_dir as _exports_dir
 from .preview import summary as summary
 from .procedural import build_chibi_bear as build_chibi_bear
 from .procedural import build_tree as build_tree
+from .scene_errors import NoCurrentSceneError as NoCurrentSceneError
+from .scene_errors import SceneOperation
+from .scene_errors import UnknownSceneError as UnknownSceneError
 from .scene_store import list_saved_scenes as list_saved_scenes
 from .scene_store import load_scene as load_scene
 from .scene_store import save_scene as save_scene
@@ -60,7 +58,7 @@ store = SceneStore()
 # still known, so the two categories are distinguishable in a log without
 # parsing the translated message -- and before ``resolve_scene`` replaces the
 # message with wording that names an MCP tool. The scene name is not logged:
-# it is caller data, and the category plus the tool is what a maintainer
+# it is caller data, and the category plus the operation is what a maintainer
 # needs to see whether one tool or all of them are failing.
 _LOG = logging.getLogger(__name__)
 MAX_TOOL_VOXELS: int = 100_000
@@ -157,7 +155,12 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     return out
 
 
-def resolve_scene(scene_name: str = "") -> VoxelScene:
+def resolve_scene(
+    scene_store: SceneStore,
+    scene_name: str = "",
+    *,
+    operation: SceneOperation,
+) -> VoxelScene:
     """Return a registered scene, wording a lookup failure as a recovery step.
 
     This is where the domain's transport-neutral errors become the caller-facing
@@ -168,10 +171,25 @@ def resolve_scene(scene_name: str = "") -> VoxelScene:
     one, while a caller who named a scene has already created one and is directed
     to load a saved scene or correct the name.
 
+    ``scene_store`` is supplied by the caller rather than read from a module
+    global. The store is the dependency this translation drives, so passing it
+    makes the translation testable against a store of its own and keeps the
+    function independent of whichever instance the process happens to hold.
+    Tool modules pass ``server.store``, so the process still has exactly one.
+
+    ``operation`` is keyword-only and required: a lookup that cannot say what
+    asked for the scene would log a failure nobody can act on. It comes from
+    the closed set in :class:`~voxel_forge.scene_errors.SceneOperation`, so the
+    value reaches the log as a known label rather than as free text.
+
     Parameters
     ----------
+    scene_store : SceneStore
+        The registry to read, supplied by the caller.
     scene_name : str, optional
         Name of the target scene; empty means the current scene.
+    operation : SceneOperation
+        What the caller was doing, for the failure record.
 
     Returns
     -------
@@ -185,13 +203,15 @@ def resolve_scene(scene_name: str = "") -> VoxelScene:
         message names the tool to call next.
     """
     try:
-        return store.get(scene_name or None)
+        return scene_store.get(scene_name or None)
     except NoCurrentSceneError as exc:
-        _LOG.info("scene lookup failed category=no_current_scene")
+        _LOG.info(
+            "scene lookup failed operation=%s category=no_current_scene", operation
+        )
         msg = "no scene yet — call voxelforge_create_scene first"
         raise KeyError(msg) from exc
     except UnknownSceneError as exc:
-        _LOG.info("scene lookup failed category=unknown_scene")
+        _LOG.info("scene lookup failed operation=%s category=unknown_scene", operation)
         missing = scene_name
         msg = (
             f"scene '{missing}' is not loaded in this session — call "
@@ -202,10 +222,21 @@ def resolve_scene(scene_name: str = "") -> VoxelScene:
 
 
 @contextlib.contextmanager
-def _edit_scene(scene_name: str) -> cabc.Iterator[VoxelScene]:
-    """Lock the entire edit and publish only after successful mutation."""
+def _edit_scene(
+    scene_name: str,
+    *,
+    operation: SceneOperation,
+) -> cabc.Iterator[VoxelScene]:
+    """Lock the entire edit and publish only after successful mutation.
+
+    The lookup goes through :func:`resolve_scene` with the caller's
+    ``operation``, so a failure inside an edit is logged under the tool that
+    attempted it rather than under this wrapper. Without that, every editing
+    tool's failures would be indistinguishable from one another in the log,
+    which is precisely the signal the category alone cannot supply.
+    """
     with store.lock:
-        scene = resolve_scene(scene_name)
+        scene = resolve_scene(store, scene_name, operation=operation)
         has_completed = False
         try:
             yield scene
