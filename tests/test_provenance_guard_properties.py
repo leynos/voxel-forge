@@ -215,24 +215,43 @@ def test_project_claim_survives_repeated_separators(
 
 
 @_SETTINGS
-@given(blank_lines=st.integers(min_value=1, max_value=2))
-def test_non_blockquote_line_ends_the_scan(tmp_path: Path, blank_lines: int) -> None:
-    """Prose outside the blockquote must bound the passage.
+@given(
+    blank_lines=st.integers(min_value=1, max_value=2),
+    clause_is_above=st.booleans(),
+)
+def test_non_blockquote_line_ends_the_scan(
+    tmp_path: Path, *, blank_lines: int, clause_is_above: bool
+) -> None:
+    """Prose outside the blockquote must bound the passage, in both directions.
 
-    The guard reads outward from the link while the lines are blockquote lines,
-    so a non-quote line ends the passage. That matters for the overclaim case
-    too: a clause outside the quote is a different paragraph that the guard is
-    right not to read as describing the audit. This pins the outward bound as a
-    bound rather than as an accident of the shipped layout.
+    The guard walks outward from the link while the lines are blockquote lines,
+    so the first plain line ends the passage. An ``_OVERCLAIM_CLAUSE`` outside
+    the quote is a different paragraph, which the guard is right not to read as
+    describing the audit; this pins the bound as a bound rather than as an
+    accident of the shipped layout.
+
+    Both directions are generated because the two have separate stopping
+    conditions. Backward, the scan also stops at a bare ``>``, so every
+    separator case above would still pass a guard that had lost its
+    non-blockquote test -- only a clause *above* the link catches that. Below
+    the link there is no such second condition, and the blank line is what
+    ends the blockquote.
+
+    At least one blank line separates the two, so no generated layout relies on
+    lazy continuation: a plain line directly under a quoted one is still part of
+    that blockquote in CommonMark, and asserting on it would test a reading the
+    guard does not implement.
     """
-    blocks = [
-        f"> {_LINK} records the source-history audit, and its limits.",
-        *[""] * blank_lines,
-        f"Prose outside the quote. {_OVERCLAIM_CLAUSE}",
-    ]
+    quoted = f"> {_LINK} records the source-history audit, and its limits."
+    unquoted = f"Prose outside the quote. {_OVERCLAIM_CLAUSE}"
+    blocks = (
+        [unquoted, *[""] * blank_lines, quoted]
+        if clause_is_above
+        else [quoted, *[""] * blank_lines, unquoted]
+    )
 
     _assert_guard_is_silent(
         tmp_path,
         blocks,
-        "the guard read past the end of the blockquote into unrelated prose",
+        "the guard read past the edge of the blockquote into unrelated prose",
     )
