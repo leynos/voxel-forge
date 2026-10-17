@@ -64,14 +64,17 @@ make the domain model depend on the tool surface, which is the adapter's
 concern, and it would put wording the guides quote in two places instead of
 one.
 
-The adapter side lives in `scene_boundary.py` and is split in three, because a
+The adapter side lives in `scene_boundary.py` and is split in four, because a
 query and a command have opposite contracts:
 
 - `scene_boundary.lookup_scene(store, scene_name)` is the read path. It reads
   the registry and lets the typed domain error propagate untouched — no
-  wording, no log, no publication. `preview`, `get_info` and `merge_stats`
-  call it, via the `server.lookup_scene` re-export, and return the rendered
-  scene.
+  wording, no log, no publication. The three read tools call it through the
+  `server.lookup_scene` re-export and each renders the scene in its own shape:
+  `preview` returns the scene summary with its ASCII rendering, `get_info`
+  returns the scene as indented JSON, and `merge_stats` returns the voxel,
+  merged-box and reduction statistics. The lookup is shared; the rendering is
+  the tool's.
 - `scene_boundary.recovery_message(scene_name)` is the adapter's wording for a
   failed lookup. It lives here rather than in `scene_errors.py` because it
   names MCP tools.

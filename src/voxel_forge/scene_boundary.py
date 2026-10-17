@@ -104,6 +104,19 @@ def recovery_message(scene_name: str) -> str:
     conditions. The message is shared so a mistyped name draws the same remedy
     whichever tool the caller happened to reach for: the mistake is one
     situation, so the instruction must not vary with the tool that surfaced it.
+
+    Parameters
+    ----------
+    scene_name : str
+        The name that was not loaded. It is quoted back so the caller can see
+        which name failed, which matters when the name came from a variable
+        rather than from the call itself.
+
+    Returns
+    -------
+    str
+        The recovery guidance: load the saved scene, or name one that exists in
+        this session.
     """
     return (
         f"scene '{scene_name}' is not loaded in this session — call "
