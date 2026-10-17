@@ -109,7 +109,8 @@ def call_scene_tool(
     tool : str
         Name of the tool to call afterwards.
     arguments : collections.abc.Mapping[str, typing.Any]
-        Named arguments for ``tool``, excluding the scene name.
+        Named arguments passed to ``tool`` unchanged; include ``scene_name``
+        when an explicit scene target is needed.
 
     Returns
     -------

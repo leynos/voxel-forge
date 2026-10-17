@@ -62,8 +62,16 @@ _PROSE = "> Further prose that describes neither claim."
 # Quoted settings: every test here takes ``tmp_path``, which Hypothesis does not
 # reset between generated examples. The bodies are fully rewritten each time, so
 # reuse is what we want rather than a hazard.
+#
+# The deadline is off because each example writes two files and re-scans them:
+# the per-example cost is dominated by filesystem latency, which varies with
+# whatever else the machine is doing. A wall-clock threshold here would fail on
+# a busy host and pass on an idle one without the guard's behaviour changing,
+# so it would report load rather than a defect. The properties still bound
+# their own work -- 200 examples, each a full guard run.
 _SETTINGS = settings(
     max_examples=200,
+    deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 
