@@ -156,10 +156,14 @@ remove_block (empty)      -> no voxel there
 **A few tools answer with a document instead**, and a client should parse
 those rather than read them as prose. Three shapes occur:
 
-- **JSON**, from `voxelforge_list_scenes`, `voxelforge_get_info`, and
-  `voxelforge_default_palette`. Each returns an object whose keys are part of
-  the contract, so a client reads `active_session` and `saved_on_disk` rather
-  than matching on text.
+- **JSON**, from three tools, each with its own contract:
+  - `voxelforge_list_scenes` returns an object with `active_session` (scenes
+    in this session) and `saved_on_disk` (files in the scene directory).
+  - `voxelforge_get_info` returns the scene itself, matching
+    `VoxelScene.to_dict()`: `name`, `voxel_size`, `palette`, `active_layer`,
+    and `layers`.
+  - `voxelforge_default_palette` returns a colour mapping, from palette keys
+    to `[r, g, b]` arrays.
 - **An ASCII preview**, from `voxelforge_preview`: a summary line followed by
   one rendering per Y slice, for checking a shape without rendering it.
 - **Multi-line statistics or status**, from `voxelforge_merge_stats` and the

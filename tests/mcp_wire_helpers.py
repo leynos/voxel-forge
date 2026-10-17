@@ -34,12 +34,44 @@ def wire_text(result: mcp_types.CallToolResult) -> str:
     client-visible text is their concatenation rather than any single block.
     Reading them here keeps the callers asserting on what a caller reads rather
     than on the block structure that happens to carry it.
+
+    Parameters
+    ----------
+    result : mcp.types.CallToolResult
+        The result of ``ClientSession.call_tool``.
+
+    Returns
+    -------
+    str
+        The concatenated ``text`` of every content block; blocks without a
+        ``text`` attribute contribute nothing.
+
+    Examples
+    --------
+    >>> from mcp.types import CallToolResult, TextContent
+    >>> result = CallToolResult(
+    ...     content=[TextContent(type="text", text="ok")], isError=False
+    ... )
+    >>> wire_text(result)
+    'ok'
     """
     return "".join(getattr(block, "text", "") for block in result.content)
 
 
 def fetch_tools() -> list[mcp_types.Tool]:
-    """Return the tools one connected client is offered."""
+    """Return the tools one connected client is offered.
+
+    Returns
+    -------
+    list[mcp.types.Tool]
+        The tool descriptors returned by ``list_tools``, in the order the
+        server sent them.
+
+    Examples
+    --------
+    >>> any(t.name == "voxelforge_preview" for t in fetch_tools())
+    True
+    """
 
     async def listed() -> list[mcp_types.Tool]:
         async with create_connected_server_and_client_session(server.mcp) as client:
@@ -69,6 +101,26 @@ def call_scene_tool(
     The result is returned rather than reduced to text so the caller can assert
     on ``isError`` -- a failure test needs to know the call failed, and a text
     reader would otherwise have to infer it from an empty string.
+
+    Parameters
+    ----------
+    scene_name : str
+        Name of the scene to create before the call.
+    tool : str
+        Name of the tool to call afterwards.
+    arguments : collections.abc.Mapping[str, typing.Any]
+        Named arguments for ``tool``, excluding the scene name.
+
+    Returns
+    -------
+    mcp.types.CallToolResult
+        The result of the tool call; ``isError`` reports whether it failed.
+
+    Examples
+    --------
+    >>> result = call_scene_tool("demo", "voxelforge_get_info", {"scene_name": "demo"})
+    >>> result.isError
+    False
     """
 
     async def flow() -> mcp_types.CallToolResult:
