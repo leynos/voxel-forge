@@ -199,7 +199,7 @@ code-boundary policy where a future contributor will find it. It exists
 because the boundary is easy to erode silently once two projects share a
 format.
 
-- [ ] 1.4.1. Record the interface contract and the code boundary in this
+- [x] 1.4.1. Record the interface contract and the code boundary in this
   repository.
   - State that the interface between VoxelForge and any consuming game is a
     file format plus a command-line contract, never a library; that VoxelForge
@@ -209,14 +209,14 @@ format.
     policy choice rather than an obligation.
   - Success: a new contributor can tell from the repository alone which
     changes are in scope for the shared format and which are not.
-- [ ] 1.4.2. Translate the README and the tool descriptions into English.
+- [x] 1.4.2. Translate the README and the tool descriptions into English.
   - The README, the `FastMCP` instructions string in
     `src/voxel_forge/server.py`, and several error messages are in Thai. The
     MCP instructions and tool docstrings are read by language models and by
     contributors, and are the tool's primary discovery surface.
   - Keep a Thai translation alongside if the maintainer wants one; the
     requirement is that an English reader can operate the tool.
-- [ ] 1.4.3. Substantiate the clean-room claim in the repository.
+- [x] 1.4.3. Substantiate the clean-room claim in the repository.
   - The README asserts that VoxelForge does not fork Goxel's C code. Publishing
     a fork makes that assertion something downstream users rely on, so it
     should be recorded in English, in a file a reader will find, alongside what
@@ -225,6 +225,19 @@ format.
     published format specification.
   - Success: a reader can determine the provenance of the format handling
     without reading Thai and without taking the claim on trust.
+  - Evidence route: `docs/provenance.md` carries a source-history audit the
+    reader can reproduce in the checkout — upstream's own authorship
+    statement, a root commit byte-identical to upstream's `main`, an
+    enumeration of every filename suffix in the history and a content scan of
+    every reachable blob, which report no suffix and no marker identifying
+    C, C++, Rust, or Go source in the inspected history, and Goxel references
+    limited to format and attribution contexts. The format-conformance tests
+    are labelled as conformance evidence only, since a translated
+    implementation would pass them too. The audit's limits are stated:
+    filename and marker findings are narrower than source-language absence,
+    and no repository audit can prove the absence of an undocumented
+    translation, so the claim is recorded as well-supported and
+    author-asserted rather than independently adjudicated.
 
 ## 2. Voxels carry meaning, not just colour
 

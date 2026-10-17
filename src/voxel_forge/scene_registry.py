@@ -6,6 +6,7 @@ import threading
 
 from .model_scene import VoxelScene
 from .model_validation import validate_scene_name
+from .scene_errors import NoCurrentSceneError, UnknownSceneError
 
 
 class SceneStore:
@@ -103,14 +104,25 @@ class SceneStore:
 
         Raises
         ------
-        KeyError
-            If no scene is current, or the requested name is not registered.
+        NoCurrentSceneError
+            If ``name`` is empty and no scene is current.
+        UnknownSceneError
+            If ``name`` is given and is not registered in this session.
+
+        Both derive from ``KeyError``, so a caller that only needs "there is no
+        scene" can keep catching that.
         """
         with self._lock:
             key = name or self._current
-            if not key or key not in self._scenes:
-                msg = "ยังไม่มี scene — เรียก voxelforge_create_scene ก่อน"
-                raise KeyError(msg)
+            if not key:
+                raise NoCurrentSceneError
+            if key not in self._scenes:
+                # A named lookup that misses is a different failure from having
+                # no current scene, which is why it is a different exception
+                # type. The two need different remedies -- create a scene,
+                # versus load the saved one or correct the name -- and the
+                # adapter is what decides how to word that.
+                raise UnknownSceneError(key)
             return self._scenes[key]
 
     def get_or_none(self, name: str | None = None) -> VoxelScene | None:
@@ -154,14 +166,15 @@ class SceneStore:
 
         Raises
         ------
-        KeyError
-            If the name is not registered. Loading from disk is the caller's
-            responsibility, so this registry stays free of file I/O.
+        UnknownSceneError
+            If the name is not registered. A selection target is always named,
+            so this is the same failure as a named ``get`` miss and reuses its
+            type. Loading from disk is the caller's responsibility, so this
+            registry stays free of file I/O.
         """
         with self._lock:
             if name not in self._scenes:
-                msg = f"scene '{name}' is not loaded in this session"
-                raise KeyError(msg)
+                raise UnknownSceneError(name)
             self._current = name
             return self._scenes[name]
 

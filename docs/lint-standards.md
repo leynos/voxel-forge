@@ -47,11 +47,20 @@ records the exception in `pyproject.toml` as a
 `[[tool.duplication_gate.allow]]` table naming every member of the family and
 carrying a `reason`. The reason is the audit trail, so it has to stand on its
 own: it must say why the duplication is deliberate and what factoring would
-cost, not merely that the gate was failing. One family is recorded this way
-today — the repeated `server._ensure_bridge("launch_editor")` call, whose
-repetition *is* the subject of the assertion that a second request against a
-running bridge stays silent, so extracting it into a helper would make the test
-assert that a helper ran instead of what the seam does.
+cost, not merely that the gate was failing. Three families are recorded this
+way today:
+
+- the repeated `server._ensure_bridge("launch_editor")` call, whose repetition
+  *is* the subject of the assertion that a second request against a running
+  bridge stays silent, so extracting it into a helper would make the test
+  assert that a helper ran instead of what the seam does;
+- the `occupied_store` and `adjacent_store` fixtures, which differ only in the
+  coordinate they hand to a shared `_seed` helper and which a test requests by
+  name because adjacency — not a coordinate — is the precondition a merge test
+  depends on; and
+- the `about_message` and `desktop_extra_hint` fixtures, whose bodies are a
+  single call to a shared `_data_file` helper, leaving only the decorator,
+  docstring, and the filename parameter that each fixture exists to name.
 
 Keys are `path` or `path::name`, and the `::name` form only matches a location
 nose attributed to a whole unit. A fragment-level finding carries no name, so a
@@ -62,7 +71,18 @@ fragment, and it is correspondingly broad, so it still has to be justified in
 the reason. That breadth is real but bounded — a further copy inside one of the
 listed files would also be covered — and it is the price of a fragment having no
 name to key on. A copy in any third file still blocks, because a family is
-silenced only when every reported location matches a listed key.
+silenced only when every reported location matches a listed key. Where the
+finding *is* unit-scoped, prefer the `::name` form: the two fixture families
+above use it, so a copy of the same shape in a fourth fixture or test is still
+reported. The first entry is the one that cannot be narrowed, because nose
+reports its fragment with no unit name at all; it is keyed by file alone, and
+the reason records that as the price rather than as a preference.
+
+Before recording an entry, confirm the family is genuinely irreducible rather
+than merely awkward. `nose query <path> id=<id> full` prints the proposed
+extraction and the shared-line count; a family reporting zero shared lines has
+already been factored and is overlapping only in shape, while one with a real
+shared body should be extracted instead.
 
 The command also writes a zero-byte `.<manifest>.df12.lock` sidecar, which is a
 `flock` target the gate holds across its own manifest rewrites; it coordinates

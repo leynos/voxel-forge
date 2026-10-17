@@ -23,6 +23,7 @@ from readiness_helpers import child_chunks
 
 from voxel_forge import scene_store, server
 from voxel_forge.model import SceneStore, VoxelScene
+from voxel_forge.model_validation import NoCurrentSceneError, UnknownSceneError
 from voxel_forge.vox_io import export_vox, import_vox
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -110,8 +111,56 @@ def test_store_select_requires_a_registered_scene() -> None:
     selected = store.select("original")
 
     assert selected is store.get(), "select must make the named scene current"
-    with pytest.raises(KeyError, match="not loaded in this session"):
+    with pytest.raises(UnknownSceneError) as caught:
         store.select("never-created")
+
+    assert caught.value.name == "never-created", (
+        "select must report the name it was asked for, not the current scene's"
+    )
+    assert caught.value.args[0] == (
+        "scene 'never-created' is not registered in this session"
+    ), "the select failure must use the same transport-neutral message as get"
+
+
+def test_get_distinguishes_absent_scene_from_unregistered_name() -> None:
+    """A missing current scene and a bad name need different remedies.
+
+    The registry reports the two as distinct types rather than distinct
+    messages, so a caller branches on the type instead of matching message
+    text. That keeps the recovery wording -- which names MCP tools, and so
+    belongs to the MCP adapter -- out of the domain model.
+
+    Both types still derive from ``KeyError``, so the pre-existing contract for
+    any caller that only needs "there is no scene" is unchanged.
+    """
+    empty = SceneStore()
+    with pytest.raises(NoCurrentSceneError):
+        empty.get()
+
+    populated = SceneStore()
+    populated.create("present")
+    with pytest.raises(UnknownSceneError) as caught:
+        populated.get("absent")
+
+    assert caught.value.name == "absent", (
+        "the failure must carry the missing name as data, not only inside prose"
+    )
+    assert caught.value.args[0] == (
+        "scene 'absent' is not registered in this session"
+    ), (
+        "the domain message must be transport-neutral and still name the scene, "
+        "so the failure is diagnosable from a log"
+    )
+    assert issubclass(NoCurrentSceneError, KeyError), (
+        "the narrower types must keep the KeyError contract callers already catch"
+    )
+    assert issubclass(UnknownSceneError, KeyError), (
+        "the narrower types must keep the KeyError contract callers already catch"
+    )
+    assert not issubclass(UnknownSceneError, NoCurrentSceneError), (
+        "the two failures must stay distinguishable, or the adapter cannot give "
+        "each its own remedy"
+    )
 
 
 def test_register_makes_a_scene_current() -> None:
@@ -153,19 +202,19 @@ def test_basic_agent_scene_workflow(
     assert "basic" in server.voxelforge_create_scene("basic"), (
         "create_scene must name the new scene"
     )
-    assert "วาง" in server.voxelforge_place_block(0, 0, 0, "2"), (
+    assert "placed" in server.voxelforge_place_block(0, 0, 0, "2"), (
         "place_block must confirm the placement"
     )
-    assert "เติม" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3"), (
+    assert "filled" in server.voxelforge_fill_box(1, 2, 0, 0, 0, 0, "3"), (
         "fill_box must confirm the fill"
     )
     assert empty_server_store.get().block_count() == 3, (
         "place_block and fill_box must each add their voxels"
     )
-    assert "บันทึก" in server.voxelforge_save(), "save must confirm the file it wrote"
+    assert "Saved" in server.voxelforge_save(), "save must confirm the file it wrote"
 
     monkeypatch.setattr(server, "store", SceneStore())
-    assert "โหลด" in server.voxelforge_load("basic"), (
+    assert "Loaded" in server.voxelforge_load("basic"), (
         "load must confirm the scene it read"
     )
     assert server.store.get().block_count() == 3, (
@@ -266,4 +315,69 @@ def test_bounded_edits_fail_before_mutation(
         request()
     assert scene.block_count() == 0, (
         "every rejected bounded edit must leave the scene unchanged"
+    )
+
+
+def test_the_domain_errors_live_in_their_own_module() -> None:
+    """The lookup errors must not drag field validation in with them.
+
+    A registry or a tool that catches a lookup failure should depend on the
+    condition and nothing else. While the two error types lived beside the
+    palette constants and name validators, importing either pulled in the
+    whole validation module -- which is the opposite of what a domain module's
+    imports should say about it. ``model_validation`` still re-exports both
+    names so older imports keep working; the definitions moved.
+    """
+    from voxel_forge import scene_errors
+
+    assert scene_errors.NoCurrentSceneError is NoCurrentSceneError, (
+        "the re-export must be the same class, or a caller's except clause "
+        "would miss it"
+    )
+    assert scene_errors.UnknownSceneError is UnknownSceneError, (
+        "the re-export must be the same class, or a caller's except clause "
+        "would miss it"
+    )
+
+
+def test_the_domain_error_module_names_no_adapter_concept() -> None:
+    """The error module must describe conditions, not the tool surface.
+
+    ``SceneOperation`` started life beside the errors, which quietly made the
+    domain depend on MCP tool names, log fields and the lookup function. The
+    module now holds the two conditions alone, and the operations live in
+    ``scene_boundary``. The attribute check is what keeps a future "just put it
+    back, it's nearly the same thing" from undoing the split; the source check
+    catches a re-export, which an attribute test would miss because the name
+    would still be absent only until someone added the import.
+    """
+    import ast
+    import inspect
+
+    from voxel_forge import scene_errors
+
+    assert not hasattr(scene_errors, "SceneOperation"), (
+        "the operation set is adapter knowledge; it belongs in scene_boundary"
+    )
+
+    # The docstring may *say* the module is free of adapter concerns; what
+    # matters is that nothing is imported or defined that drags one in. An AST
+    # check distinguishes the explanation from the dependency, which a text
+    # search cannot.
+    tree = ast.parse(inspect.getsource(scene_errors))
+    imported = {
+        alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        (node.module or "").split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert "logging" not in imported, (
+        "logging is the adapter's side-effect, not a domain concern"
+    )
+    assert "scene_boundary" not in imported, (
+        "the domain must not depend on the adapter that consumes it"
     )

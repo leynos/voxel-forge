@@ -241,7 +241,7 @@ def test_launch_editor_tool_opens_supervised_editor_on_discovered_port(
     response = server.voxelforge_launch_editor()
 
     assert response == (
-        "เปิด http://127.0.0.1:43003 แล้ว (Bun editor ภายใต้การดูแลของ server)\n"
+        "Opened http://127.0.0.1:43003 (Bun editor supervised by the server)\n"
         "Bridge: ws://127.0.0.1:43001 | HTTP scene: "
         "http://127.0.0.1:43002/scene"
     ), "the tool response must report the editor and both bridge endpoints"
@@ -265,8 +265,8 @@ def test_launch_editor_tool_reports_supervision_failure(
     response = server.voxelforge_launch_editor()
 
     assert response == (
-        "ไม่สามารถเปิด editor ได้: Bun executable not found\n"
-        "ติดตั้ง Bun (https://bun.sh) แล้วเรียก voxelforge_launch_editor อีกครั้ง"
+        "Could not open the editor: Bun executable not found\n"
+        "Install Bun (https://bun.sh), then call voxelforge_launch_editor again"
     ), "a Bun startup failure must include the recovery instruction"
     assert not opened, "a failed startup must not launch the browser"
 

@@ -127,6 +127,72 @@ each client.
 After changing the configuration, restart the client and confirm that
 VoxelForge shows as connected.
 
+### What the tools say back
+
+**Every confirmation is a short English sentence** describing what the tool
+did, because that sentence is what a language model reads to decide its next
+call. A confirmation names the scene or the parameters it acted on and the
+resulting counts, so a caller can tell a successful edit from a no-op without
+a second call:
+
+```text
+create_scene   -> Created scene 'house' (initial layer: Layer 1)
+place_block    -> placed (0,0,0) colour '2' — 1 blocks total
+fill_box       -> filled 2 voxels with colour '3' — 3 blocks total
+place_many     -> placed 1 voxels in 'house' — 4 blocks total
+add_layer      -> Added layer 'top' to 'house' — 2 layers in total
+select_scene   -> Selected scene 'house' (4 blocks)
+save           -> Saved 'house' to ~/.voxel-forge/scenes/house.json
+load           -> Loaded 'house' (4 blocks)
+```
+
+Removing a voxel reports which outcome occurred, since both calls succeed:
+
+```text
+remove_block (occupied)   -> removed
+remove_block (empty)      -> no voxel there
+```
+
+**A few tools answer with a document instead**, and a client should parse
+those rather than read them as prose. Three shapes occur:
+
+- **JSON**, from three tools, each with its own contract:
+  - `voxelforge_list_scenes` returns an object with `active_session` (scenes
+    in this session) and `saved_on_disk` (files in the scene directory).
+  - `voxelforge_get_info` returns the scene itself, matching
+    `VoxelScene.to_dict()`: `name`, `voxel_size`, `palette`, `active_layer`,
+    and `layers`.
+  - `voxelforge_default_palette` returns a colour mapping, from palette keys
+    to `[r, g, b]` arrays.
+- **An ASCII preview**, from `voxelforge_preview`: a summary line followed by
+  one rendering per Y slice, for checking a shape without rendering it.
+- **Multi-line statistics or status**, from `voxelforge_merge_stats` and the
+  editor tools. These are several labelled lines rather than one sentence.
+
+The short-sentence claim above is about confirmations, not about every
+return value. Treating it as universal is the mistake this section exists to
+prevent: a client that assumes one line per call will misread the JSON and
+the preview.
+
+The limits are stated in the messages that enforce them. `fill_box` and
+`place_many` are each capped at **100,000 voxels per call**, and a bulk JSON
+payload is capped at **8,000,000 characters**. Exceeding either is rejected
+before any mutation, so a rejected call leaves the scene untouched.
+
+Error messages are written as the recovery instruction, not just as a
+diagnosis. A scene name that is not loaded says which name was missing and
+names both ways to get one:
+
+```text
+no scene yet — call voxelforge_create_scene first
+scene 'absent' is not loaded in this session — call voxelforge_load for a
+saved scene, or use the name of an existing session scene
+```
+
+The first is for a session with no scene at all; the second is for a session
+that has scenes but not one by that name. They are different failures with
+different remedies, which is why they do not share one message.
+
 ## The web editor
 
 The Three.js editor is bundled in the installed wheel and served by Bun. Bun
@@ -184,8 +250,21 @@ obj_path = export_obj(scene, path, merge_boxes=False)
 luau_source = to_luau_merged(scene, parent="workspace", anchor=False)
 ```
 
-The MCP tools, including `voxelforge_export_obj`, are unchanged. Integrations
-upgrading from positional optional arguments should follow the
+These helpers are a supported in-process API: install `voxel-forge` and import
+them by name, as above. That is a versioned dependency on a released package,
+which is a different thing from the cross-project code boundary the
+[fork and interface boundary](fork-and-interface-boundary.md) describes — that
+boundary is about not vendoring VoxelForge source and not co-owning shared
+types, and importing the installed package is allowed. When the interface is a
+file or a command rather than a Python call, that document is the one to read.
+
+The MCP tool names and their request schemas are unchanged, so an integration
+that calls `voxelforge_export_obj` by name keeps working. What a call says
+*back* did change: confirmations, JSON payloads, and error messages are now
+English prose with the shapes described under
+[What the tools say back](#what-the-tools-say-back), and a scene-lookup
+failure now names the recovery step to take. An integration that reads the
+response text rather than only checking for success should follow the
 [0.3 migration guide](migration-0.3.md).
 
 ## Windows batch wrappers

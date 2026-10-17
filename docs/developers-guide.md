@@ -42,6 +42,162 @@ web editor, `scene-data.ts` owns the scene wire types, bridge-payload
 selection, palette colour lookup, and per-layer colour grouping. `main.ts`
 owns browser state, rendering, picking, and input.
 
+## Scene lookup failures
+
+A scene lookup has two failure modes and they need different remedies, so
+they are two types rather than one. Both live in `scene_errors.py` and both
+derive from `KeyError`, so a caller that only needs "there is no scene" can
+keep catching that. They sit apart from `model_validation.py` because that
+module holds *field* validation — palette values, name length, voxel size
+bounds — and a registry that raises a lookup failure should not import those
+to spell it. `model_validation.py` re-exports the two names so older imports
+keep working; new code imports from `scene_errors` directly.
+
+- `NoCurrentSceneError` — the caller named nothing and nothing was current.
+  The remedy is to create a scene.
+- `UnknownSceneError` — the caller named a scene that is not registered. The
+  remedy is to load a saved scene or correct the name.
+
+The messages on those types are **transport-neutral**: neither names an MCP
+tool. That is deliberate. Putting the recovery wording in the domain would
+make the domain model depend on the tool surface, which is the adapter's
+concern, and it would put wording the guides quote in two places instead of
+one.
+
+The adapter side lives in `scene_boundary.py` and is split in four, because a
+query and a command have opposite contracts:
+
+- `scene_boundary.lookup_scene(store, scene_name)` is the read path. It reads
+  the registry and lets the typed domain error propagate untouched — no
+  wording, no log, no publication. The three read tools call it through the
+  `server.lookup_scene` re-export and each renders the scene in its own shape:
+  `preview` returns the scene summary with its ASCII rendering, `get_info`
+  returns the scene as indented JSON, and `merge_stats` returns the voxel,
+  merged-box and reduction statistics. The lookup is shared; the rendering is
+  the tool's.
+- `scene_boundary.recovery_message(scene_name)` is the adapter's wording for a
+  failed lookup. It lives here rather than in `scene_errors.py` because it
+  names MCP tools.
+- `scene_boundary.recover_lookup_failures` is the read-tool registration
+  decorator. A read handler is a query; the decorator is the MCP boundary that
+  turns the typed failure into `recovery_message` at the point where the tool
+  is registered. The handler therefore contains no presentation policy, and
+  the wording is applied exactly once, above it. `functools.wraps` preserves
+  the signature the MCP schema is built from, so decoration changes the
+  failure wording and nothing about the tool's advertised parameters.
+- `scene_boundary.resolve_scene(store, scene_name, *, operation=...)` is the
+  command-side adapter: it words the failure *and* writes the operational
+  record. Every scene-mutating or scene-exporting tool calls it, through the
+  `server.resolve_scene` re-export.
+
+The wording of the two remedies is shared through `recovery_message`, so the
+instruction does not vary with the tool that surfaced the mistake — the
+decorator and the command path draw on the same function.
+
+Both translations branch on the exception **type** rather than on message
+content. The store is passed in rather than read from the module global so a
+translation can be tested against a store of its own; tool modules pass
+`server.store`, so the process still has exactly one.
+
+`operation` is keyword-only and required, and its value comes from the closed
+set in `SceneOperation`. That enum lives in `scene_boundary.py`, not in
+`scene_errors.py`: the tool surface's verbs are adapter knowledge, and keeping
+them out of the domain error module is what lets `scene_errors.py` stay a
+statement of conditions — no MCP tool, log field, or `resolve_scene` reference.
+A tool that resolves a scene without naming its
+operation would leave a log record nobody can act on, so the parameter has no
+default. `server._edit_scene` forwards the same label for the two tools that
+edit through the context manager.
+
+A tool that resolves a scene directly through `SceneStore.get` or
+`SceneStore.select` bypasses the recovery wording and will disagree with its
+neighbours — `voxelforge_select_scene` did exactly that until a test
+parametrized across ten tools caught it. The rule for a new tool is therefore
+narrow and testable, and it depends on which side of the boundary the tool sits
+on. A scene-mutating or scene-exporting tool resolves through
+`server.resolve_scene` and adds a `SceneOperation` member for what it does. A
+read resolves through `server.lookup_scene` inside the handler and wears
+`@recover_lookup_failures` at registration; it adds no `SceneOperation`,
+because a query writes no operational record.
+
+The same boundary is where the failure is logged, for the reason above:
+`resolve_scene` still knows which domain type it caught, while the message it
+builds names an MCP tool and a scene name the log should not hold. The record
+names both the category and the operation:
+
+```text
+scene lookup failed operation=place_many category=unknown_scene
+```
+
+The category says what went wrong; the operation says which tool the caller
+reached for. Without the second field every failing edit logs the same line as
+every failing export.
+
+The tests pin all of it. `tests/test_failure_messages.py` checks the recovery
+wording and the per-category log lines, and its
+`test_every_scene_name_tool_gives_the_same_lookup_remedy` asserts on the
+*message* across the tool set rather than on which helper a tool happens to
+call — which is why the decorator and the command path share
+`recovery_message`. `tests/test_scene_lookup_logging.py` drives every
+advertised scene-resolving tool and requires each command to log its own
+`operation=` label; it also asserts set equality between the tools driven and
+the scene-resolving part of the advertised surface, in both directions, so a
+new tool cannot silently escape the check. The same module pins the query side
+of the boundary on three paths — an unknown name, a session with no scene, and
+a successful lookup: `preview`, `get_info` and `merge_stats` must log nothing
+and publish no scene update on any of them, so a query stays distinguishable
+from a command in the log. `tests/test_scene_query_boundary.py` covers the
+wording: two tests reach the handler through `functools.wraps` and assert that
+it raises the *typed* domain error, while the decorated tool words both
+failures as distinct recovery instructions. That pair is what keeps the layers
+honest: the handler knows the condition, and only the decorator knows the
+wording.
+
+`tests/test_model_readiness.py` pins the domain side: the exception types,
+their transport-neutral messages, and the `UnknownSceneError.name` attribute
+from both `get` and `select`.
+
+## The consumer boundary
+
+VoxelForge is content tooling that other projects consume; it is not a runtime
+they link against. The full statement of that boundary is in
+[fork-and-interface-boundary.md](fork-and-interface-boundary.md), and the part
+that constrains a change here is this:
+
+- The interface to a consumer is a **file format plus a command-line and MCP
+  contract**. A consumer invokes the installed tool and reads the files it
+  produces.
+- VoxelForge takes **no dependency on a consumer**. Where a consumer publishes
+  a machine-readable specification, the tool consumes that specification as
+  pinned, vendored data rather than importing the consumer's code — the same
+  shape as reading any other published format.
+- A consumer **vendors no VoxelForge code**, and VoxelForge does not become a
+  shared library in either direction. A change that would move the interface
+  toward a linked library is out of scope, however convenient it looks.
+
+This rule governs the boundary **between projects**. Importing the installed
+package is allowed, and that is not in tension with the Python export helpers
+the [users guide](users-guide.md) documents: those are a supported in-process
+API, and an integration may install `voxel-forge` and call them. The
+distinction is between a versioned dependency on a released package and code
+co-owned across projects. Importing an installed package keeps the version
+boundary — the helper is called by name and version, and breaking it is a
+release note. Vendoring source, or sharing types that both projects edit in
+lockstep, dissolves that boundary, and it is the second that is out of scope in
+either direction.
+
+The reason to keep this written down rather than assumed is that the boundary
+erodes quietly. Two projects that share a file format have an obvious reason to
+want shared types, and a shared type is the first edge of a shared library.
+Routing the same information through a file or a documented command costs
+almost nothing while the projects are young and is very expensive to undo
+later.
+
+Changes *in* scope include anything that makes VoxelForge better as a
+stand-alone tool, anything that lets it read or write a format a consumer
+publishes from that format's own specification, and fixes or tests that keep
+the published formats round-tripping faithfully.
+
 ## Console scripts
 
 Every user-facing command is a console script declared in `pyproject.toml`

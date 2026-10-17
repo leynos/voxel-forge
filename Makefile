@@ -33,8 +33,10 @@ MARKDOWN_PATHS := \
 	README.md \
 	README.th.md \
 	docs/developers-guide.md \
+	docs/fork-and-interface-boundary.md \
 	docs/migration-0.2.md \
 	docs/migration-0.3.md \
+	docs/provenance.md \
 	docs/users-guide.md \
 	AGENTS.md \
 	docs/roadmap.md \

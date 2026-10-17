@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import typing as typ
 
+# Re-exported so the import path that predates the split keeps working. The
+# definitions live in ``scene_errors``: a registry or a tool that catches a
+# lookup failure has no business importing the palette constants and field
+# validators this module exists to hold. New code imports from
+# ``scene_errors`` directly.
+from .scene_errors import NoCurrentSceneError as NoCurrentSceneError
+from .scene_errors import UnknownSceneError as UnknownSceneError
+
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
 

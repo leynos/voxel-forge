@@ -4,9 +4,20 @@
 [Goxel](https://github.com/guillaumechereau/goxel) พร้อม **MCP bridge** ให้
 AI อย่าง Cursor และ Claude Desktop สร้างและแก้โมเดล 3D ได้โดยตรง
 
-> Goxel ต้นฉบับเป็น GPL-3.0 — VoxelForge เป็น implementation ใหม่ที่ออกแบบ
-> MCP-first ไม่ได้ fork โค้ด C ของ Goxel โดยตรง แต่รองรับไฟล์ `.vox` / `.obj`
-> ที่ใช้ร่วมกันได้
+> VoxelForge เป็น soft fork ของ
+> [`thanakon228/voxel-forge`](https://github.com/thanakon228/voxel-forge) ซึ่ง
+> ใช้สัญญาอนุญาต MIT เช่นเดียวกับ repository นี้
+>
+> VoxelForge **ไม่ใช่** fork ของ Goxel ตัว Goxel เองเป็น GPL-3.0 ส่วน
+> VoxelForge เป็น implementation อิสระที่ออกแบบ MCP-first และไม่มีซอร์สโค้ด C
+> ของ Goxel ทั้งสองทำงานร่วมกันผ่านรูปแบบไฟล์ที่อ่านและเขียนเหมือนกัน คือ
+> `.vox` (MagicaVoxel) และ `.obj` (Wavefront)
+>
+> [`docs/provenance.md`](docs/provenance.md) บันทึกการตรวจสอบประวัติซอร์ส
+> ที่รองรับข้อกล่าวอ้างข้างต้น ระบุสิ่งที่การตรวจสอบนี้ยังพิสูจน์ไม่ได้ และแยก
+> หลักฐานเรื่องความสอดคล้องของรูปแบบไฟล์ออกจากข้อกล่าวอ้างเรื่องผู้เขียน
+> [`docs/fork-and-interface-boundary.md`](docs/fork-and-interface-boundary.md)
+> ระบุความหมายของขอบเขตนี้สำหรับผู้ที่นำโปรเจกต์ไปใช้
 
 ## ฟีเจอร์
 
@@ -238,6 +249,11 @@ Export `.vox` แล้วเปิดใน Goxel หรือ MagicaVoxel:
   client, web editor และตำแหน่งจัดเก็บ scene กับ export
 - [คู่มือนักพัฒนา](docs/developers-guide.md) — entry point, ขอบเขต launcher ของ
   desktop, ข้อกำหนดเครื่องมือ และ verification gates
+- [ขอบเขต fork และ interface](docs/fork-and-interface-boundary.md) — สิ่งที่ fork
+  รับประกัน และสัญญาเรื่องรูปแบบไฟล์และบรรทัดคำสั่งที่ผู้บริโภคพึ่งพาได้
+- [ที่มา](docs/provenance.md) — โปรเจกต์ต้นทาง สถานะสัญญาอนุญาต การตรวจสอบ
+  ประวัติซอร์สว่าประวัติของ repository นี้มีและไม่มีอะไร และข้อจำกัดของการ
+  ตรวจสอบนั้น
 - [ย้ายไป 0.2](docs/migration-0.2.md) — การเปลี่ยนแปลงคำสั่งติดตั้งในรุ่นนั้น
   และสิ่งที่ต้องปรับในการตั้งค่าเดิม
 - [ย้ายไป 0.3](docs/migration-0.3.md) — การเปลี่ยน arguments ของ Python export

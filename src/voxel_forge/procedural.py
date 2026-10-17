@@ -275,7 +275,7 @@ def _place_bear_face(scene: VoxelScene, r: int) -> None:
 
 
 def build_chibi_bear(name: str = "chibi_bear", resolution: int = 3) -> VoxelScene:
-    """รูปปั้นหมี chibi — หัวใหญ่ ตัวกลม ยืนบนฐาน.
+    """Build a chibi bear statue — large head, round body, standing on a base.
 
     Parameters
     ----------

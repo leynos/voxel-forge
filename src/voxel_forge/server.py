@@ -8,6 +8,10 @@ import typing as typ
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
+
+    # Annotates the ``operation`` parameter only; every call site imports the
+    # enum from ``scene_boundary`` itself, so no runtime name is needed here.
+    from .scene_boundary import SceneOperation
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -26,6 +30,10 @@ from .paths import exports_dir as _exports_dir
 from .preview import summary as summary
 from .procedural import build_chibi_bear as build_chibi_bear
 from .procedural import build_tree as build_tree
+from .scene_boundary import lookup_scene as lookup_scene
+from .scene_boundary import resolve_scene as resolve_scene
+from .scene_errors import NoCurrentSceneError as NoCurrentSceneError
+from .scene_errors import UnknownSceneError as UnknownSceneError
 from .scene_store import list_saved_scenes as list_saved_scenes
 from .scene_store import load_scene as load_scene
 from .scene_store import save_scene as save_scene
@@ -36,18 +44,25 @@ from .vox_io import import_vox as import_vox
 mcp = FastMCP(
     "VoxelForge",
     instructions=(
-        "VoxelForge — โปรแกรมสร้าง voxel 3D แบบ Goxel "
-        "(24-bit RGB, layers, export .vox/.obj).\nขั้นต"
-        "อน: voxelforge_create_scene → voxelforge_plac"
-        "e_many / voxelforge_fill_box → voxelforge_pre"
-        "view → voxelforge_export_vox หรือ voxelforge_"
-        "export_obj\nเปิด editor 3D: voxelforge_launch_"
-        "editor\nรองรับ import ไฟล์ MagicaVoxel (.vox) "
-        "ที่ Goxel ใช้ได้"
+        "VoxelForge — a Goxel-style 3D voxel builder "
+        "(24-bit RGB, layers, export .vox/.obj).\n"
+        "Typical flow: voxelforge_create_scene → voxelforge_place_many / "
+        "voxelforge_fill_box → voxelforge_preview → voxelforge_export_vox "
+        "or voxelforge_export_obj\n"
+        "Open the 3D editor: voxelforge_launch_editor\n"
+        "Supports importing MagicaVoxel (.vox) files that Goxel can open."
     ),
 )
 
 store = SceneStore()
+# Scene-lookup failures reach a caller as a recovery message, which is the
+# right thing for the caller and invisible to whoever operates the server: a
+# client retrying a mistyped name looks, from outside, exactly like an idle
+# server. The command path logs those failures in ``scene_boundary``, under
+# its own logger; the record is written there rather than here because that is
+# where the domain type is still known. The scene name is not logged: it is
+# caller data, and the category plus the operation is what a maintainer needs
+# to see whether one tool or all of them are failing.
 MAX_TOOL_VOXELS: int = 100_000
 # Bounds the raw request before json.loads materialises it. At the limit above a
 # well-formed payload is about 2.5 million characters, so this leaves room for
@@ -121,14 +136,14 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     ``MAX_TOOL_VOXELS`` rows, or carries a row shorter than four entries.
     """
     if not isinstance(blocks_json, str):
-        msg = "blocks ต้องเป็น JSON string"
+        msg = "blocks must be a JSON string"
         raise InvalidSceneDataError(msg)
     if len(blocks_json) > MAX_BLOCKS_JSON_CHARS:
         msg = f"blocks payload must be at most {MAX_BLOCKS_JSON_CHARS:,} characters"
         raise InvalidSceneDataError(msg)
     data = json.loads(blocks_json)
     if not isinstance(data, list):
-        msg = "blocks ต้องเป็น JSON array"
+        msg = "blocks must be a JSON array"
         raise InvalidSceneDataError(msg)
     if len(data) > MAX_TOOL_VOXELS:
         msg = f"place_many supports at most {MAX_TOOL_VOXELS:,} voxels per call"
@@ -136,17 +151,28 @@ def _parse_blocks_json(blocks_json: str) -> list[tuple[int, int, int, str]]:
     out: list[tuple[int, int, int, str]] = []
     for row in data:
         if not isinstance(row, (list, tuple)) or len(row) < BLOCK_ROW_LENGTH:
-            msg = f"รูปแบบบล็อกไม่ถูก: {row}"
+            msg = f"invalid block row: {row}"
             raise InvalidSceneDataError(msg)
         out.append((int(row[0]), int(row[1]), int(row[2]), str(row[3])))
     return out
 
 
 @contextlib.contextmanager
-def _edit_scene(scene_name: str) -> cabc.Iterator[VoxelScene]:
-    """Lock the entire edit and publish only after successful mutation."""
+def _edit_scene(
+    scene_name: str,
+    *,
+    operation: SceneOperation,
+) -> cabc.Iterator[VoxelScene]:
+    """Lock the entire edit and publish only after successful mutation.
+
+    The lookup goes through :func:`resolve_scene` with the caller's
+    ``operation``, so a failure inside an edit is logged under the tool that
+    attempted it rather than under this wrapper. Without that, every editing
+    tool's failures would be indistinguishable from one another in the log,
+    which is precisely the signal the category alone cannot supply.
+    """
     with store.lock:
-        scene = store.get(scene_name or None)
+        scene = resolve_scene(store, scene_name, operation=operation)
         has_completed = False
         try:
             yield scene
