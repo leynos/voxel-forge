@@ -79,6 +79,7 @@ def test_prompted_models_keep_their_defaults_and_resolution(
         scene: VoxelScene | None = None
 
         def _set_scene(self, scene: VoxelScene) -> None:
+            """Record the scene that the prompted action builds."""
             self.scene = scene
 
     window = Window()
@@ -137,6 +138,7 @@ def test_blender_exports_keep_mesh_modes_and_destinations(
         """Supply the current scene without constructing a Qt window."""
 
         def _require_scene(self) -> VoxelScene:
+            """Return the scene that the test selected."""
             return scene
 
     match case.mode:

@@ -165,6 +165,7 @@ def recover_lookup_failures(
 
     @functools.wraps(tool)
     def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        """Call the tool, re-raising lookup failures as recovery-text KeyErrors."""
         try:
             return tool(*args, **kwargs)
         except NoCurrentSceneError as exc:

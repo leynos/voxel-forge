@@ -116,6 +116,7 @@ def installed_commands(tmp_path_factory: pytest.TempPathFactory) -> Path:
     cache = workspace / "cache"
 
     def run(args: list[str], *, capture: bool = False) -> _CommandResult:
+        """Run ``args`` with the workspace's uv cache and return the result."""
         return asyncio.run(
             _execute_command(
                 args,

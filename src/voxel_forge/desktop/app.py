@@ -46,6 +46,7 @@ class MainWindow(
     """
 
     def __init__(self) -> None:
+        """Build the viewport, side panel, menus and toolbars, then sync the UI."""
         super().__init__()
         self.setWindowTitle("VoxelForge")
         self.resize(1360, 860)
@@ -83,18 +84,27 @@ class MainWindow(
     # ── Recent files ──────────────────────────────────────────
 
     def _recent_paths(self) -> list[str]:
+        """Return the stored recent paths that still exist, capped at ``MAX_RECENT``.
+
+        A stored value that is not a list counts as no recent files.
+        """
         raw = self._settings.value("recent_files", [])
         if not isinstance(raw, list):
             return []
         return [str(p) for p in raw if Path(str(p)).exists()][:MAX_RECENT]
 
     def _push_recent(self, path: Path) -> None:
+        """Store ``path`` as the most recent file and refresh the menu and sidebar."""
         paths = [str(path)] + [p for p in self._recent_paths() if p != str(path)]
         self._settings.setValue("recent_files", paths[:MAX_RECENT])
         self._refresh_recent_menu()
         self._sidebar.set_recent_files(paths[:MAX_RECENT])
 
     def _refresh_recent_menu(self) -> None:
+        """Rebuild the recent-files submenu from the stored paths.
+
+        An empty list shows one disabled placeholder entry instead.
+        """
         self._recent_menu.clear()
         recent = self._recent_paths()
         if not recent:
@@ -111,12 +121,17 @@ class MainWindow(
     # ── Scene helpers ─────────────────────────────────────────
 
     def _require_scene(self) -> VoxelScene | None:
+        """Return the current scene, or warn and return ``None`` if there is none."""
         if self._scene is None:
             QMessageBox.warning(self, "VoxelForge", "ยังไม่มี scene — สร้างใหม่หรือเปิดไฟล์ก่อน")
             return None
         return self._scene
 
     def _set_scene(self, scene: VoxelScene, path: Path | None = None) -> None:
+        """Make ``scene`` current, then load it into the viewport.
+
+        A given ``path`` is also recorded in the recent files.
+        """
         self._scene = scene
         self._path = path
         self._viewport.load_scene(scene)
@@ -125,6 +140,10 @@ class MainWindow(
         self._update_ui()
 
     def _update_ui(self) -> None:
+        """Refresh the side panel, status bar and window title for the scene.
+
+        With no scene, the ready message and the plain title are shown.
+        """
         self._sidebar.set_scene_info(self._scene, self._path)
         if not self._scene:
             self._status.showMessage("พร้อมใช้งาน — เปิดไฟล์หรือสร้างโมเดลใหม่")
@@ -141,6 +160,7 @@ class MainWindow(
     # ── View ──────────────────────────────────────────────────
 
     def _refresh_view(self) -> None:
+        """Reload the current scene into the viewport, if there is one."""
         if self._scene:
             self._viewport.load_scene(self._scene)
 

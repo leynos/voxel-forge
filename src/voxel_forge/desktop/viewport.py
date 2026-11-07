@@ -24,6 +24,7 @@ MIN_EXTENT = 0.01
 def _box_mesh(
     entity: Qt3DCore.QEntity, box: MergedBox, vs: float
 ) -> Qt3DExtras.QCuboidMesh:
+    """Return a cuboid sized to ``box``, with each extent at least ``MIN_EXTENT``."""
     mesh = Qt3DExtras.QCuboidMesh(entity)
     mesh.setXExtent(max((box.x2 - box.x1 + 1) * vs, MIN_EXTENT))
     mesh.setYExtent(max((box.y2 - box.y1 + 1) * vs, MIN_EXTENT))
@@ -34,6 +35,7 @@ def _box_mesh(
 def _box_transform(
     entity: Qt3DCore.QEntity, box: MergedBox, vs: float
 ) -> Qt3DCore.QTransform:
+    """Return a transform that centres the cuboid on the box."""
     transform = Qt3DCore.QTransform(entity)
     cx = (box.x1 + box.x2 + 1) * 0.5 * vs
     cy = (box.y1 + box.y2 + 1) * 0.5 * vs
@@ -45,6 +47,7 @@ def _box_transform(
 def _box_material(
     entity: Qt3DCore.QEntity, rgb: tuple[int, int, int]
 ) -> Qt3DExtras.QPhongMaterial:
+    """Return a Phong material in the box colour, with a darker ambient tone."""
     r, g, b = rgb
     material = Qt3DExtras.QPhongMaterial(entity)
     material.setDiffuse(QColor(r, g, b))
@@ -58,6 +61,7 @@ class VoxelViewport(QWindow):
     """Qt3D window that renders a scene as merged, coloured cuboids."""
 
     def __init__(self) -> None:
+        """Create the Qt3D window with its camera, lights and an empty scene root."""
         super().__init__()
         self.resize(QSize(1280, 720))
 
@@ -125,17 +129,20 @@ class VoxelViewport(QWindow):
             self._frame_camera(self._scene)
 
     def _clear_boxes(self) -> None:
+        """Discard every box entity by detaching the old root and making a new one."""
         # Detaching the box root discards every entity parented to it.
         self._boxes_root.setParent(None)  # type: ignore[union-attr]  # Qt allows None.
         self._boxes_root = Qt3DCore.QEntity(self._root)
 
     def _add_box(self, box: MergedBox, scene: VoxelScene, vs: float) -> None:
+        """Add one entity holding the box's mesh, transform and material."""
         entity = Qt3DCore.QEntity(self._boxes_root)
         entity.addComponent(_box_mesh(entity, box, vs))
         entity.addComponent(_box_transform(entity, box, vs))
         entity.addComponent(_box_material(entity, scene.resolve_color(box.color)))
 
     def _frame_camera(self, scene: VoxelScene) -> None:
+        """Point the camera at the scene's bounds, if the scene has any."""
         b = scene.bounds()
         if not b:
             return

@@ -23,6 +23,7 @@ class SceneStore:
     """
 
     def __init__(self) -> None:
+        """Create an empty registry with no current scene."""
         self._scenes: dict[str, VoxelScene] = {}
         self._current: str | None = None
         self._lock = threading.RLock()

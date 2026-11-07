@@ -357,6 +357,7 @@ def test_install_editor_deps_command_reports_failure(
     from voxel_forge import install_editor_deps
 
     def raise_runtime_error() -> Path:
+        """Simulate dependency installation failing because Bun is missing."""
         msg = "Bun executable not found: bun"
         raise EditorRuntimeError(msg)
 

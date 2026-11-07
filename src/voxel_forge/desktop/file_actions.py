@@ -64,6 +64,10 @@ class FileActionsMixin:
             QMessageBox.critical(self, "เปิดไม่สำเร็จ", str(exc))
 
     def _new_scene(self) -> None:
+        """Prompt for a name and replace the scene with an empty one.
+
+        Cancelling the prompt leaves the current scene unchanged.
+        """
         name = prompt_scene_name(
             self, "Scene ใหม่", default="my_model", label="ชื่อ scene:"
         )
@@ -71,6 +75,7 @@ class FileActionsMixin:
             self._set_scene(VoxelScene(name=name))
 
     def _open_scene(self) -> None:
+        """Ask for a scene file and open it, if one is chosen."""
         path_str, _ = QFileDialog.getOpenFileName(
             self,
             "เปิด Scene",
@@ -81,6 +86,7 @@ class FileActionsMixin:
             self.open_path(path_str)
 
     def _save_scene(self) -> None:
+        """Write the scene to its current path, or use Save As when it has none."""
         scene = self._require_scene()
         if not scene:
             return
@@ -96,6 +102,10 @@ class FileActionsMixin:
         self._status.showMessage(f"บันทึกแล้ว: {self._path}", STATUS_TIMEOUT_MS)
 
     def _save_scene_as(self) -> None:
+        """Ask for a JSON path, name the scene after it and save it there.
+
+        Cancelling the dialog changes nothing.
+        """
         scene = self._require_scene()
         if not scene:
             return
@@ -118,6 +128,10 @@ class FileActionsMixin:
         self._status.showMessage(f"บันทึกแล้ว: {path}", STATUS_TIMEOUT_MS)
 
     def _import_vox(self) -> None:
+        """Ask for a ``.vox`` file and import it as the current scene.
+
+        Import failures are reported in a dialog.
+        """
         path_str, _ = QFileDialog.getOpenFileName(
             self, "นำเข้า .vox", str(exports_dir()), "VOX (*.vox);;All (*.*)"
         )

@@ -78,6 +78,8 @@ def test_bridge_diagnostic_uses_stderr(
     """Bridge startup diagnostics must stay off the MCP protocol's stdout."""
 
     class DummyServer:
+        """Stand in for the real server as an inert async context manager."""
+
         async def __aenter__(self) -> DummyServer:
             """Allow the patched server to be used as an async context manager."""
             return self

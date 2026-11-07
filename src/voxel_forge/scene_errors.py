@@ -34,6 +34,7 @@ class NoCurrentSceneError(KeyError):
     """
 
     def __init__(self) -> None:
+        """Set the transport-neutral message for a session with no current scene."""
         super().__init__("no scene is current in this session")
 
 
@@ -50,5 +51,6 @@ class UnknownSceneError(KeyError):
     """
 
     def __init__(self, name: str) -> None:
+        """Store the missing name and build a message that names it."""
         super().__init__(f"scene {name!r} is not registered in this session")
         self.name = name

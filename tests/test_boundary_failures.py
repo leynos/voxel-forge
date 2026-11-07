@@ -107,6 +107,7 @@ def test_vox_export_reports_outcome_in_dialog(
         """Provide the selected scene without starting the optional GUI stack."""
 
         def _require_scene(self) -> VoxelScene:
+            """Return the scene that the test selected."""
             return scene
 
     Window()._export_vox()
