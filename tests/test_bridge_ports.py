@@ -95,17 +95,21 @@ class _FakeWebSocket:
     """A websocket double carrying an Origin header and recording close()."""
 
     def __init__(self, origin: str | None) -> None:
+        """Store the Origin header and start with no recorded close."""
         headers = {} if origin is None else {"Origin": origin}
         self.request = type("Request", (), {"headers": headers})()
         self.closed_with: tuple[int, str] | None = None
 
     async def close(self, code: int, reason: str) -> None:
+        """Record the close code and reason instead of closing a socket."""
         self.closed_with = (code, reason)
 
     def __aiter__(self) -> typ.Self:
+        """Return the fake socket as its own async iterator."""
         return self
 
     async def __anext__(self) -> str:
+        """End iteration at once, since no messages are queued."""
         raise StopAsyncIteration
 
     async def send(self, _message: str) -> None:

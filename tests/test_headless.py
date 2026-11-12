@@ -276,6 +276,7 @@ def test_stopping_the_bridge_reports_the_transition(
     stoppable = _StoppableBridge()
 
     async def run() -> None:
+        """Start the bridge, wait for it to bind, then stop it."""
         await stoppable.start()
         await asyncio.sleep(0.3)
         assert bridge.current_ports() is not None, "the bridge must have bound ports"

@@ -74,6 +74,7 @@ def fetch_tools() -> list[mcp_types.Tool]:
     """
 
     async def listed() -> list[mcp_types.Tool]:
+        """Connect a client to the server and return the tools it is offered."""
         async with create_connected_server_and_client_session(server.mcp) as client:
             return list((await client.list_tools()).tools)
 
@@ -125,6 +126,7 @@ def call_scene_tool(
     """
 
     async def flow() -> mcp_types.CallToolResult:
+        """Create the scene over the protocol, then call the tool on it."""
         async with create_connected_server_and_client_session(server.mcp) as client:
             created = await client.call_tool(
                 "voxelforge_create_scene", {"name": scene_name}

@@ -46,9 +46,11 @@ class CreateActionsMixin:
             QMessageBox.critical(self, "สร้างไม่สำเร็จ", str(exc))
 
     def _build_tree_preset(self, resolution: int) -> None:
+        """Build the tree preset at ``resolution`` without prompting."""
         self._build_model(_TREE, _TREE.name, resolution)
 
     def _build_bear_preset(self, resolution: int) -> None:
+        """Build the chibi bear preset at ``resolution`` without prompting."""
         self._build_model(_BEAR, _BEAR.name, resolution)
 
     def _prompt_model(self, options: _BuildOptions) -> None:
@@ -69,7 +71,9 @@ class CreateActionsMixin:
             self._build_model(options, name, resolution)
 
     def _build_tree(self) -> None:
+        """Prompt for a tree's name and resolution, then build it."""
         self._prompt_model(_TREE)
 
     def _build_chibi_bear(self) -> None:
+        """Prompt for a chibi bear's name and resolution, then build it."""
         self._prompt_model(_BEAR)

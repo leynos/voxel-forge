@@ -36,6 +36,7 @@ class _VoxContents:
     """Palette entries and voxels accumulated while parsing a ``.vox`` file."""
 
     def __init__(self) -> None:
+        """Start with a black palette, no voxels and no RGBA chunk seen."""
         self.palette: list[tuple[int, int, int]] = [(0, 0, 0)] * _PALETTE_ENTRIES
         self.voxels: list[tuple[int, int, int, int]] = []
         self.has_rgba = False

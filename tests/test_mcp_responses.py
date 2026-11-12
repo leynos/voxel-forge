@@ -55,6 +55,7 @@ def test_list_scenes_returns_both_listings_as_structured_data(
     """
 
     async def listing() -> str:
+        """Create and save a scene, then return the list_scenes response text."""
         async with create_connected_server_and_client_session(server.mcp) as client:
             created = await client.call_tool(
                 "voxelforge_create_scene", {"name": _SCENE}
@@ -95,6 +96,7 @@ def test_default_palette_returns_the_palette_as_structured_data() -> None:
     """
 
     async def palette_over_the_wire() -> str:
+        """Return the default palette tool response, as text, from the server."""
         async with create_connected_server_and_client_session(server.mcp) as client:
             return wire_text(await client.call_tool("voxelforge_default_palette", {}))
 

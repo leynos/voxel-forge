@@ -21,6 +21,7 @@ def _run_make(
     assert make is not None, "Make is required for contributor gates"
 
     async def run() -> tuple[int, str]:
+        """Run make to completion and return its exit code and combined output."""
         process = await asyncio.create_subprocess_exec(
             make,
             "--no-print-directory",

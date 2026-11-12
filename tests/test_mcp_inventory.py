@@ -99,6 +99,7 @@ def test_server_instructions_reach_the_client_in_english() -> None:
     """
 
     async def initialize() -> mcp_types.InitializeResult:
+        """Run the MCP initialize handshake and return the server's result."""
         async with create_client_server_memory_streams() as (
             client_streams,
             server_streams,

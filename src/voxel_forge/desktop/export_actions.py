@@ -34,6 +34,7 @@ class ExportActionsMixin:
         return export_obj(scene, out, merge_boxes=merge_boxes)
 
     def _export_blender_quick(self) -> None:
+        """Export a merged Blender OBJ, report its statistics and open its folder."""
         scene = self._require_scene()
         if not scene:
             return
@@ -50,12 +51,17 @@ class ExportActionsMixin:
         open_folder(blender_exports_dir())
 
     def _export_obj_raw(self) -> None:
+        """Export a per-voxel Blender OBJ and report the path written."""
         scene = self._require_scene()
         if scene is not None:
             out = self._write_blender_obj(scene, merge_boxes=False)
             QMessageBox.information(self, "Export สำเร็จ", str(out))
 
     def _export_vox(self) -> None:
+        """Ask for a path and export the scene as a MagicaVoxel file.
+
+        A cancelled dialog does nothing, and write errors are shown in a dialog.
+        """
         scene = self._require_scene()
         if not scene:
             return
@@ -75,6 +81,7 @@ class ExportActionsMixin:
         QMessageBox.information(self, "Export สำเร็จ", path_str)
 
     def _export_roblox(self) -> None:
+        """Write the scene as a Luau script in the exports folder and report it."""
         scene = self._require_scene()
         if not scene:
             return

@@ -231,6 +231,7 @@ def test_launch_editor_tool_opens_supervised_editor_on_discovered_port(
     """The MCP tool should start the supervised editor and open its bound URL."""
 
     def start_editor(ports: tuple[int, int]) -> tuple[object, int]:
+        """Check the bridge ports, then return a fake editor handle and port."""
         assert ports == (43001, 43002), (
             "the editor must receive the bridge's dynamically bound ports"
         )
@@ -257,6 +258,7 @@ def test_launch_editor_tool_reports_supervision_failure(
     from voxel_forge.editor_runtime import EditorRuntimeError
 
     def fail_start(_ports: tuple[int, int]) -> tuple[object, int]:
+        """Simulate an editor launch that fails because Bun is missing."""
         msg = "Bun executable not found"
         raise EditorRuntimeError(msg)
 

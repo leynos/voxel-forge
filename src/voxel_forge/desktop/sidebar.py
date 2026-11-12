@@ -37,6 +37,7 @@ class SidePanel(QWidget):
     build_bear = Signal()
 
     def __init__(self) -> None:
+        """Build the title, scene summary, the four group boxes and the hint."""
         super().__init__()
         self.setMinimumWidth(240)
         self.setMaximumWidth(320)
@@ -105,6 +106,7 @@ class SidePanel(QWidget):
             self._recent.addItem(item)
 
     def _build_quick_box(self) -> QGroupBox:
+        """Build the quick-actions group, wired to the panel's signals."""
         quick = QGroupBox("ทางลัด")
         ql = QVBoxLayout(quick)
         for text, slot in [
@@ -119,6 +121,7 @@ class SidePanel(QWidget):
         return quick
 
     def _build_create_box(self) -> QGroupBox:
+        """Build the quick-create group with tree and bear buttons."""
         create = QGroupBox("สร้างด่วน")
         cl = QVBoxLayout(create)
         btn_tree = QPushButton("ต้นไม้")
@@ -130,6 +133,7 @@ class SidePanel(QWidget):
         return create
 
     def _build_recent_box(self) -> QGroupBox:
+        """Build the recent-files list that reopens an item on double-click."""
         recent_box = QGroupBox("เปิดล่าสุด")
         rl = QVBoxLayout(recent_box)
         self._recent = QListWidget()
@@ -139,6 +143,7 @@ class SidePanel(QWidget):
 
     @staticmethod
     def _build_folders_box() -> QGroupBox:
+        """Build the group of buttons that open the storage folders."""
         folders = QGroupBox("โฟลเดอร์")
         fl = QVBoxLayout(folders)
         row = QHBoxLayout()
@@ -155,6 +160,10 @@ class SidePanel(QWidget):
         return folders
 
     def _on_recent_double(self, item: QListWidgetItem) -> None:
+        """Emit the path of a double-clicked recent file to reopen it.
+
+        Items with no stored path are ignored.
+        """
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
             self.open_recent_requested.emit(str(path))

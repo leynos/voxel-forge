@@ -116,9 +116,11 @@ def _linked_passage(lines: list[str], index: int) -> str:
     """
 
     def is_blockquote(i: int) -> bool:
+        """Return whether line ``i`` exists and is a blockquote line."""
         return 0 <= i < len(lines) and lines[i].lstrip().startswith(">")
 
     def is_separator(i: int) -> bool:
+        """Return whether line ``i`` is a bare ``>`` separator line."""
         return lines[i].strip() == ">"
 
     start = end = index

@@ -40,6 +40,7 @@ class MenuBuilderMixin:
     _recent_menu: QMenu
 
     def _build_menus(self) -> None:
+        """Build the menu bar in File, Create, View, Tools and Help order."""
         mb = self.menuBar()
         self._build_file_menu(mb)
         self._build_create_menu(mb)
@@ -48,6 +49,7 @@ class MenuBuilderMixin:
         self._build_help_menu(mb)
 
     def _build_file_menu(self, menu_bar: QMenuBar) -> None:
+        """Add the File menu with its recent, export and folder submenus."""
         file_menu = menu_bar.addMenu("ไฟล์ (&F)")
 
         self._act_new = QAction("Scene ใหม่", self)
@@ -89,6 +91,7 @@ class MenuBuilderMixin:
         file_menu.addAction(act_quit)
 
     def _build_export_menu(self, file_menu: QMenu) -> None:
+        """Add the Export submenu with one action for each export format."""
         export_menu = file_menu.addMenu("ส่งออก (Export)")
         for label, handler, shortcut in (
             ("Blender — .obj รวม mesh (แนะนำ)", self._export_blender_quick, "Ctrl+E"),
@@ -103,6 +106,7 @@ class MenuBuilderMixin:
             export_menu.addAction(act)
 
     def _build_folder_menu(self, file_menu: QMenu) -> None:
+        """Add the Open Folder submenu for the scene and export directories."""
         folder_menu = file_menu.addMenu("เปิดโฟลเดอร์")
         for label, path_fn in (
             ("โฟลเดอร์ Scenes", scenes_dir),
@@ -114,6 +118,7 @@ class MenuBuilderMixin:
             folder_menu.addAction(act)
 
     def _build_create_menu(self, menu_bar: QMenuBar) -> None:
+        """Add the Create menu with tree and bear presets and custom builds."""
         create_menu = menu_bar.addMenu("สร้าง (&C)")
 
         tree_menu = create_menu.addMenu("ต้นไม้")
@@ -135,6 +140,7 @@ class MenuBuilderMixin:
         bear_menu.addAction(act_bear_custom)
 
     def _build_view_menu(self, menu_bar: QMenuBar) -> None:
+        """Add the View menu with camera framing and 3D refresh actions."""
         view_menu = menu_bar.addMenu("มุมมอง (&V)")
         act_frame = QAction("จัดกล้องใหม่ (Frame)", self)
         act_frame.setShortcut(QKeySequence("F"))
@@ -147,12 +153,14 @@ class MenuBuilderMixin:
         view_menu.addAction(act_refresh)
 
     def _build_tools_menu(self, menu_bar: QMenuBar) -> None:
+        """Add the Tools menu with the merge statistics action."""
         tools_menu = menu_bar.addMenu("เครื่องมือ (&T)")
         act_stats = QAction("สถิติ Merge (ลด mesh)", self)
         act_stats.triggered.connect(self._show_merge_stats)
         tools_menu.addAction(act_stats)
 
     def _build_help_menu(self, menu_bar: QMenuBar) -> None:
+        """Add the Help menu with usage, shortcut and about actions."""
         help_menu = menu_bar.addMenu("ช่วยเหลือ (&H)")
         act_guide = QAction("วิธีใช้งาน", self)
         act_guide.triggered.connect(self._usage_guide)
@@ -167,6 +175,7 @@ class MenuBuilderMixin:
         help_menu.addAction(act_about)
 
     def _build_toolbars(self) -> None:
+        """Build the main toolbar with scene, preset, export and frame actions."""
         main = QToolBar("หลัก")
         main.setMovable(False)
         self.addToolBar(main)

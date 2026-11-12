@@ -45,6 +45,7 @@ class HelpActionsMixin:
     """Show merge statistics, usage guidance and the about box."""
 
     def _show_merge_stats(self) -> None:
+        """Show the merge statistics for the current scene in a dialog."""
         scene = self._require_scene()
         if not scene:
             return
@@ -68,6 +69,7 @@ class HelpActionsMixin:
     _shortcuts_help = functools.partialmethod(_show_help, "shortcuts")
 
     def _about(self) -> None:
+        """Show the About dialog for VoxelForge."""
         QMessageBox.about(
             self,
             "VoxelForge",
