@@ -46,6 +46,9 @@ jobs:
       - name: Check editor types
         run: make typecheck
       - name: Install editor test browser
+        # Run from editor/ so bunx resolves the locked Playwright rather than
+        # fetching the newest release, whose browser build the tests don't launch.
+        working-directory: editor
         run: bunx playwright install --with-deps chromium
       - name: Test editor delivery
         run: make test-editor
