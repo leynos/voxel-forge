@@ -51,7 +51,7 @@ fmt:
 check-fmt:
 	uv run ruff format --check src tests
 
-lint: lint-python dead-code duplication
+lint: lint-python dead-code duplication yamllint actionlint
 
 lint-python:
 	uv run ruff check src tests
@@ -113,3 +113,18 @@ markdownlint:
 
 nixie:
 	nixie
+
+YAMLLINT ?= yamllint
+ACTIONLINT ?= actionlint
+
+.PHONY: yamllint actionlint
+
+# yamllint reads `.yamllint.yml`, which extends `.yamllint-estate.yml`, and
+# resolves that path against the current directory, so run it from the root.
+yamllint: SHELL := bash
+yamllint: .SHELLFLAGS := -eo pipefail -c
+yamllint:
+	git ls-files -z '*.yml' '*.yaml' | xargs -0 -r $(YAMLLINT) --strict --
+
+actionlint:
+	$(ACTIONLINT)
